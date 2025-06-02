@@ -1,0 +1,44 @@
+services:
+  backend:
+    build: ./backend
+    container_name: empatIA-backend
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    networks:
+      - empatia-network
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app
+          ignore:
+            - __pycache__/
+
+  frontend:
+    build: ./frontend
+    container_name: empatIA-frontend
+    env_file:
+      - .env
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "7860:7860"
+    depends_on:
+      - backend
+    networks:
+      - empatia-network
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /app
+          ignore:
+            - __pycache__/
+
+networks:
+  empatia-network:
+    driver: bridge
