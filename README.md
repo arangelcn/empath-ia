@@ -6,6 +6,7 @@ Um assistente de psicologia virtual empático baseado em Carl Rogers, com avatar
 
 - 💬 **Chat com IA**: Conversas empáticas baseadas em Carl Rogers
 - 🎭 **Avatar Animado**: Vídeos gerados com DID-AI
+- 📝 **Histórico de Conversas**: Contexto mantido na sessão
 - 🔄 **Hot Reload**: Desenvolvimento com atualização automática
 - 🐳 **Docker**: Ambiente containerizado
 
@@ -105,6 +106,6 @@ empath-ia/
 ## 🎯 Próximos Passos
 
 - [ ] Interface mais avançada
-- [ ] Histórico de conversas
+- [x] Histórico de conversas
 - [ ] Diferentes avatares
 - [ ] Análise de sentimentos

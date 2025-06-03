@@ -23,20 +23,30 @@ model_name = os.getenv("MODEL_NAME", "gpt-4o")
 async def chat(req: Request):
     body = await req.json()
     message = body.get("message", "")
+    history = body.get("history", [])
 
     if not message:
         return {"error": "Message is required"}
 
     try:
-        # Generate text response from OpenAI
+        # Prepare messages for OpenAI. Include optional history.
+        messages = [
+            {"role": "system", "content": "Você é um psicólogo virtual empático, baseado em Carl Rogers. Responda com escuta ativa, validação emocional e acolhimento."},
+        ]
+        # append history if provided
+        for msg in history:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role and content:
+                messages.append({"role": role, "content": content})
+
+        messages.append({"role": "user", "content": message})
+
         logger.info(f"Processando mensagem: {message[:50]}...")
-        
+
         chat_response = client.chat.completions.create(
             model=model_name,
-            messages=[
-                {"role": "system", "content": "Você é um psicólogo virtual empático, baseado em Carl Rogers. Responda com escuta ativa, validação emocional e acolhimento."},
-                {"role": "user", "content": message}
-            ]
+            messages=messages
         )
 
         reply = chat_response.choices[0].message.content
