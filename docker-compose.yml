@@ -1,44 +1,182 @@
+version: '3.8'
+
 services:
-  backend:
-    build: ./backend
-    container_name: empatIA-backend
+  # MongoDB - Banco principal para persistência
+  mongodb:
+    image: mongo:7.0
+    container_name: empatia-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGODB_PORT:-27017}:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:-admin123}
+      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE:-empatia_db}
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts:/docker-entrypoint-initdb.d
+    networks:
+      - empatia-network
+
+  # Gateway Service - Ponto de entrada principal
+  gateway:
+    build: ./services/gateway-service
+    container_name: empatia-gateway
     env_file:
       - .env
+    environment:
+      - AI_SERVICE_URL=${AI_SERVICE_URL:-http://ai-service:8001}
+      - AVATAR_SERVICE_URL=${AVATAR_SERVICE_URL:-http://avatar-service:8002}
+      - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://emotion-service:8003}
+      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia_db?authSource=admin}
+      - DATABASE_NAME=${DATABASE_NAME:-empatia_db}
     volumes:
-      - ./backend:/app
+      - ./services/gateway-service:/app
+      - ./data/shared:/shared_data
+      - ./data/uploads:/uploads
     ports:
-      - "8000:8000"
+      - "${GATEWAY_PORT:-8000}:8000"
+    depends_on:
+      - mongodb
+      - ai-service
+      - avatar-service
+      - emotion-service
     networks:
       - empatia-network
     develop:
       watch:
         - action: sync
-          path: ./backend
-          target: /app
+          path: ./services/gateway-service/src
+          target: /app/src
           ignore:
             - __pycache__/
 
-  frontend:
-    build: ./frontend
-    container_name: empatIA-frontend
+  # AI Service - OpenAI e Psicólogo Rogers
+  ai-service:
+    build: ./services/ai-service
+    container_name: empatia-ai-service
     env_file:
       - .env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     volumes:
-      - ./frontend:/app
+      - ./services/ai-service:/app
     ports:
-      - "7860:7860"
-    depends_on:
-      - backend
+      - "${AI_SERVICE_PORT:-8001}:8001"
     networks:
       - empatia-network
     develop:
       watch:
         - action: sync
-          path: ./frontend
-          target: /app
+          path: ./services/ai-service/src
+          target: /app/src
           ignore:
             - __pycache__/
+
+  # Avatar Service - DID-AI
+  avatar-service:
+    build: ./services/avatar-service
+    container_name: empatia-avatar-service
+    env_file:
+      - .env
+    environment:
+      - DID_API_USERNAME=${DID_API_USERNAME:-}
+      - DID_API_PASSWORD=${DID_API_PASSWORD:-}
+    volumes:
+      - ./services/avatar-service:/app
+    ports:
+      - "${AVATAR_SERVICE_PORT:-8002}:8002"
+    networks:
+      - empatia-network
+    develop:
+      watch:
+        - action: sync
+          path: ./services/avatar-service/src
+          target: /app/src
+          ignore:
+            - __pycache__/
+
+  # Emotion Service - OpenFace
+  emotion-service:
+    build: ./services/emotion-service
+    container_name: empatia-emotion-service
+    env_file:
+      - .env
+    volumes:
+      - ./services/emotion-service:/app
+      - ./data/shared:/shared_data
+    ports:
+      - "${EMOTION_SERVICE_PORT:-8003}:8003"
+    networks:
+      - empatia-network
+    develop:
+      watch:
+        - action: sync
+          path: ./services/emotion-service/src
+          target: /app/src
+          ignore:
+            - __pycache__/
+
+  # Web UI - React + Vite Frontend
+  web-ui:
+    build: ./apps/web-ui
+    container_name: empatia-web-ui
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+    ports:
+      - "${WEB_UI_PORT:-3000}:3000"
+    depends_on:
+      - gateway
+    networks:
+      - empatia-network
+
+  # OpenFace - Análise Facial (sob demanda)
+  openface:
+    build: ./infrastructure/docker/base/openface-base
+    container_name: empatia-openface
+    volumes:
+      - ./data/shared:/data
+    networks:
+      - empatia-network
+    profiles:
+      - tools
+    restart: "no"
+
+  # Redis - Cache e Sessões
+  redis:
+    image: redis:7-alpine
+    container_name: empatia-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - empatia-network
+    command: redis-server --appendonly yes
+
+  # PostgreSQL - Banco de dados (opcional)
+  postgres:
+    image: postgres:15-alpine
+    container_name: empatia-postgres
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-empatia}
+      - POSTGRES_USER=${POSTGRES_USER:-empatia}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-empatia123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - empatia-network
+    profiles:
+      - database
 
 networks:
   empatia-network:
     driver: bridge
+
+volumes:
+  mongodb_data:
+  redis_data:
+  postgres_data:
