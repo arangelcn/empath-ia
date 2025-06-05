@@ -4,7 +4,7 @@ import time
 
 st.set_page_config(page_title="empatIA", layout="centered")
 
-st.title("🧠 empatIA - Psicólogo Virtual com Avatar")
+st.title("🧠 empatIA")
 st.markdown("Converse com um psicólogo virtual animado e empático.")
 
 def call_backend(message, max_retries=3, delay=2):
