@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Brain, Send, Loader2, AlertCircle, Info, Settings, Video, MessageCircle } from 'lucide-react'
+import { Brain, Send, Loader2, AlertCircle, Info, Settings, Video, MessageCircle, Volume2, VolumeX } from 'lucide-react'
 import axios from 'axios'
 import AvatarDog from './components/AvatarDog'
+import audioService from './services/audioService'
 
 // API service
 const api = axios.create({
@@ -18,6 +19,9 @@ function App() {
   const [sessionId, setSessionId] = useState(null)
   const [conversationId, setConversationId] = useState(null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
+  const [ttsEnabled, setTtsEnabled] = useState(true)
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false)
+  const [voiceServiceAvailable, setVoiceServiceAvailable] = useState(false)
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -28,10 +32,21 @@ function App() {
     scrollToBottom()
   }, [messages])
 
-  // Inicializar conversa ao carregar componente
+  // Inicializar conversa e testar voice service ao carregar componente
   useEffect(() => {
     initializeConversation()
+    testVoiceService()
   }, [])
+
+  const testVoiceService = async () => {
+    const result = await audioService.testVoiceService()
+    setVoiceServiceAvailable(result.available)
+    if (result.available) {
+      console.log('Voice service configurado e disponível')
+    } else {
+      console.warn('Voice service não está disponível')
+    }
+  }
 
   const generateSessionId = () => {
     return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -82,6 +97,28 @@ function App() {
     }
   }
 
+  const playResponseAudio = async (text) => {
+    if (!ttsEnabled || !voiceServiceAvailable || !text) {
+      return
+    }
+
+    try {
+      setIsPlayingAudio(true)
+      const result = await audioService.speakText(text, {
+        speed: 1.0,
+        language: 'pt'
+      })
+
+      if (!result.success) {
+        console.warn('Falha no TTS:', result.message)
+      }
+    } catch (error) {
+      console.error('Erro ao reproduzir áudio:', error)
+    } finally {
+      setIsPlayingAudio(false)
+    }
+  }
+
   const sendMessage = async (retryCount = 0) => {
     if (!inputValue.trim() || !sessionId) return
 
@@ -126,6 +163,14 @@ function App() {
         }
 
         setMessages(prev => [...prev, aiMessage])
+
+        // REPRODUZIR ÁUDIO AUTOMATICAMENTE
+        if (ai_response.content && ttsEnabled && voiceServiceAvailable) {
+          setTimeout(() => {
+            playResponseAudio(ai_response.content)
+          }, 500) // Aguardar um pouco para garantir que a mensagem foi renderizada
+        }
+
       } else {
         throw new Error(response.data.message || 'Erro desconhecido')
       }
@@ -148,6 +193,17 @@ function App() {
       setError(err)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const toggleTTS = () => {
+    const newState = audioService.toggleTTS()
+    setTtsEnabled(newState)
+    
+    // Parar áudio atual se desativando TTS
+    if (!newState) {
+      audioService.stopCurrentAudio()
+      setIsPlayingAudio(false)
     }
   }
 
@@ -185,6 +241,7 @@ function App() {
   const MessageBubble = ({ message }) => {
     const isUser = message.type === 'user'
     const isError = message.type === 'error'
+    const isAI = message.type === 'ai'
 
     return (
       <div className={`flex mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -202,7 +259,23 @@ function App() {
               <Brain className="w-5 h-5 text-primary-600 mt-0.5 flex-shrink-0" />
             )}
             <div className="flex-1">
-              <p className="text-sm">{message.content}</p>
+              <div className="flex items-start justify-between">
+                <p className="text-sm flex-1">{message.content}</p>
+                
+                {/* Audio Indicator for AI messages */}
+                {isAI && ttsEnabled && voiceServiceAvailable && (
+                  <div className="ml-2 flex items-center gap-1">
+                    {isPlayingAudio ? (
+                      <div className="flex items-center gap-1 text-blue-500">
+                        <Volume2 className="w-3 h-3 animate-pulse" />
+                        <span className="text-xs">♪</span>
+                      </div>
+                    ) : (
+                      <Volume2 className="w-3 h-3 text-gray-400" />
+                    )}
+                  </div>
+                )}
+              </div>
               
               {message.hasVideo && message.videoUrl && (
                 <div className="mt-3">
@@ -224,10 +297,13 @@ function App() {
                 <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
                   <div className="flex items-center gap-2">
                     <MessageCircle className="w-4 h-4" />
-                    Resposta em texto (vídeo do avatar não disponível)
+                    Resposta em texto{ttsEnabled && voiceServiceAvailable ? ' + áudio' : ''}
                   </div>
                   <p className="text-xs mt-1 text-blue-600">
-                    🔧 Verifique se a DID_API_KEY está configurada corretamente.
+                    {!voiceServiceAvailable 
+                      ? '🔧 Voice service offline - apenas texto'
+                      : '🔧 Verifique se a DID_API_KEY está configurada para vídeos'
+                    }
                   </p>
                 </div>
               )}
@@ -278,6 +354,43 @@ function App() {
               </button>
             </div>
           )}
+
+          {/* TTS Controls */}
+          <div className="mt-4 flex items-center justify-center gap-4">
+            <button
+              onClick={toggleTTS}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                ttsEnabled 
+                  ? 'bg-green-600/20 text-green-300 hover:bg-green-600/30' 
+                  : 'bg-gray-600/20 text-gray-400 hover:bg-gray-600/30'
+              }`}
+              title={ttsEnabled ? 'Desativar áudio automático' : 'Ativar áudio automático'}
+            >
+              {ttsEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              {ttsEnabled ? 'Áudio ON' : 'Áudio OFF'}
+            </button>
+
+            {voiceServiceAvailable && (
+              <div className="flex items-center gap-2 text-green-400 text-xs">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                Voice Service Online
+              </div>
+            )}
+
+            {!voiceServiceAvailable && (
+              <div className="flex items-center gap-2 text-orange-400 text-xs">
+                <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+                Voice Service Offline
+              </div>
+            )}
+
+            {isPlayingAudio && (
+              <div className="flex items-center gap-2 text-blue-400 text-xs">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Reproduzindo...
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Chat Container */}
