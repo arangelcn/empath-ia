@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 import httpx
 import os
 from datetime import datetime
@@ -49,7 +49,8 @@ app.add_middleware(
 SERVICE_URLS = {
     "ai": os.getenv("AI_SERVICE_URL", "http://ai-service:8001"),
     "avatar": os.getenv("AVATAR_SERVICE_URL", "http://avatar-service:8002"),
-    "emotion": os.getenv("EMOTION_SERVICE_URL", "http://emotion-service:8003")
+    "emotion": os.getenv("EMOTION_SERVICE_URL", "http://emotion-service:8003"),
+    "voice": os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004")
 }
 
 # Instância do serviço de chat
@@ -283,6 +284,69 @@ async def emotion_analyze_video(file: UploadFile = File(...)):
             return response.json()
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Serviço Emotion indisponível: {str(e)}")
+
+# Proxy para Voice Service
+@app.post("/api/voice/speak")
+async def voice_speak(request: Request):
+    """Text-to-speech através do voice service"""
+    body = await request.json()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{SERVICE_URLS['voice']}/speak",
+                json=body,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                # Retornar arquivo de áudio
+                return response.json()
+            else:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+                
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
+
+@app.get("/api/voice/config")
+async def voice_config():
+    """Obter configurações do voice service"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{SERVICE_URLS['voice']}/config", timeout=10)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
+
+@app.get("/api/voice/models")
+async def voice_models():
+    """Listar modelos de TTS disponíveis"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{SERVICE_URLS['voice']}/models", timeout=10)
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
+
+# Proxy para servir arquivos de áudio
+@app.get("/api/voice/audio/{filename}")
+async def voice_audio(filename: str):
+    """Servir arquivos de áudio gerados pelo voice service"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{SERVICE_URLS['voice']}/audio/{filename}", timeout=30)
+            
+            if response.status_code == 200:
+                return Response(
+                    content=response.content,
+                    media_type="audio/wav",
+                    headers={"Content-Disposition": f"inline; filename={filename}"}
+                )
+            else:
+                raise HTTPException(status_code=response.status_code, detail="Arquivo não encontrado")
+                
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
 
 # Endpoint para sessão completa
 @app.post("/api/session/complete")

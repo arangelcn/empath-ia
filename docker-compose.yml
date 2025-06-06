@@ -28,12 +28,14 @@ services:
       - AI_SERVICE_URL=${AI_SERVICE_URL:-http://ai-service:8001}
       - AVATAR_SERVICE_URL=${AVATAR_SERVICE_URL:-http://avatar-service:8002}
       - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://emotion-service:8003}
+      - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
       - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia_db?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia_db}
     volumes:
       - ./services/gateway-service:/app
       - ./data/shared:/shared_data
       - ./data/uploads:/uploads
+      - ./data/tts_output:/shared_tts
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
     depends_on:
@@ -41,6 +43,7 @@ services:
       - ai-service
       - avatar-service
       - emotion-service
+      - voice-service
     networks:
       - empatia-network
     develop:
@@ -113,6 +116,30 @@ services:
       watch:
         - action: sync
           path: ./services/emotion-service/src
+          target: /app/src
+          ignore:
+            - __pycache__/
+
+  # Voice Service - Text-to-Speech com Coqui TTS
+  voice-service:
+    build: ./services/voice-service
+    container_name: empatia-voice-service
+    env_file:
+      - .env
+    environment:
+      - VOICE_SERVICE_PORT=${VOICE_SERVICE_PORT:-8004}
+      - VOICE_SERVICE_BASE_URL=${VOICE_SERVICE_BASE_URL:-http://localhost:8004}
+    volumes:
+      - ./services/voice-service:/app
+      - ./data/tts_output:/shared_tts
+    ports:
+      - "${VOICE_SERVICE_PORT:-8004}:8004"
+    networks:
+      - empatia-network
+    develop:
+      watch:
+        - action: sync
+          path: ./services/voice-service/src
           target: /app/src
           ignore:
             - __pycache__/

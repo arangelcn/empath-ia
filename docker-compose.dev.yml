@@ -49,9 +49,15 @@ services:
       - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia_db?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia_db}
       - SQL_DEBUG=${DEBUG:-true}
+      - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
+    volumes:
+      - ./data/tts_output:/shared_tts
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
     depends_on:
       - mongodb
+      - voice-service
     networks:
       - empatia-network
 
@@ -105,6 +111,25 @@ services:
     ports:
       - "${WEB_UI_PORT:-3000}:3000"
     command: ["npm", "run", "dev"]
+    networks:
+      - empatia-network
+
+  voice-service:
+    build:
+      context: ./services/voice-service
+      dockerfile: Dockerfile
+    container_name: empatia-voice-service-dev
+    environment:
+      - DEBUG=${DEBUG:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - VOICE_SERVICE_PORT=${VOICE_SERVICE_PORT:-8004}
+      - VOICE_SERVICE_BASE_URL=${VOICE_SERVICE_BASE_URL:-http://localhost:8004}
+    volumes:
+      - ./services/voice-service/src:/app/src
+      - ./data/tts_output:/app/output
+    ports:
+      - "${VOICE_SERVICE_PORT:-8004}:8004"
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8004", "--reload", "--log-level", "debug"]
     networks:
       - empatia-network
 
