@@ -19,6 +19,13 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      // Proxy para voice service direto
+      '/voice-service': {
+        target: 'http://voice-service:8004',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/voice-service/, ''),
+      },
     },
   },
   build: {

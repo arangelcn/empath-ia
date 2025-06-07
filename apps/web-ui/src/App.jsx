@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Brain, Send, Loader2, AlertCircle, Info, Settings, Video, MessageCircle, Volume2, VolumeX } from 'lucide-react'
 import axios from 'axios'
 import AvatarDog from './components/AvatarDog'
+import VoiceSettings from './components/VoiceSettings'
 import audioService from './services/audioService'
 
 // API service
@@ -16,12 +17,14 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [showConfig, setShowConfig] = useState(false)
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false)
   const [sessionId, setSessionId] = useState(null)
   const [conversationId, setConversationId] = useState(null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const [ttsEnabled, setTtsEnabled] = useState(true)
   const [isPlayingAudio, setIsPlayingAudio] = useState(false)
   const [voiceServiceAvailable, setVoiceServiceAvailable] = useState(false)
+  const [voiceServiceInfo, setVoiceServiceInfo] = useState(null)
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -41,10 +44,16 @@ function App() {
   const testVoiceService = async () => {
     const result = await audioService.testVoiceService()
     setVoiceServiceAvailable(result.available)
+    setVoiceServiceInfo(result)
+    
     if (result.available) {
-      console.log('Voice service configurado e disponível')
+      console.log('🎉 Voice service configurado e disponível:', {
+        service: result.service,
+        version: result.version || result.health?.version,
+        model_loaded: result.health?.tts_model_loaded
+      })
     } else {
-      console.warn('Voice service não está disponível')
+      console.warn('⚠️ Voice service não está disponível:', result.error)
     }
   }
 
@@ -356,7 +365,7 @@ function App() {
           )}
 
           {/* TTS Controls */}
-          <div className="mt-4 flex items-center justify-center gap-4">
+          <div className="mt-4 flex items-center justify-center gap-4 flex-wrap">
             <button
               onClick={toggleTTS}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
@@ -370,10 +379,27 @@ function App() {
               {ttsEnabled ? 'Áudio ON' : 'Áudio OFF'}
             </button>
 
+            {/* Voice Settings Button */}
+            {voiceServiceAvailable && (
+              <button
+                onClick={() => setShowVoiceSettings(!showVoiceSettings)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 transition-colors"
+                title="Configurações avançadas de voz"
+              >
+                <Settings className="w-4 h-4" />
+                Configurar Voz
+              </button>
+            )}
+
             {voiceServiceAvailable && (
               <div className="flex items-center gap-2 text-green-400 text-xs">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                 Voice Service Online
+                {voiceServiceInfo?.service === 'direct' && (
+                  <span className="text-xs bg-green-600/20 px-2 py-1 rounded-full">
+                    v{voiceServiceInfo.version || '2.0.0'}
+                  </span>
+                )}
               </div>
             )}
 
@@ -381,6 +407,11 @@ function App() {
               <div className="flex items-center gap-2 text-orange-400 text-xs">
                 <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
                 Voice Service Offline
+                {voiceServiceInfo?.error && (
+                  <span className="text-xs bg-orange-600/20 px-2 py-1 rounded-full" title={voiceServiceInfo.error}>
+                    ⚠️
+                  </span>
+                )}
               </div>
             )}
 
@@ -391,6 +422,16 @@ function App() {
               </div>
             )}
           </div>
+
+          {/* Voice Settings Panel */}
+          {showVoiceSettings && voiceServiceAvailable && (
+            <div className="mt-6">
+              <VoiceSettings 
+                onClose={() => setShowVoiceSettings(false)}
+                className="max-w-4xl mx-auto"
+              />
+            </div>
+          )}
         </div>
 
         {/* Chat Container */}
@@ -404,9 +445,15 @@ function App() {
                 <p className="text-sm mt-2">
                   Digite sua mensagem abaixo para começar nossa conversa.
                 </p>
-                <p className="text-xs mt-4 text-gray-400">
-                  💾 Suas conversas são salvas automaticamente
-                </p>
+                <div className="text-xs mt-4 space-y-1">
+                  <p className="text-gray-400">💾 Suas conversas são salvas automaticamente</p>
+                  {voiceServiceAvailable && (
+                    <p className="text-green-600">🎤 Respostas com áudio automático ativado</p>
+                  )}
+                  {voiceServiceAvailable && (
+                    <p className="text-blue-600">⚙️ Use "Configurar Voz" para ajustar modelos e velocidade</p>
+                  )}
+                </div>
               </div>
             )}
             
@@ -435,7 +482,7 @@ function App() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Digite sua mensagem..."
+              placeholder={voiceServiceAvailable ? "Digite sua mensagem... (com áudio automático)" : "Digite sua mensagem..."}
               disabled={isLoading}
               className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
             />
@@ -468,10 +515,10 @@ function App() {
             <div className="mt-4 glass-effect rounded-xl p-4 text-sm">
               <h3 className="font-semibold mb-3 flex items-center gap-2">
                 <Settings className="w-4 h-4" />
-                Sistema com persistência MongoDB:
+                Sistema com persistência MongoDB + Voice Service Aprimorado:
               </h3>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="bg-green-50 p-3 rounded-lg">
                   <h4 className="font-medium text-green-800 mb-2">✅ Recursos Ativos:</h4>
                   <ul className="text-xs text-green-700 space-y-1">
@@ -479,12 +526,26 @@ function App() {
                     <li>• Persistência em MongoDB</li>
                     <li>• Session management</li>
                     <li>• Recuperação automática</li>
+                    {voiceServiceAvailable && <li>• Voice Service v2.0.0</li>}
+                    {voiceServiceAvailable && <li>• TTS automático</li>}
                   </ul>
                 </div>
                 
                 <div className="bg-blue-50 p-3 rounded-lg">
-                  <h4 className="font-medium text-blue-800 mb-2">🔧 Para avatares em vídeo:</h4>
+                  <h4 className="font-medium text-blue-800 mb-2">🎤 Voice Service:</h4>
                   <ul className="text-xs text-blue-700 space-y-1">
+                    <li>• Status: {voiceServiceAvailable ? '✅ Online' : '❌ Offline'}</li>
+                    {voiceServiceInfo?.service && <li>• Conexão: {voiceServiceInfo.service}</li>}
+                    {voiceServiceInfo?.version && <li>• Versão: {voiceServiceInfo.version}</li>}
+                    {voiceServiceInfo?.health?.tts_model_loaded && <li>• Modelo: Carregado</li>}
+                    <li>• Modelos: VITS, XTTS-v2</li>
+                    <li>• Idioma: Português BR</li>
+                  </ul>
+                </div>
+                
+                <div className="bg-orange-50 p-3 rounded-lg">
+                  <h4 className="font-medium text-orange-800 mb-2">🔧 Para avatares em vídeo:</h4>
+                  <ul className="text-xs text-orange-700 space-y-1">
                     <li>• Configure DID_API_USERNAME</li>
                     <li>• Configure DID_API_PASSWORD</li>
                     <li>• Reinicie os containers</li>
@@ -507,6 +568,7 @@ DATABASE_NAME=empatia_db`}
                 <p><strong>💾 Dados persistidos:</strong> Conversas e mensagens salvos automaticamente</p>
                 <p><strong>🔄 Session ID:</strong> {sessionId || 'Carregando...'}</p>
                 <p><strong>📝 Total de mensagens:</strong> {messages.length}</p>
+                <p><strong>🎤 TTS Status:</strong> {ttsEnabled ? 'Ativado' : 'Desativado'} {voiceServiceAvailable ? '(Serviço Online)' : '(Serviço Offline)'}</p>
               </div>
             </div>
           )}
