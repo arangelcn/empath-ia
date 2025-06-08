@@ -82,25 +82,17 @@ class OpenFaceProcessor:
         try:
             logger.info("Starting OpenFace processing...")
             
-            # Determinar o diretório de trabalho correto para docker-compose
-            if os.path.exists("/app"):
-                # Estamos dentro do container backend - precisamos executar do host
-                # Isso não funcionará dentro do container, então vamos usar uma abordagem diferente
-                logger.error("Cannot run docker-compose from inside container. OpenFace processing should be called from outside.")
-                return False
-            else:
-                # Estamos no desenvolvimento local
-                current_dir = Path(__file__).parent
-                project_root = current_dir.parent.parent.parent
-                working_dir = str(project_root)
-            
-            # Executar o container OpenFace
+            # Em ambiente containerizado, usar Docker run para chamar o serviço OpenFace
+            # O volume /shared_data está mapeado para o mesmo volume do OpenFace
             result = subprocess.run([
-                "docker", "compose", "run", "--rm", "openface"
+                "docker", "run", "--rm",
+                "--network", "empath-ia-empatia-network",
+                "-v", "/shared_data:/data",
+                "empath-ia-openface-dev"
             ], 
             capture_output=True, 
             text=True,
-            cwd=working_dir
+            timeout=30  # Timeout de 30 segundos
             )
             
             if result.returncode == 0:
@@ -111,6 +103,9 @@ class OpenFaceProcessor:
                 logger.error(f"OpenFace processing failed: {result.stderr}")
                 return False
                 
+        except subprocess.TimeoutExpired:
+            logger.error("OpenFace processing timed out")
+            return False
         except Exception as e:
             logger.error(f"Error running OpenFace container: {e}")
             return False

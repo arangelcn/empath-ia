@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Extensão do docker-compose.yml para desenvolvimento
 services:
   # MongoDB para desenvolvimento
@@ -39,6 +37,18 @@ services:
     networks:
       - empatia-network
 
+  # Redis - Cache e Sessões
+  redis:
+    image: redis:7-alpine
+    container_name: empatia-redis-dev
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data_dev:/data
+    networks:
+      - empatia-network
+    command: redis-server --appendonly yes
+
   gateway:
     build:
       context: ./services/gateway-service
@@ -57,6 +67,7 @@ services:
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
     depends_on:
       - mongodb
+      - redis
       - voice-service
     networks:
       - empatia-network
@@ -65,6 +76,8 @@ services:
     build:
       context: ./services/ai-service
       dockerfile: Dockerfile
+    ports:  
+      - "${AI_SERVICE_PORT:-8001}:8001"
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
@@ -77,6 +90,8 @@ services:
     build:
       context: ./services/avatar-service 
       dockerfile: Dockerfile
+    ports:
+      - "${AVATAR_SERVICE_PORT:-8002}:8002"
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
@@ -114,7 +129,7 @@ services:
       - /app/node_modules
     ports:
       - "${WEB_UI_PORT:-3000}:3000"
-    command: ["npm", "run", "dev"]
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     networks:
       - empatia-network
 
@@ -122,18 +137,54 @@ services:
     build:
       context: ./services/voice-service
       dockerfile: Dockerfile
-    container_name: empatia-voice-service-dev
-    environment:
-      - DEBUG=${DEBUG:-true}
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-      - VOICE_SERVICE_PORT=${VOICE_SERVICE_PORT:-8004}
-      - VOICE_SERVICE_BASE_URL=${VOICE_SERVICE_BASE_URL:-http://localhost:8004}
-    volumes:
-      - ./services/voice-service/src:/app/src
-      - ./data/tts_output:/app/output
     ports:
       - "${VOICE_SERVICE_PORT:-8004}:8004"
+    environment:
+      - PYTHONPATH=/app/src
+      - DEBUG=True
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8004", "--reload", "--log-level", "debug"]
+    depends_on:
+      - mongodb
+    networks:
+      - empatia-network
+    volumes:
+      - ./services/voice-service/src:/app/src
+
+  admin-panel:
+    build:
+      context: ./apps/admin-panel
+      dockerfile: Dockerfile.dev
+    ports:
+      - "${ADMIN_PANEL_PORT:-3001}:3001"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000
+      - VITE_EMOTION_SERVICE_URL=http://localhost:8003
+      - VITE_VOICE_SERVICE_URL=http://localhost:8004
+      - VITE_AI_SERVICE_URL=http://localhost:8001
+      - VITE_AVATAR_SERVICE_URL=http://localhost:8002
+    depends_on:
+      - gateway
+      - emotion-service
+      - ai-service
+      - voice-service
+    networks:
+      - empatia-network
+    volumes:
+      - ./apps/admin-panel/src:/app/src
+      - ./apps/admin-panel/public:/app/public
+      - /app/node_modules
+
+  admin-panel-dev:
+    build:
+      context: ./apps/admin-panel
+      dockerfile: Dockerfile.dev
+    container_name: empatia-admin-panel-dev
+    ports:
+      - "3011:3011"
+    volumes:
+      - ./apps/admin-panel:/app
+      - /app/node_modules
     networks:
       - empatia-network
 

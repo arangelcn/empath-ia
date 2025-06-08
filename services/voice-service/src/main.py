@@ -9,8 +9,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api.voice_api import router as voice_router
+# COMENTADO: Bark API deixando para implementação futura
+# from .api.bark_api import router as bark_router
 from .models.voice_models import HealthResponse
 from .services.tts_service import TTSService
+# COMENTADO: Bark Service deixando para implementação futura
+# from .services.bark_service import BarkService
 
 # Configurar logging avançado
 logging.basicConfig(
@@ -65,6 +69,8 @@ app.add_middleware(
 
 # Instância global do serviço TTS
 tts_service = None
+# COMENTADO: Bark service deixando para implementação futura
+# bark_service = None
 
 @app.on_event("startup")
 async def startup_event():
@@ -79,11 +85,15 @@ async def startup_event():
         output_dir.mkdir(parents=True, exist_ok=True)
         logger.info("📁 Diretório de saída configurado: %s", output_dir)
         
-        # Inicializar serviço TTS
+        # Inicializar serviço TTS principal
         tts_service = TTSService()
         logger.info("🎤 Inicializando serviço TTS...")
         
-        # Carregar modelo padrão
+        # COMENTADO: Bark service deixando para implementação futura
+        # bark_service = BarkService()
+        # logger.info("🎵 Inicializando serviço Bark...")
+        
+        # Carregar modelo padrão do TTS
         if tts_service.load_model():
             model_info = tts_service.get_model_info()
             logger.info("✅ TTS inicializado com sucesso!")
@@ -92,19 +102,37 @@ async def startup_event():
             logger.info("   Dispositivo: %s", model_info['device'])
             logger.info("   Modelos disponíveis: %s", list(model_info['available_models'].keys()))
         else:
-            logger.error("❌ Falha ao carregar modelo TTS")
-            raise RuntimeError("Falha na inicialização do modelo TTS")
+            logger.warning("⚠️ TTS não pôde ser carregado")
+            
+        # COMENTADO: Bark carregamento deixando para implementação futura
+        # try:
+        #     if bark_service.load_models():
+        #         bark_info = bark_service.get_service_info()
+        #         logger.info("✅ Bark inicializado com sucesso!")
+        #         logger.info("   Modelo: %s", bark_info['model_type'])
+        #         logger.info("   Dispositivo: %s", bark_info['device'])
+        #         logger.info("   Vozes disponíveis: %s", len(bark_info['available_voices']))
+        #     else:
+        #         logger.warning("⚠️ Bark não pôde ser carregado")
+        # except Exception as e:
+        #     logger.warning("⚠️ Erro ao carregar Bark: %s", e)
+        #     raise
             
         # Limpeza inicial de arquivos antigos
         try:
             removed_count = tts_service.cleanup_old_files(max_age_hours=24)
-            logger.info("🧹 Limpeza inicial: %d arquivos antigos removidos", removed_count)
+            logger.info("🧹 Limpeza inicial: %d arquivos removidos", removed_count)
         except Exception as e:
             logger.warning("⚠️ Aviso na limpeza inicial: %s", e)
         
         logger.info("🎯 Voice Service Enhanced pronto para uso!")
         logger.info("📖 Documentação disponível em: http://localhost:8004/docs")
         logger.info("🔍 Monitoramento em: http://localhost:8004/health")
+        
+        # Configurar o serviço TTS no router da API
+        from .api.voice_api import set_tts_service
+        set_tts_service(tts_service)
+        logger.info("🔗 Serviço TTS conectado à API")
         
     except Exception as e:
         logger.error("💥 Erro crítico na inicialização: %s", e)
@@ -197,13 +225,16 @@ async def health_check():
     try:
         # Verificar status do TTS
         tts_loaded = False
-        current_model = "unknown"
+        current_model = "tts"
         
         if tts_service:
-            tts_loaded = tts_service.is_model_loaded()
-            if tts_loaded:
+            try:
                 model_info = tts_service.get_model_info()
-                current_model = model_info.get('current_model', 'unknown')
+                tts_loaded = model_info.get('is_loaded', False)
+                current_model = model_info.get('current_model', 'xtts_v2')
+            except Exception as e:
+                logger.warning("Erro ao obter info do modelo: %s", e)
+                tts_loaded = False
         
         # Verificar diretório de saída
         output_dir = Path("/app/output")
@@ -240,7 +271,7 @@ async def health_check():
 async def direct_speak(request_data: dict):
     """
     Endpoint direto para TTS (compatibilidade com versão anterior)
-    Redireciona para o endpoint principal da API
+    Agora redireciona para o Bark durante os testes
     """
     try:
         from .models.voice_models import TextToSpeechRequest
@@ -248,7 +279,7 @@ async def direct_speak(request_data: dict):
         # Converter dict para modelo
         tts_request = TextToSpeechRequest(**request_data)
         
-        # Usar o serviço TTS diretamente
+        # Usar o serviço Bark diretamente (TTS original comentado)
         global tts_service
         if not tts_service:
             raise HTTPException(status_code=503, detail="Serviço TTS não disponível")
@@ -261,7 +292,7 @@ async def direct_speak(request_data: dict):
         if success:
             return {
                 "success": True,
-                "message": message,
+                "message": f"{message} (usando TTS original)",
                 "audio_url": audio_url,
                 "filename": audio_url.split("/")[-1] if audio_url else None,
                 "duration": duration
@@ -274,7 +305,9 @@ async def direct_speak(request_data: dict):
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 # Incluir roteador da API principal
-app.include_router(voice_router)
+app.include_router(voice_router, prefix="/api/voice", tags=["voice"])
+# Incluir roteador da API Bark
+# app.include_router(bark_router)
 
 # Endpoint de informações detalhadas
 @app.get("/info", tags=["info"])
@@ -311,13 +344,74 @@ async def service_info():
                 "key": model_info.get('current_model'),
                 "name": model_info.get('model_name'),
                 "device": model_info.get('device'),
-                "loaded": model_info.get('model_loaded')
+                "loaded": model_info.get('is_loaded')
             }
             info["available_models"] = model_info.get('available_models', {})
         except Exception as e:
             logger.warning("Erro ao obter info do modelo: %s", e)
     
     return info
+
+# Endpoint para escolher engine TTS
+@app.post("/speak-with-engine", tags=["multi-engine"])
+async def speak_with_engine(request_data: dict):
+    """
+    Endpoint para escolher entre diferentes engines TTS
+    """
+    try:
+        from .models.voice_models import TextToSpeechRequest
+        
+        # Extrair engine do request
+        engine = request_data.pop("engine", "bark")  # Bark como padrão
+        tts_request = TextToSpeechRequest(**request_data)
+        
+        global tts_service
+        
+        if engine.lower() == "bark":
+            # COMENTADO: Bark service deixando para implementação futura
+            # if not bark_service:
+            #     raise HTTPException(status_code=503, detail="Serviço Bark não disponível")
+            # 
+            # success, message, audio_url, duration = bark_service.text_to_speech(
+            #     text=tts_request.text,
+            #     voice_speed=tts_request.voice_speed
+            # )
+            raise HTTPException(status_code=503, detail="Serviço Bark temporariamente desabilitado para testes")
+        elif engine.lower() in ["coqui", "tts", "original"]:
+            # COMENTADO: TTS original desabilitado para testes
+            raise HTTPException(status_code=503, detail="Serviço TTS original temporariamente desabilitado para testes")
+            # if not tts_service:
+            #     raise HTTPException(status_code=503, detail="Serviço TTS original não disponível")
+            # 
+            # success, message, audio_url, duration = tts_service.text_to_speech(
+            #     text=tts_request.text,
+            #     voice_speed=tts_request.voice_speed
+            # )
+        else:
+            raise HTTPException(status_code=400, detail=f"Engine '{engine}' não suportado. Use 'bark' (coqui temporariamente desabilitado)")
+        
+        if tts_service:
+            success, message, audio_url, duration = tts_service.text_to_speech(
+                text=tts_request.text,
+                voice_speed=tts_request.voice_speed
+            )
+            if success:
+                return {
+                    "success": True,
+                    "message": f"{message} (engine: {engine})",
+                    "audio_url": audio_url,
+                    "filename": audio_url.split("/")[-1] if audio_url else None,
+                    "duration": duration,
+                    "engine_used": engine
+                }
+            else:
+                raise HTTPException(status_code=500, detail=message)
+        else:
+            raise HTTPException(status_code=503, detail="Serviço TTS não disponível")
+            
+    except Exception as e:
+        logger.error("Erro no endpoint multi-engine: %s", e)
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

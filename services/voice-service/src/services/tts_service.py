@@ -20,10 +20,23 @@ class TTSService:
         # Aceitar automaticamente a licença não-comercial do Coqui TTS
         os.environ["COQUI_TOS_AGREED"] = "1"
         
+        # Configurar cache local se disponível
+        local_models_path = os.getenv("TTS_MODELS_PATH", "/app/models/tts")
+        local_cache_path = os.getenv("TTS_CACHE_PATH", "/app/models/tts")
+        
+        # Verificar se temos modelos locais
+        self.use_local_models = Path(local_models_path).exists()
+        if self.use_local_models:
+            logger.info(f"📁 Modelos locais encontrados em: {local_models_path}")
+            os.environ["TTS_HOME"] = local_cache_path
+        else:
+            logger.info("🌐 Usando modelos online (será feito download)")
+        
         # Configurar PyTorch para permitir carregamento seguro do XTTS-v2
         try:
             from TTS.tts.configs.xtts_config import XttsConfig
-            torch.serialization.add_safe_globals([XttsConfig])
+            # COMENTADO: add_safe_globals não disponível na versão atual do PyTorch
+            # torch.serialization.add_safe_globals([XttsConfig])
             logger.info("Configuração de segurança do PyTorch aplicada para XTTS-v2")
         except ImportError:
             logger.warning("Não foi possível importar XttsConfig - continuando sem configuração específica")
@@ -34,6 +47,14 @@ class TTSService:
             "vits_pt": "tts_models/pt/cv/vits",  # Original (PT-EU)
             "your_tts": "tts_models/multilingual/multi-dataset/your_tts"  # Alternativa multilíngue
         }
+        
+        # Mapear caminhos locais se disponível
+        if self.use_local_models:
+            self.local_model_paths = {
+                "xtts_v2": Path(local_models_path) / "xtts_v2",
+                "vits_pt": Path(local_models_path) / "vits_pt", 
+                "your_tts": Path(local_models_path) / "your_tts"
+            }
         
         # Usar XTTS-v2 como padrão para melhor qualidade em PT-BR
         self.current_model = os.getenv("TTS_MODEL", "xtts_v2")
@@ -67,7 +88,18 @@ class TTSService:
         """Carrega o modelo TTS"""
         try:
             if self.tts is None:
-                logger.info(f"Carregando modelo TTS: {self.model_name}")
+                # Verificar se temos modelo local primeiro
+                model_path_to_use = self.model_name
+                
+                if self.use_local_models and hasattr(self, 'local_model_paths'):
+                    local_path = self.local_model_paths.get(self.current_model)
+                    if local_path and local_path.exists():
+                        logger.info(f"📁 Usando modelo local: {local_path}")
+                        model_path_to_use = str(local_path)
+                    else:
+                        logger.warning(f"⚠️ Modelo local não encontrado em {local_path}, usando online")
+                
+                logger.info(f"Carregando modelo TTS: {model_path_to_use}")
                 
                 # Configurar ambiente para CPU se necessário
                 if not self.use_gpu:
@@ -77,12 +109,13 @@ class TTSService:
                 os.environ["COQUI_TOS_AGREED"] = "1"
                 
                 self.tts = TTS(
-                    model_name=self.model_name, 
+                    model_name=model_path_to_use, 
                     progress_bar=True, 
                     gpu=self.use_gpu
                 )
                 
-                logger.info(f"Modelo TTS carregado com sucesso! (Device: {self.device})")
+                model_source = "local" if self.use_local_models and str(model_path_to_use).startswith("/") else "online"
+                logger.info(f"✅ Modelo TTS carregado com sucesso! (Device: {self.device}, Source: {model_source})")
             return True
         except Exception as e:
             logger.error(f"Erro ao carregar modelo TTS: {e}")
@@ -122,17 +155,30 @@ class TTSService:
             if not self.load_model():
                 return False, "Erro ao carregar modelo TTS", None, None
             
+            # Validar texto de entrada
+            if not text or text.strip() == "":
+                return False, "Texto vazio ou inválido", None, None
+            
             # Gerar nome do arquivo
             filename = self.generate_filename()
+            if not filename:
+                return False, "Erro ao gerar nome do arquivo", None, None
+                
             output_path = self.output_dir / filename
             
             logger.info(f"Gerando áudio para texto: '{text[:50]}...' (modelo: {self.current_model})")
             
+            # Verificar se o diretório de saída existe
+            if not self.output_dir.exists():
+                self.output_dir.mkdir(parents=True, exist_ok=True)
+            
             # Configurar parâmetros baseado no modelo
             if self.current_model == "xtts_v2":
                 # XTTS-v2: Melhor qualidade para PT-BR
+                logger.info(f"Usando modelo XTTS-v2, output_path: {output_path}")
                 if voice_reference and os.path.exists(voice_reference):
                     # Clonagem de voz
+                    logger.info(f"Clonagem de voz com referência: {voice_reference}")
                     self.tts.tts_to_file(
                         text=text,
                         file_path=str(output_path),
@@ -142,14 +188,24 @@ class TTSService:
                     )
                 else:
                     # Usar speaker padrão do XTTS otimizado para PT-BR
-                    self.tts.tts_to_file(
-                        text=text,
-                        file_path=str(output_path),
-                        language=self.language,
-                        split_sentences=True
-                    )
+                    logger.info(f"Usando speaker padrão, language: {self.language}")
+                    logger.info(f"Parâmetros debug: text='{text}', file_path='{str(output_path)}', language='{self.language}'")
+                    
+                    # Para XTTS-v2, não usar parâmetro speaker pois não é multi-speaker
+                    try:
+                        self.tts.tts_to_file(
+                            text=text,
+                            file_path=str(output_path),
+                            language=self.language,
+                            split_sentences=True
+                        )
+                        logger.info(f"TTS gerado com sucesso para: {output_path}")
+                    except Exception as tts_error:
+                        logger.error(f"Erro específico no tts_to_file: {tts_error}")
+                        raise
             elif self.current_model == "your_tts":
                 # YourTTS: Multilíngue com clonagem
+                logger.info(f"Usando modelo YourTTS, output_path: {output_path}")
                 if voice_reference and os.path.exists(voice_reference):
                     self.tts.tts_to_file(
                         text=text,
@@ -165,13 +221,21 @@ class TTSService:
                     )
             else:
                 # VITS: Modelo original
+                logger.info(f"Usando modelo VITS, output_path: {output_path}")
                 self.tts.tts_to_file(text=text, file_path=str(output_path))
+            
+            # Verificar se o arquivo foi criado
+            if not output_path.exists():
+                return False, "Arquivo de áudio não foi criado", None, None
             
             # Aplicar velocidade se diferente de 1.0
             if voice_speed != 1.0:
-                audio_data, sample_rate = librosa.load(str(output_path), sr=None)
-                audio_data = librosa.effects.time_stretch(audio_data, rate=voice_speed)
-                sf.write(str(output_path), audio_data, sample_rate)
+                try:
+                    audio_data, sample_rate = librosa.load(str(output_path), sr=None)
+                    audio_data = librosa.effects.time_stretch(audio_data, rate=voice_speed)
+                    sf.write(str(output_path), audio_data, sample_rate)
+                except Exception as e:
+                    logger.warning(f"Erro ao aplicar velocidade {voice_speed}: {e}")
             
             # Calcular duração
             duration = self.get_audio_duration(str(output_path))
@@ -223,6 +287,16 @@ class TTSService:
     def get_audio_duration(self, file_path: str) -> float:
         """Calcula duração do arquivo de áudio"""
         try:
+            # Verificar se o caminho é válido
+            if not file_path or file_path.strip() == "":
+                logger.error("Caminho do arquivo é vazio ou None")
+                return 0.0
+                
+            # Verificar se o arquivo existe
+            if not os.path.exists(file_path):
+                logger.error(f"Arquivo não encontrado: {file_path}")
+                return 0.0
+                
             audio_data, sample_rate = librosa.load(file_path, sr=None)
             duration = len(audio_data) / sample_rate
             return duration

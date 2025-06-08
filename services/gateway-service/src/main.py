@@ -285,6 +285,22 @@ async def emotion_analyze_video(file: UploadFile = File(...)):
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Serviço Emotion indisponível: {str(e)}")
 
+@app.post("/api/emotion/analyze-realtime")
+async def emotion_analyze_realtime(request: Request):
+    """Proxy para análise emocional em tempo real (Base64)"""
+    body = await request.json()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{SERVICE_URLS['emotion']}/analyze-realtime",
+                json=body,
+                timeout=30
+            )
+            return response.json()
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Serviço Emotion indisponível: {str(e)}")
+
 # Proxy para Voice Service
 @app.post("/api/voice/speak")
 async def voice_speak(request: Request):

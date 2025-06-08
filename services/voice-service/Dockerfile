@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     espeak \
     espeak-data \
+    git \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -35,8 +36,17 @@ COPY src/ ./src/
 # Criar diretório para arquivos de áudio
 RUN mkdir -p /app/output
 
+# Criar diretório para cache do Bark
+RUN mkdir -p /root/.cache/bark
+
 # Adicionar diretório local ao PATH
 ENV PATH=/root/.local/bin:$PATH
+
+# Variáveis de ambiente para Bark
+ENV BARK_USE_GPU=false
+ENV BARK_DEFAULT_VOICE=v2/pt_speaker_1
+ENV SUNO_OFFLOAD_CPU=True
+ENV SUNO_USE_SMALL_MODELS=False
 
 # Expor porta
 EXPOSE 8004

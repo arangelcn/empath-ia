@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Brain, Send, Loader2, AlertCircle, Info, Settings, Video, MessageCircle, Volume2, VolumeX } from 'lucide-react'
+import { Brain, Send, Loader2, AlertCircle, Info, Settings, Video, MessageCircle, Volume2, VolumeX, Camera } from 'lucide-react'
 import axios from 'axios'
 import AvatarDog from './components/AvatarDog'
 import VoiceSettings from './components/VoiceSettings'
+import WebcamEmotionCapture from './components/EmotionAnalysis/WebcamEmotionCapture'
 import audioService from './services/audioService'
 
 // API service
@@ -18,6 +19,7 @@ function App() {
   const [error, setError] = useState(null)
   const [showConfig, setShowConfig] = useState(false)
   const [showVoiceSettings, setShowVoiceSettings] = useState(false)
+  const [showEmotionCapture, setShowEmotionCapture] = useState(false)
   const [sessionId, setSessionId] = useState(null)
   const [conversationId, setConversationId] = useState(null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
@@ -25,6 +27,7 @@ function App() {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false)
   const [voiceServiceAvailable, setVoiceServiceAvailable] = useState(false)
   const [voiceServiceInfo, setVoiceServiceInfo] = useState(null)
+  const [currentEmotion, setCurrentEmotion] = useState(null)
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -247,6 +250,21 @@ function App() {
     initializeConversation()
   }
 
+  // Função para lidar com emoções detectadas
+  const handleEmotionDetected = (emotionData) => {
+    setCurrentEmotion(emotionData)
+    
+    // Log para desenvolvimento
+    console.log('Emoção detectada:', {
+      dominant: emotionData.dominant_emotion,
+      confidence: emotionData.confidence,
+      all_emotions: emotionData.emotions
+    })
+    
+    // Aqui você pode integrar com o chat se quiser
+    // Por exemplo, ajustar as respostas da IA baseado na emoção
+  }
+
   const MessageBubble = ({ message }) => {
     const isUser = message.type === 'user'
     const isError = message.type === 'error'
@@ -391,6 +409,20 @@ function App() {
               </button>
             )}
 
+            {/* Webcam Emotion Button */}
+            <button
+              onClick={() => setShowEmotionCapture(!showEmotionCapture)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                showEmotionCapture 
+                  ? 'bg-purple-600/20 text-purple-300 hover:bg-purple-600/30' 
+                  : 'bg-purple-600/20 text-purple-400 hover:bg-purple-600/30'
+              }`}
+              title={showEmotionCapture ? 'Fechar análise de emoções' : 'Analisar emoções via webcam'}
+            >
+              <Camera className="w-4 h-4" />
+              {showEmotionCapture ? 'Fechar Webcam' : 'Detectar Emoções'}
+            </button>
+
             {voiceServiceAvailable && (
               <div className="flex items-center gap-2 text-green-400 text-xs">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
@@ -430,6 +462,40 @@ function App() {
                 onClose={() => setShowVoiceSettings(false)}
                 className="max-w-4xl mx-auto"
               />
+            </div>
+          )}
+
+          {/* Emotion Analysis Panel */}
+          {showEmotionCapture && (
+            <div className="mt-6">
+              <WebcamEmotionCapture 
+                onEmotionDetected={handleEmotionDetected}
+              />
+            </div>
+          )}
+
+          {/* Current Emotion Indicator */}
+          {currentEmotion && currentEmotion.face_detected && (
+            <div className="mt-4 flex items-center justify-center">
+              <div className="bg-white/20 rounded-lg px-4 py-2 flex items-center gap-3">
+                <span className="text-white/80 text-sm">Emoção atual:</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-white font-medium">
+                    {currentEmotion.dominant_emotion === 'joy' && '😊 Alegria'}
+                    {currentEmotion.dominant_emotion === 'sadness' && '😢 Tristeza'}
+                    {currentEmotion.dominant_emotion === 'anger' && '😠 Raiva'}
+                    {currentEmotion.dominant_emotion === 'fear' && '😨 Medo'}
+                    {currentEmotion.dominant_emotion === 'surprise' && '😮 Surpresa'}
+                    {currentEmotion.dominant_emotion === 'disgust' && '🤢 Nojo'}
+                    {currentEmotion.dominant_emotion === 'neutral' && '😐 Neutro'}
+                    {!['joy', 'sadness', 'anger', 'fear', 'surprise', 'disgust', 'neutral'].includes(currentEmotion.dominant_emotion) && 
+                      `😐 ${currentEmotion.dominant_emotion}`}
+                  </span>
+                  <span className="text-white/60 text-xs">
+                    {Math.round((currentEmotion.confidence || 0) * 100)}%
+                  </span>
+                </div>
+              </div>
             </div>
           )}
         </div>
