@@ -52,7 +52,7 @@ class BarkService:
             "silent": False
         }
         
-        self.output_dir = Path("/app/output")
+        self.output_dir = Path(os.getenv("F5_TTS_OUTPUT_DIR", "/app/tts_output"))
         self.base_url = os.getenv("VOICE_SERVICE_BASE_URL", "http://localhost:8004")
         
         # Estado do modelo

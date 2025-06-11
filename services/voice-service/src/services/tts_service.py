@@ -66,7 +66,7 @@ class TTSService:
         self.device = "cuda" if self.use_gpu else "cpu"
         
         self.tts = None
-        self.output_dir = Path("/app/output")
+        self.output_dir = Path(os.getenv("F5_TTS_OUTPUT_DIR", "/app/tts_output"))
         self.base_url = os.getenv("VOICE_SERVICE_BASE_URL", "http://localhost:8004")
         
         # Configurações de qualidade para PT-BR

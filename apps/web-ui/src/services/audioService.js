@@ -1,5 +1,5 @@
 /**
- * Serviço de áudio para Text-to-Speech - Integração com Voice Service Aprimorado v2.0.0
+ * Serviço de áudio para Text-to-Speech - Integração com Voice Service F5-TTS v3.0.0
  */
 
 class AudioService {
@@ -8,12 +8,11 @@ class AudioService {
     this.currentAudio = null
     this.baseURL = '/api'
     
-    // Detectar ambiente - se em Docker, usar proxy, senão usar URL direta
-    this.voiceServiceURL = window.location.hostname === 'localhost' 
-      ? 'http://localhost:8004' 
-      : '/voice-service' // Proxy do Vite
+    // Forçar uso do gateway para garantir compatibilidade
+    // O gateway já está configurado para rotear corretamente
+    this.voiceServiceURL = '/api' // Sempre usar gateway
       
-    this.currentModel = 'vits_pt' // Modelo padrão
+    this.currentModel = 'F5-TTS-pt-br' // Modelo F5-TTS
     this.availableModels = {}
     this.serviceInfo = null
     
@@ -21,8 +20,9 @@ class AudioService {
     this.defaultSpeed = 1.0
     this.defaultLanguage = 'pt'
     
-    console.log('🎤 AudioService Enhanced v2.0.0 inicializado')
+    console.log('🎤 AudioService F5-TTS v3.0.0 inicializado')
     console.log('🔗 Voice Service URL:', this.voiceServiceURL)
+    console.log('🐳 Usando gateway para máxima compatibilidade')
   }
 
   /**
@@ -33,11 +33,11 @@ class AudioService {
       const serviceInfo = await this.getServiceInfo()
       if (serviceInfo) {
         this.serviceInfo = serviceInfo
-        this.currentModel = serviceInfo.current_model
-        this.availableModels = serviceInfo.models_available || []
-        console.log('🎯 Voice Service conectado:', {
+        this.currentModel = serviceInfo.model_name || 'F5-TTS-pt-br'
+        console.log('🎯 Voice Service F5-TTS conectado:', {
           modelo: this.currentModel,
-          modelos_disponíveis: this.availableModels
+          status: serviceInfo.status,
+          device: serviceInfo.device
         })
       }
     } catch (error) {
@@ -50,7 +50,7 @@ class AudioService {
    */
   async getServiceInfo() {
     try {
-      const response = await fetch(`${this.voiceServiceURL}/`, {
+      const response = await fetch(`${this.voiceServiceURL}/health`, {
         method: 'GET',
         timeout: 10000
       })
@@ -63,7 +63,7 @@ class AudioService {
     } catch (error) {
       // Fallback para gateway se voice service direto falhar
       try {
-        const response = await fetch(`${this.baseURL}/voice/info`, {
+        const response = await fetch(`${this.baseURL}/voice/health`, {
           method: 'GET',
           timeout: 10000
         })
@@ -80,18 +80,18 @@ class AudioService {
   }
 
   /**
-   * Verifica status do modelo TTS
+   * Verifica status do modelo F5-TTS
    */
   async getModelStatus() {
     try {
-      const response = await fetch(`${this.voiceServiceURL}/api/voice/models/status`, {
+      const response = await fetch(`${this.voiceServiceURL}/api/v1/model-info`, {
         method: 'GET',
         timeout: 10000
       })
 
       if (response.ok) {
         const status = await response.json()
-        this.currentModel = status.current_model
+        this.currentModel = status.model_name
         return status
       } else {
         throw new Error(`HTTP ${response.status}`)
@@ -103,19 +103,19 @@ class AudioService {
   }
 
   /**
-   * Lista modelos disponíveis
+   * Lista modelos disponíveis (F5-TTS)
    */
   async getAvailableModels() {
     try {
-      const response = await fetch(`${this.voiceServiceURL}/api/voice/models/available`, {
+      const response = await fetch(`${this.voiceServiceURL}/api/v1/model-info`, {
         method: 'GET',
         timeout: 10000
       })
 
       if (response.ok) {
         const data = await response.json()
-        this.availableModels = data.available_models || {}
-        return data
+        this.availableModels = { [data.model_name]: data }
+        return { available_models: this.availableModels, descriptions: { [data.model_name]: 'F5-TTS Português Brasileiro' } }
       } else {
         throw new Error(`HTTP ${response.status}`)
       }
@@ -126,30 +126,18 @@ class AudioService {
   }
 
   /**
-   * Troca o modelo TTS
+   * Troca o modelo TTS (F5-TTS é fixo)
    */
   async changeModel(modelKey) {
     try {
-      const response = await fetch(`${this.voiceServiceURL}/api/voice/models/change`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ model_key: modelKey }),
-        timeout: 30000
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        if (result.success) {
-          this.currentModel = modelKey
-          console.log(`✅ Modelo alterado para: ${modelKey}`)
-          return { success: true, data: result }
-        } else {
-          throw new Error(result.message || 'Falha ao trocar modelo')
-        }
+      // F5-TTS é um modelo fixo, mas mantemos compatibilidade
+      if (modelKey === 'F5-TTS-pt-br' || modelKey === 'firstpixel/F5-TTS-pt-br') {
+        this.currentModel = 'F5-TTS-pt-br'
+        console.log(`✅ Modelo confirmado: ${this.currentModel}`)
+        return { success: true, data: { model_name: this.currentModel } }
       } else {
-        throw new Error(`HTTP ${response.status}`)
+        console.warn(`⚠️ Modelo ${modelKey} não suportado, mantendo F5-TTS-pt-br`)
+        return { success: false, error: 'Apenas F5-TTS-pt-br é suportado' }
       }
     } catch (error) {
       console.error('❌ Erro ao trocar modelo:', error.message)
@@ -158,7 +146,7 @@ class AudioService {
   }
 
   /**
-   * Sintetiza e reproduz texto em áudio com suporte aprimorado
+   * Sintetiza e reproduz texto em áudio com F5-TTS
    * @param {string} text - Texto para converter em áudio
    * @param {Object} options - Opções de configuração
    */
@@ -173,16 +161,15 @@ class AudioService {
       }
 
       const requestData = {
-        text: text.substring(0, 1000), // Aumentar limite para melhor experiência
-        voice_speed: options.speed || this.defaultSpeed,
-        language: options.language || this.defaultLanguage
+        text: text.substring(0, 1000), // Limite de caracteres
+        voice_speed: options.speed || this.defaultSpeed
       }
 
-      console.log('🎤 Solicitando TTS para:', `"${text.substring(0, 50)}..."`)
+      console.log('🎤 Solicitando F5-TTS para:', `"${text.substring(0, 50)}..."`)
       console.log('📊 Configurações:', {
         modelo: this.currentModel,
         velocidade: requestData.voice_speed,
-        idioma: requestData.language
+        caracteres: text.length
       })
 
       // Tentar voice service direto primeiro (melhor performance)
@@ -190,7 +177,7 @@ class AudioService {
       let data
 
       try {
-        response = await fetch(`${this.voiceServiceURL}/speak`, {
+        response = await fetch(`${this.voiceServiceURL}/api/v1/synthesize`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -208,7 +195,7 @@ class AudioService {
         console.warn('⚠️ Voice service direto falhou, tentando via gateway:', directError.message)
         
         // Fallback para gateway
-        response = await fetch(`${this.baseURL}/voice/speak`, {
+        response = await fetch(`${this.baseURL}/voice/synthesize`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -225,11 +212,12 @@ class AudioService {
       }
 
       if (data.success && data.audio_url) {
-        console.log('✅ TTS gerado com sucesso:', {
+        console.log('✅ F5-TTS gerado com sucesso:', {
           arquivo: data.filename,
           duração: `${data.duration?.toFixed(2)}s`,
           modelo: this.currentModel,
-          url: data.audio_url
+          url: data.audio_url,
+          caracteres: data.text_length
         })
         
         await this.playAudioFromUrl(data.audio_url)
@@ -239,10 +227,10 @@ class AudioService {
       }
 
     } catch (error) {
-      console.error('❌ Erro no TTS:', error)
+      console.error('❌ Erro no F5-TTS:', error)
       return { 
         success: false, 
-        message: `Erro TTS: ${error.message}`,
+        message: `Erro F5-TTS: ${error.message}`,
         error 
       }
     }
@@ -326,11 +314,17 @@ class AudioService {
         // Processar URL para garantir acesso correto
         let finalAudioUrl = this.processAudioUrl(audioUrl)
         
+        console.log('🎵 Tentando reproduzir áudio:', {
+          original: audioUrl,
+          processada: finalAudioUrl,
+          voiceServiceURL: this.voiceServiceURL
+        })
+        
         this.currentAudio = new Audio(finalAudioUrl)
         
         // Configurar eventos
         this.currentAudio.onloadstart = () => {
-          console.log('📥 Carregando áudio...')
+          console.log('📥 Carregando áudio...', finalAudioUrl)
         }
 
         this.currentAudio.onloadeddata = () => {
@@ -348,7 +342,14 @@ class AudioService {
         }
 
         this.currentAudio.onerror = (error) => {
-          console.error('❌ Erro na reprodução:', error)
+          console.error('❌ Erro na reprodução:', {
+            error,
+            url: finalAudioUrl,
+            networkState: this.currentAudio.networkState,
+            readyState: this.currentAudio.readyState,
+            errorCode: this.currentAudio.error?.code,
+            errorMessage: this.currentAudio.error?.message
+          })
           this.currentAudio = null
           reject(error)
         }
@@ -357,13 +358,34 @@ class AudioService {
           console.log('⏸️ Reprodução pausada')
         }
 
+        this.currentAudio.oncanplay = () => {
+          console.log('✅ Áudio pronto para reprodução')
+        }
+
+        this.currentAudio.oncanplaythrough = () => {
+          console.log('✅ Áudio totalmente carregado')
+        }
+
+        this.currentAudio.onstalled = () => {
+          console.warn('⚠️ Carregamento do áudio travou')
+        }
+
+        this.currentAudio.onsuspend = () => {
+          console.warn('⚠️ Carregamento do áudio suspenso')
+        }
+
         // Configurar volume e qualidade
         this.currentAudio.volume = 0.8
         this.currentAudio.preload = 'auto'
 
         // Tentar reproduzir
+        console.log('🚀 Iniciando reprodução...')
         this.currentAudio.play().catch(error => {
-          console.error('❌ Erro ao iniciar reprodução:', error)
+          console.error('❌ Erro ao iniciar reprodução:', {
+            error: error.message,
+            name: error.name,
+            url: finalAudioUrl
+          })
           reject(error)
         })
 
@@ -378,35 +400,30 @@ class AudioService {
    * Processa URL do áudio para garantir acesso correto
    */
   processAudioUrl(audioUrl) {
-    // Se for URL completa do voice service, manter
-    if (audioUrl.includes('http://localhost:8004')) {
+    console.log('🔗 Processando URL do áudio:', audioUrl)
+    
+    // Sempre converter URLs do F5-TTS para o gateway
+    if (audioUrl.startsWith('/api/v1/audio/')) {
+      const newUrl = audioUrl.replace('/api/v1/audio/', '/api/voice/audio/')
+      console.log('🔄 F5-TTS para gateway:', newUrl)
+      return newUrl
+    }
+    
+    // Se já for do gateway, manter
+    if (audioUrl.startsWith('/api/voice/audio/')) {
+      console.log('✅ URL do gateway detectada')
       return audioUrl
     }
     
-    // Se estivermos usando proxy, converter para usar proxy
-    if (this.voiceServiceURL === '/voice-service') {
-      if (audioUrl.includes('localhost:8004')) {
-        return audioUrl.replace('http://localhost:8004', '/voice-service')
-      }
-      if (audioUrl.startsWith('/audio/')) {
-        return `/voice-service${audioUrl}`
-      }
+    // Se for URL completa, extrair apenas o filename e usar gateway
+    if (audioUrl.includes('/audio/')) {
+      const filename = audioUrl.split('/audio/').pop()
+      const newUrl = `/api/voice/audio/${filename}`
+      console.log('🔄 URL completa convertida para gateway:', newUrl)
+      return newUrl
     }
     
-    // Se for do gateway, converter para voice service direto para melhor performance
-    if (audioUrl.includes('localhost:8000/api/voice')) {
-      if (this.voiceServiceURL === '/voice-service') {
-        return audioUrl.replace('localhost:8000/api/voice', '/voice-service')
-      } else {
-        return audioUrl.replace('localhost:8000/api/voice', 'localhost:8004')
-      }
-    }
-    
-    // Caso contrário, tentar construir URL correta
-    if (audioUrl.startsWith('/api/voice/audio/')) {
-      return audioUrl.replace('/api/voice', this.voiceServiceURL)
-    }
-    
+    console.log('⚠️ URL não processada, retornando original:', audioUrl)
     return audioUrl
   }
 
@@ -578,7 +595,7 @@ const audioService = new AudioService()
 
 // Inicializar quando possível
 audioService.testVoiceService().then(() => {
-  console.log('🎉 AudioService Enhanced pronto para uso!')
+  console.log('🎉 AudioService F5-TTS pronto para uso!')
 })
 
 export default audioService 

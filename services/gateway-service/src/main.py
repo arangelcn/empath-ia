@@ -301,26 +301,57 @@ async def emotion_analyze_realtime(request: Request):
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Serviço Emotion indisponível: {str(e)}")
 
-# Proxy para Voice Service
+# Proxy para Voice Service - F5-TTS
 @app.post("/api/voice/speak")
 async def voice_speak(request: Request):
-    """Text-to-speech através do voice service"""
+    """Text-to-speech através do voice service (LEGADO - usar /synthesize)"""
     body = await request.json()
     
     async with httpx.AsyncClient() as client:
         try:
+            # Redirecionar para o novo endpoint /synthesize
             response = await client.post(
-                f"{SERVICE_URLS['voice']}/speak",
+                f"{SERVICE_URLS['voice']}/api/v1/synthesize",
                 json=body,
                 timeout=30
             )
             
             if response.status_code == 200:
-                # Retornar arquivo de áudio
                 return response.json()
             else:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
                 
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
+
+@app.post("/api/voice/synthesize")
+async def voice_synthesize(request: Request):
+    """Text-to-speech com F5-TTS (NOVO)"""
+    body = await request.json()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{SERVICE_URLS['voice']}/api/v1/synthesize",
+                json=body,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+                
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
+
+@app.get("/api/voice/health")
+async def voice_health():
+    """Status do voice service F5-TTS"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{SERVICE_URLS['voice']}/health", timeout=10)
+            return response.json()
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
 
@@ -329,18 +360,28 @@ async def voice_config():
     """Obter configurações do voice service"""
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(f"{SERVICE_URLS['voice']}/config", timeout=10)
+            response = await client.get(f"{SERVICE_URLS['voice']}/api/v1/model-info", timeout=10)
             return response.json()
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
 
 @app.get("/api/voice/models")
 async def voice_models():
-    """Listar modelos de TTS disponíveis"""
+    """Listar modelos de TTS disponíveis (F5-TTS)"""
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(f"{SERVICE_URLS['voice']}/models", timeout=10)
-            return response.json()
+            response = await client.get(f"{SERVICE_URLS['voice']}/api/v1/model-info", timeout=10)
+            model_info = response.json()
+            # Formatar resposta para compatibilidade
+            return {
+                "available_models": {
+                    model_info.get("model_name", "F5-TTS-pt-br"): model_info
+                },
+                "current_model": model_info.get("model_name", "F5-TTS-pt-br"),
+                "descriptions": {
+                    model_info.get("model_name", "F5-TTS-pt-br"): "F5-TTS Português Brasileiro"
+                }
+            }
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
 
@@ -350,7 +391,7 @@ async def voice_audio(filename: str):
     """Servir arquivos de áudio gerados pelo voice service"""
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(f"{SERVICE_URLS['voice']}/audio/{filename}", timeout=30)
+            response = await client.get(f"{SERVICE_URLS['voice']}/api/v1/audio/{filename}", timeout=30)
             
             if response.status_code == 200:
                 return Response(

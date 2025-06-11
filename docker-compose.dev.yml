@@ -61,7 +61,7 @@ services:
       - SQL_DEBUG=${DEBUG:-true}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
     volumes:
-      - ./data/tts_output:/shared_tts
+      - ./data/tts_output:/app/tts_output
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
@@ -116,6 +116,51 @@ services:
     networks:
       - empatia-network
 
+  voice-service:
+    build:
+      context: ./services/voice-service
+      dockerfile: Dockerfile
+    container_name: empatia-voice-service-dev
+    ports:
+      - "${VOICE_SERVICE_PORT:-8004}:8004"
+    environment:
+      # Configurações básicas
+      - PYTHONPATH=/app
+      - DEBUG=${DEBUG:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      
+      # Configurações F5-TTS
+      - F5_TTS_MODEL=${F5_TTS_MODEL:-firstpixel/F5-TTS-pt-br}
+      - F5_TTS_DEVICE=${F5_TTS_DEVICE:-cpu}
+      - F5_TTS_OUTPUT_DIR=/app/tts_output
+      
+      # Configurações de cache
+      - HF_HOME=/tmp/huggingface_cache
+      - TRANSFORMERS_CACHE=/tmp/transformers_cache
+      - TORCH_HOME=/tmp/torch_cache
+      
+      # Configurações do serviço
+      - VOICE_SERVICE_HOST=0.0.0.0
+      - VOICE_SERVICE_PORT=8004
+      - VOICE_SERVICE_BASE_URL=${VOICE_SERVICE_BASE_URL:-http://localhost:8004}
+    volumes:
+      # Volume para desenvolvimento (hot reload)
+      - ./services/voice-service/src:/app/src
+      # Volume compartilhado para arquivos de áudio - mapeado para diretório local
+      - ./data/tts_output:/app/tts_output
+      # Cache volumes para melhor performance
+      - f5_tts_cache_dev:/tmp/huggingface_cache
+      - torch_cache_dev:/tmp/torch_cache
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8004", "--reload", "--log-level", "debug"]
+    networks:
+      - empatia-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
   web-ui:
     build:
       context: ./apps/web-ui
@@ -132,23 +177,6 @@ services:
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     networks:
       - empatia-network
-
-  voice-service:
-    build:
-      context: ./services/voice-service
-      dockerfile: Dockerfile
-    ports:
-      - "${VOICE_SERVICE_PORT:-8004}:8004"
-    environment:
-      - PYTHONPATH=/app/src
-      - DEBUG=True
-    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8004", "--reload", "--log-level", "debug"]
-    depends_on:
-      - mongodb
-    networks:
-      - empatia-network
-    volumes:
-      - ./services/voice-service/src:/app/src
 
   admin-panel:
     build:
@@ -193,6 +221,10 @@ volumes:
   mongodb_data_dev:
   redis_data_dev:
   postgres_data_dev:
+  # Novos volumes para o voice-service
+  voice_output_dev:
+  f5_tts_cache_dev:
+  torch_cache_dev:
 
 # Rede para comunicação entre serviços
 networks:
