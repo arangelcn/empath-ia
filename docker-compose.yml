@@ -6,8 +6,6 @@ services:
     image: mongo:7.0
     container_name: empatia-mongodb
     restart: unless-stopped
-    ports:
-      - "${MONGODB_PORT:-27017}:27017"
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-admin}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:-admin123}
@@ -64,8 +62,6 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     volumes:
       - ./services/ai-service:/app
-    ports:
-      - "${AI_SERVICE_PORT:-8001}:8001"
     networks:
       - empatia-network
     develop:
@@ -87,8 +83,6 @@ services:
       - DID_API_PASSWORD=${DID_API_PASSWORD:-}
     volumes:
       - ./services/avatar-service:/app
-    ports:
-      - "${AVATAR_SERVICE_PORT:-8002}:8002"
     networks:
       - empatia-network
     develop:
@@ -108,8 +102,6 @@ services:
     volumes:
       - ./services/emotion-service:/app
       - ./data/shared:/shared_data
-    ports:
-      - "${EMOTION_SERVICE_PORT:-8003}:8003"
     networks:
       - empatia-network
     develop:
@@ -120,7 +112,7 @@ services:
           ignore:
             - __pycache__/
 
-  # Voice Service - Text-to-Speech com Coqui TTS XTTS v2
+  # Voice Service - Google Cloud Text-to-Speech
   voice-service:
     build: ./services/voice-service
     container_name: empatia-voice-service
@@ -129,25 +121,14 @@ services:
     environment:
       - VOICE_SERVICE_PORT=${VOICE_SERVICE_PORT:-8004}
       - VOICE_SERVICE_BASE_URL=${VOICE_SERVICE_BASE_URL:-http://localhost:8004}
-      # Configurações específicas do XTTS v2
-      - COQUI_TOS_AGREED=1
-      - TTS_MODEL=${TTS_MODEL:-xtts_v2}
-      - TTS_USE_GPU=${TTS_USE_GPU:-false}
-      - TTS_LANGUAGE=${TTS_LANGUAGE:-pt}
-      - TTS_HOME=/app/models/tts
-      - TTS_CACHE_PATH=/tmp/tts_cache
-      - TTS_MODELS_PATH=/app/models/tts
-      # Configurações de performance
-      - TORCH_HOME=/tmp/torch_cache
-      - HF_HOME=/tmp/hf_cache
-      - TRANSFORMERS_CACHE=/tmp/transformers_cache
+      # Configurações Google Cloud Text-to-Speech
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-deff8cdf0d47.json
+      - TTS_OUTPUT_DIR=/app/output
     volumes:
       - ./services/voice-service:/app
       - ./data/tts_output:/app/output
-      - ./data/models:/app/models  # Cache persistente de modelos
-      - voice_cache:/tmp/tts_cache  # Cache temporário
-    ports:
-      - "${VOICE_SERVICE_PORT:-8004}:8004"
+      # Volume para credenciais do GCP
+      - ./services/voice-service/credentials/empathia-462921-deff8cdf0d47.json:/app/credentials/empathia-462921-deff8cdf0d47.json:ro
     networks:
       - empatia-network
     healthcheck:
@@ -194,8 +175,6 @@ services:
   redis:
     image: redis:7-alpine
     container_name: empatia-redis
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -212,8 +191,6 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-empatia123}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     networks:
       - empatia-network
     profiles:

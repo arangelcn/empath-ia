@@ -1,0 +1,1 @@
+export { default as WebcamEmotionCapture } from './WebcamEmotionCapture.jsx'; 

@@ -1,202 +1,172 @@
 """
-Voice Service - Serviço de Text-to-Speech usando F5-TTS-pt-br
+Voice Service - Serviço de síntese de voz usando Google Cloud Text-to-Speech API
+Documentação oficial: https://cloud.google.com/text-to-speech/docs/quickstart-client-libraries
 """
+
 import os
+import sys
 import logging
+import uvicorn
+from pathlib import Path
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from pathlib import Path
-
-from .services.f5_tts_service import F5TTSService
-from .api.voice_api import router as voice_router, set_f5_tts_service
-from .models.voice_models import HealthResponse
 
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('/app/logs/voice-service.log', mode='a')
+    ]
 )
+
 logger = logging.getLogger(__name__)
 
-# Configurações do serviço
-SERVICE_NAME = "voice-service"
-SERVICE_VERSION = "2.0.0"
-SERVICE_DESCRIPTION = "Serviço de Text-to-Speech usando F5-TTS-pt-br"
-
-# Instância global do serviço F5-TTS
-f5_tts_service = None
+# Importar API
+from .api.voice_api import router as voice_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Gerencia o ciclo de vida da aplicação"""
-    global f5_tts_service
-    
-    # Startup
-    logger.info(f"🚀 Iniciando {SERVICE_NAME} v{SERVICE_VERSION}")
-    logger.info(f"📝 {SERVICE_DESCRIPTION}")
+    """
+    Gerenciar ciclo de vida da aplicação
+    """
+    logger.info("🚀 Iniciando Voice Service com Google Cloud Text-to-Speech...")
     
     try:
-        # Inicializar serviço F5-TTS
-        logger.info("🔧 Inicializando serviço F5-TTS...")
-        f5_tts_service = F5TTSService()
+        # Criar diretórios necessários
+        os.makedirs("/app/logs", exist_ok=True)
+        os.makedirs("/app/output", exist_ok=True)
         
-        # Configurar o serviço na API
-        set_f5_tts_service(f5_tts_service)
+        logger.info("✅ Diretórios criados com sucesso")
         
-        # Tentar carregar o modelo
-        logger.info("📦 Carregando modelo F5-TTS...")
-        if f5_tts_service.load_model():
-            logger.info("✅ Modelo F5-TTS carregado com sucesso!")
+        # Verificar configuração do GCP
+        gcp_credentials = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        if gcp_credentials:
+            logger.info(f"✅ Credenciais GCP configuradas: {gcp_credentials}")
         else:
-            logger.warning("⚠️ Modelo F5-TTS não pôde ser carregado no startup")
+            logger.warning("⚠️ GOOGLE_APPLICATION_CREDENTIALS não definida - usando credenciais padrão do ambiente")
         
-        logger.info("🎉 Voice Service iniciado com sucesso!")
+        # Testar importações críticas
+        try:
+            from google.cloud import texttospeech
+            logger.info("✅ Google Cloud Text-to-Speech carregado")
+            
+            # Testar inicialização do cliente (sem fazer requisições)
+            try:
+                client = texttospeech.TextToSpeechClient()
+                logger.info("✅ Cliente GCP Text-to-Speech inicializado")
+            except Exception as e:
+                logger.warning(f"⚠️ Aviso na inicialização do cliente GCP: {e}")
+                
+        except ImportError as e:
+            logger.error(f"❌ Erro ao importar Google Cloud Text-to-Speech: {e}")
+            raise
+        
+        logger.info("🎙️ Voice Service iniciado com sucesso!")
+        
+        yield
         
     except Exception as e:
-        logger.error(f"❌ Erro ao inicializar Voice Service: {e}")
+        logger.error(f"❌ Erro na inicialização: {e}")
         raise
-    
-    yield
-    
-    # Shutdown
-    logger.info("🛑 Finalizando Voice Service...")
-    if f5_tts_service:
-        # Cleanup se necessário
-        try:
-            f5_tts_service.cleanup_old_files(max_age_hours=1)
-        except Exception as e:
-            logger.error(f"Erro na limpeza final: {e}")
-    
-    logger.info("👋 Voice Service finalizado")
+    finally:
+        logger.info("🛑 Finalizando Voice Service...")
 
 # Criar aplicação FastAPI
 app = FastAPI(
-    title=SERVICE_NAME,
-    description=SERVICE_DESCRIPTION,
-    version=SERVICE_VERSION,
-    lifespan=lifespan,
+    title="Voice Service - GCP TTS",
+    description="Serviço de síntese de voz usando Google Cloud Text-to-Speech API",
+    version="3.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, especificar origens específicas
+    allow_origins=["*"],  # Em produção, especificar domínios
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Incluir rotas da API
-app.include_router(voice_router, prefix="/api/v1", tags=["voice"])
+# Incluir routers
+app.include_router(voice_router)
 
-# Rota raiz
+# Endpoints básicos
 @app.get("/")
 async def root():
-    """Endpoint raiz com informações do serviço"""
-    global f5_tts_service
-    
-    model_info = None
-    if f5_tts_service:
-        try:
-            model_info = f5_tts_service.get_model_info()
-        except Exception as e:
-            logger.error(f"Erro ao obter info do modelo: {e}")
-    
+    """
+    Endpoint raiz
+    """
     return {
-        "service": SERVICE_NAME,
-        "version": SERVICE_VERSION,
-        "description": SERVICE_DESCRIPTION,
+        "service": "voice-service",
+        "version": "3.0.0",
+        "description": "Serviço de síntese de voz usando Google Cloud Text-to-Speech API",
+        "provider": "Google Cloud",
         "status": "running",
-        "model_info": model_info,
-        "endpoints": {
-            "health": "/api/v1/health",
-            "synthesize": "/api/v1/synthesize",
-            "synthesize_form": "/api/v1/synthesize-form",
-            "model_info": "/api/v1/model-info",
-            "audio": "/api/v1/audio/{filename}",
-            "cleanup": "/api/v1/cleanup",
-            "docs": "/docs",
-            "redoc": "/redoc"
-        }
+        "docs": "/docs",
+        "health": "/api/v1/health"
     }
 
-# Health check global
 @app.get("/health")
-async def global_health():
-    """Health check global do serviço"""
-    global f5_tts_service
-    
-    if not f5_tts_service:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "error",
-                "service": SERVICE_NAME,
-                "message": "Serviço F5-TTS não inicializado"
-            }
-        )
-    
+async def health():
+    """
+    Health check básico
+    """
     try:
-        model_info = f5_tts_service.get_model_info()
+        from google.cloud import texttospeech
+        
+        # Verificar credenciais
+        gcp_credentials = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        credentials_status = "configured" if gcp_credentials else "using_default"
+        
         return {
-            "status": "healthy" if model_info["model_loaded"] else "loading",
-            "service": SERVICE_NAME,
-            "version": SERVICE_VERSION,
-            "model_loaded": model_info["model_loaded"],
-            "device": model_info["device"]
+            "status": "healthy",
+            "service": "voice-service-gcp",
+            "version": "3.0.0",
+            "provider": "Google Cloud Text-to-Speech",
+            "credentials_status": credentials_status,
+            "output_dir": "/app/output"
         }
     except Exception as e:
-        logger.error(f"Erro no health check: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "error",
-                "service": SERVICE_NAME,
-                "message": f"Erro interno: {str(e)}"
-            }
-        )
-
-# Servir arquivos de áudio estáticos
-output_dir = Path(os.getenv("F5_TTS_OUTPUT_DIR", "/app/tts_output"))
-if output_dir.exists():
-    app.mount("/audio", StaticFiles(directory=str(output_dir)), name="audio")
-else:
-    logger.warning(f"Diretório de áudio não encontrado: {output_dir}")
-    # Criar diretório se não existir
-    output_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/audio", StaticFiles(directory=str(output_dir)), name="audio")
+        logger.error(f"❌ Erro no health check: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro no health check: {str(e)}")
 
 # Handler de exceções global
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Handler global para exceções não tratadas"""
-    logger.error(f"Exceção não tratada: {exc}")
+    """
+    Handler global para exceções não tratadas
+    """
+    logger.error(f"❌ Erro não tratado: {exc}")
     return JSONResponse(
         status_code=500,
         content={
-            "status": "error",
-            "service": SERVICE_NAME,
-            "message": "Erro interno do servidor"
+            "error": "Erro interno do servidor",
+            "detail": str(exc),
+            "type": type(exc).__name__
         }
     )
 
 if __name__ == "__main__":
-    import uvicorn
+    # Configurações do servidor
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 8004))
+    workers = int(os.getenv("WORKERS", 1))
     
-    port = int(os.getenv("VOICE_SERVICE_PORT", 8004))
-    host = os.getenv("VOICE_SERVICE_HOST", "0.0.0.0")
-    
-    logger.info(f"🚀 Iniciando servidor em {host}:{port}")
+    logger.info(f"🚀 Iniciando servidor em {host}:{port} com {workers} workers")
     
     uvicorn.run(
-        "main:app",
+        "src.main:app",
         host=host,
         port=port,
+        workers=workers,
         reload=False,
         log_level="info"
     ) 

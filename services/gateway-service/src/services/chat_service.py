@@ -3,6 +3,8 @@ Serviço de chat - orquestra conversas e mensagens
 """
 
 import time
+import os
+import httpx
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import logging
@@ -11,6 +13,10 @@ from ..models.conversation import ConversationModel, ConversationRepository
 from ..models.message import MessageModel, MessageRepository
 
 logger = logging.getLogger(__name__)
+
+AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://ai-service:8001")
+VOICE_SERVICE_URL = os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004")
+GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8000")
 
 class ChatService:
     """
@@ -115,7 +121,8 @@ class ChatService:
                     "type": "ai",
                     "timestamp": ai_msg.created_at.isoformat(),
                     "hasVideo": ai_response.get("has_video", False),
-                    "videoUrl": ai_response.get("video_url")
+                    "videoUrl": ai_response.get("video_url"),
+                    "audioUrl": ai_response.get("audio_url")
                 },
                 "processing_time_ms": int((time.time() - start_time) * 1000),
                 "total_messages": conversation_data["message_count"] + 2
@@ -139,36 +146,51 @@ class ChatService:
     
     async def _generate_ai_response(self, user_message: str, history: List[Dict]) -> Dict[str, Any]:
         """
-        Gerar resposta da IA (temporariamente resposta padrão)
+        Gerar resposta da IA (temporariamente resposta padrão) e sintetizar áudio.
         """
-        # TODO: Integrar com OpenAI posteriormente
-        
         # Respostas padrão baseadas em contexto simples
         user_lower = user_message.lower()
         
         if any(word in user_lower for word in ["olá", "oi", "hello", "hi"]):
-            response = "Olá! Sou sua psicóloga virtual. Como posso ajudá-lo hoje? Conte-me o que está sentindo."
-        
+            response_text = "Olá! Sou sua psicóloga virtual. Como posso ajudá-lo hoje? Conte-me o que está sentindo."
         elif any(word in user_lower for word in ["triste", "deprimido", "depressão", "mal"]):
-            response = "Entendo que você está passando por um momento difícil. É muito corajoso buscar ajuda. Pode me contar mais sobre o que está sentindo? Lembre-se: você não está sozinho."
-        
+            response_text = "Entendo que você está passando por um momento difícil. É muito corajoso buscar ajuda. Pode me contar mais sobre o que está sentindo? Lembre-se: você não está sozinho."
         elif any(word in user_lower for word in ["ansioso", "ansiedade", "nervoso", "preocupado"]):
-            response = "A ansiedade é algo muito comum e tratável. Vamos trabalhar juntos para encontrar estratégias que funcionem para você. Que situações costumam despertar essa ansiedade?"
-        
+            response_text = "A ansiedade é algo muito comum e tratável. Vamos trabalhar juntos para encontrar estratégias que funcionem para você. Que situações costumam despertar essa ansiedade?"
         elif any(word in user_lower for word in ["obrigado", "obrigada", "thank", "thanks"]):
-            response = "Fico feliz em poder ajudar! É um prazer acompanhá-lo nessa jornada. Como você está se sentindo agora?"
-        
+            response_text = "Fico feliz em poder ajudar! É um prazer acompanhá-lo nessa jornada. Como você está se sentindo agora?"
         elif any(word in user_lower for word in ["tchau", "bye", "adeus"]):
-            response = "Foi um prazer conversar com você. Lembre-se: estou sempre aqui quando precisar. Cuide-se bem! 💙"
-        
+            response_text = "Foi um prazer conversar com você. Lembre-se: estou sempre aqui quando precisar. Cuide-se bem! 💙"
         else:
-            # Resposta genérica empática
-            response = f"Entendo sua preocupação. É importante que você tenha compartilhado isso comigo. Vamos explorar essa questão juntos. Pode me contar mais detalhes sobre como isso afeta seu dia a dia?"
-        
+            response_text = f"Entendo sua preocupação. É importante que você tenha compartilhado isso comigo. Vamos explorar essa questão juntos. Pode me contar mais detalhes sobre como isso afeta seu dia a dia?"
+
+        # Sintetizar áudio com o Voice Service
+        audio_url = None
+        try:
+            async with httpx.AsyncClient() as client:
+                response_voice = await client.post(
+                    f"{VOICE_SERVICE_URL}/api/v1/synthesize",
+                    json={"text": response_text, "language": "pt", "speed": 1.0},
+                    timeout=30
+                )
+                if response_voice.status_code == 200:
+                    voice_response = response_voice.json()
+                    voice_audio_url = voice_response.get("audio_url")
+                    if voice_audio_url:
+                        # Extrair apenas o nome do arquivo da URL do voice-service
+                        filename = voice_audio_url.split("/")[-1]
+                        # Construir URL que aponta para o proxy do gateway
+                        audio_url = f"{GATEWAY_URL}/api/voice/audio/{filename}"
+                else:
+                    logger.error(f"Voice service error: {response_voice.status_code} - {response_voice.text}")
+        except Exception as e:
+            logger.warning(f"Falha ao contatar o Voice Service: {e}")
+
         return {
-            "content": response,
-            "has_video": False,  # Por enquanto sem vídeo
-            "video_url": None
+            "content": response_text,
+            "has_video": False,
+            "video_url": None,
+            "audio_url": audio_url
         }
     
     async def get_conversation_history(self, session_id: str) -> Dict[str, Any]:
@@ -199,29 +221,41 @@ class ChatService:
             
             result = []
             for conv in conversations:
-                # Obter última mensagem para preview
-                messages = await self.message_repo.get_messages_by_conversation(
-                    conv.id, skip=max(0, conv.message_count - 1), limit=1
-                )
-                
-                last_message = messages[0] if messages else None
-                
                 result.append({
                     "conversation_id": conv.id,
                     "session_id": conv.session_id,
-                    "title": conv.title or "Conversa sem título",
                     "created_at": conv.created_at.isoformat(),
-                    "updated_at": conv.updated_at.isoformat(),
-                    "message_count": conv.message_count,
-                    "last_message": {
-                        "content": last_message.content[:100] + "..." if last_message and len(last_message.content) > 100 else last_message.content if last_message else "",
-                        "type": last_message.message_type if last_message else "system",
-                        "timestamp": last_message.created_at.isoformat() if last_message else conv.created_at.isoformat()
-                    } if last_message else None
+                    "message_count": conv.message_count
                 })
-            
+                
             return result
             
         except Exception as e:
             logger.error(f"Erro ao listar conversas: {e}")
+            raise
+
+    async def get_conversation_by_session_id(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Busca uma conversa pelo session_id e retorna como dicionário."""
+        try:
+            conversation = await self.conversation_repo.get_conversation_by_session_id(session_id)
+            if conversation:
+                # Converte o modelo Pydantic para um dicionário
+                return conversation.model_dump(by_alias=True)
+            return None
+        except Exception as e:
+            logger.error(f"Erro ao buscar conversa por session_id: {e}")
+            raise
+
+    async def update_conversation_data(self, session_id: str, data: Dict[str, Any]) -> bool:
+        """Atualiza uma conversa com novos dados."""
+        try:
+            conversation = await self.conversation_repo.get_conversation_by_session_id(session_id)
+            if not conversation:
+                return False
+            
+            # O método de atualização deve estar no repositório
+            success = await self.conversation_repo.update_conversation(conversation.id, data)
+            return success
+        except Exception as e:
+            logger.error(f"Erro ao atualizar dados da conversa: {e}")
             raise 

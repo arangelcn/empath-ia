@@ -1,0 +1,1 @@
+export { default as AvatarDog } from './AvatarDog.jsx'; 

@@ -88,6 +88,50 @@ API_HOST=0.0.0.0
 API_PORT=8004
 ```
 
+## 🚀 Aceleração por GPU
+
+O Voice Service suporta aceleração por GPU para melhor performance na síntese de voz.
+
+### Configuração de GPU
+
+Para habilitar GPU, configure as seguintes variáveis de ambiente:
+
+```bash
+# Dispositivo F5-TTS (auto detecta GPU automaticamente)
+F5_TTS_DEVICE=cuda  # ou 'auto' para detecção automática
+
+# Configurações CUDA (quando usando GPU)
+CUDA_VISIBLE_DEVICES=0
+NVIDIA_VISIBLE_DEVICES=all
+NVIDIA_DRIVER_CAPABILITIES=compute,utility
+```
+
+### Pré-requisitos para GPU
+
+1. **NVIDIA Docker Runtime** instalado
+2. **Drivers NVIDIA** compatíveis
+3. **CUDA** 11.8+ (incluído na imagem Docker)
+
+### Verificar Uso de GPU
+
+```bash
+# Verificar nos logs se GPU foi detectada
+docker logs empatia-voice-service-dev | grep -i "cuda\|gpu"
+
+# Monitorar uso da GPU
+nvidia-smi
+
+# Durante síntese, verificar atividade
+watch -n 1 nvidia-smi
+```
+
+### Performance GPU vs CPU
+
+- **CPU**: ~10-30 segundos para textos médios
+- **GPU**: ~2-8 segundos para textos médios (3-5x mais rápido)
+
+Para mais detalhes, consulte: [GPU_SETUP.md](./GPU_SETUP.md)
+
 ## 📚 API Endpoints
 
 ### Health Check

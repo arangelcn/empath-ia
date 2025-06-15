@@ -1,263 +1,194 @@
 """
-API endpoints para o serviço de voz usando F5-TTS
+Voice API - Endpoints para síntese de voz usando Google Cloud Text-to-Speech API
+Documentação oficial: https://cloud.google.com/text-to-speech/docs/quickstart-client-libraries
 """
-from fastapi import APIRouter, HTTPException, Form
-from fastapi.responses import FileResponse
-from typing import Optional
-import logging
-import os
-from pathlib import Path
-from datetime import datetime
 
-from ..models.voice_models import (
-    SynthesizeRequest, SynthesizeResponse, 
-    TextToSpeechRequest, TextToSpeechResponse,
-    HealthResponse, ModelInfo
-)
-from ..services.f5_tts_service import F5TTSService
+import os
+import logging
+from pathlib import Path
+from typing import Optional, Dict, Any
+
+from fastapi import APIRouter, HTTPException, Query, File, UploadFile
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+
+from ..services.gcp_tts_service import GCPTextToSpeechService
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
 
-# Instância global do serviço F5-TTS
-f5_tts_service = None
+# Inicializar serviço
+voice_service = GCPTextToSpeechService()
 
-def set_f5_tts_service(service: F5TTSService):
-    """Define a instância do serviço F5-TTS"""
-    global f5_tts_service
-    f5_tts_service = service
+# Router
+router = APIRouter(prefix="/api/v1", tags=["voice"])
+
+# Modelos Pydantic
+class SpeakRequest(BaseModel):
+    text: str = Field(..., description="Texto para sintetizar", min_length=1, max_length=5000)
+    voice_name: Optional[str] = Field(None, description="Nome da voz (ex: pt-BR-Wavenet-A)")
+    language_code: Optional[str] = Field("pt-BR", description="Código do idioma")
+    speaking_rate: float = Field(1.0, description="Velocidade da fala (0.25 a 4.0)", ge=0.25, le=4.0)
+    pitch: float = Field(0.0, description="Tom da voz (-20.0 a 20.0)", ge=-20.0, le=20.0)
+    volume_gain_db: float = Field(0.0, description="Ganho de volume (-96.0 a 16.0)", ge=-96.0, le=16.0)
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    timestamp: str
+    model_info: Dict[str, Any]
+
+class SpeakResponse(BaseModel):
+    success: bool
+    message: str
+    audio_url: Optional[str] = None
+    duration: Optional[float] = None
+    voice_used: Optional[str] = None
 
 @router.get("/health", response_model=HealthResponse)
-async def voice_health():
-    """Health check específico para o serviço de voz"""
-    global f5_tts_service
-    
-    if not f5_tts_service:
-        return HealthResponse(
-            status="error",
-            service="voice-service",
-            timestamp=datetime.now(),
-            model_info=None
-        )
-    
-    model_info_dict = f5_tts_service.get_model_info()
-    model_info = ModelInfo(
-        model_name=model_info_dict["model_name"],
-        device=model_info_dict["device"],
-        model_loaded=model_info_dict["model_loaded"],
-        sample_rate=model_info_dict["sample_rate"],
-        output_dir=model_info_dict["output_directory"]
-    )
-    
-    return HealthResponse(
-        status="healthy" if model_info.model_loaded else "loading",
-        service="voice-service",
-        timestamp=datetime.now(),
-        model_info=model_info
-    )
-
-@router.post("/synthesize", response_model=SynthesizeResponse)
-async def synthesize_speech(request: SynthesizeRequest):
+async def health_check():
     """
-    Sintetiza fala a partir de texto usando F5-TTS-pt-br
+    Verificar status do serviço de voz
     """
-    global f5_tts_service
-    
-    if not f5_tts_service:
-        raise HTTPException(status_code=503, detail="Serviço F5-TTS não disponível")
-    
     try:
-        # Clean text
-        clean_text = f5_tts_service._clean_text(request.text)
-        if not clean_text:
-            raise HTTPException(status_code=400, detail="Texto vazio após limpeza")
+        from datetime import datetime
         
-        # Generate filename
-        filename = f5_tts_service._generate_filename(clean_text)
-        audio_path = f5_tts_service.output_dir / filename
+        model_info = voice_service.get_model_info()
         
-        # Synthesize audio
-        success = f5_tts_service.synthesize(
-            text=clean_text,
-            output_path=str(audio_path)
+        return HealthResponse(
+            status="healthy",
+            service="voice-service-gcp",
+            timestamp=datetime.now().isoformat(),
+            model_info=model_info
+        )
+    except Exception as e:
+        logger.error(f"❌ Erro no health check: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro no health check: {str(e)}")
+
+@router.post("/speak", response_model=SpeakResponse)
+async def text_to_speech(request: SpeakRequest):
+    """
+    Converter texto em áudio usando Google Cloud Text-to-Speech
+    """
+    try:
+        logger.info(f"🎙️ Recebida solicitação TTS para texto: '{request.text[:50]}...'")
+        
+        success, message, audio_url, duration = voice_service.text_to_speech(
+            text=request.text,
+            voice_name=request.voice_name,
+            language_code=request.language_code,
+            speaking_rate=request.speaking_rate,
+            pitch=request.pitch,
+            volume_gain_db=request.volume_gain_db
         )
         
-        if success:
-            # Calculate duration by reading the audio file
-            import soundfile as sf
-            try:
-                audio_data, sample_rate = sf.read(str(audio_path))
-                duration = len(audio_data) / sample_rate
-            except:
-                duration = len(clean_text) * 0.08  # Fallback estimation
-            
-            audio_url = f"/api/v1/audio/{filename}"
-            return SynthesizeResponse(
-                success=True,
-                message="Áudio sintetizado com F5-TTS",
-                audio_path=str(audio_path),
-                filename=filename,
-                audio_url=audio_url,
-                duration=duration,
-                text_length=len(request.text)
-            )
-        else:
-            raise HTTPException(status_code=500, detail="Falha na síntese de áudio")
-            
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+
+        return SpeakResponse(
+            success=success,
+            message=message,
+            audio_url=audio_url,
+            duration=duration,
+            voice_used=request.voice_name or voice_service.default_voice_name
+        )
+        
+    except HTTPException as e:
+        logger.error(f"❌ Erro na API TTS: {e.detail}")
+        raise
     except Exception as e:
-        logger.error(f"Erro na síntese de áudio: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
-
-@router.post("/synthesize-form")
-async def synthesize_speech_form(text: str = Form(...)):
-    """
-    Sintetiza fala a partir de texto usando formulário
-    """
-    request = SynthesizeRequest(text=text)
-    return await synthesize_speech(request)
-
-@router.get("/model-info", response_model=ModelInfo)
-async def get_model_info():
-    """
-    Retorna informações sobre o modelo F5-TTS
-    """
-    global f5_tts_service
-    
-    if not f5_tts_service:
-        raise HTTPException(status_code=503, detail="Serviço F5-TTS não disponível")
-    
-    model_info_dict = f5_tts_service.get_model_info()
-    return ModelInfo(
-        model_name=model_info_dict["model_name"],
-        device=model_info_dict["device"],
-        model_loaded=model_info_dict["model_loaded"],
-        sample_rate=model_info_dict["sample_rate"],
-        output_dir=model_info_dict["output_directory"]
-    )
+        logger.error(f"❌ Erro inesperado na síntese: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor durante a síntese.")
 
 @router.get("/audio/{filename}")
 async def get_audio_file(filename: str):
     """
-    Serve arquivos de áudio gerados
+    Obter arquivo de áudio gerado
     """
-    global f5_tts_service
-    
-    if not f5_tts_service:
-        raise HTTPException(status_code=503, detail="Serviço F5-TTS não disponível")
-    
-    file_path = f5_tts_service.get_audio_file_path(filename)
-    
-    if not file_path or not file_path.exists():
-        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
-    
-    return FileResponse(
-        path=file_path,
-        media_type="audio/wav",
-        headers={
-            "Content-Disposition": f"inline; filename={filename}",
-            "Accept-Ranges": "bytes",
-            "Cache-Control": "public, max-age=3600"
-        }
-    )
-
-@router.delete("/cleanup")
-async def cleanup_old_files(max_age_hours: Optional[int] = 24):
-    """
-    Remove arquivos antigos do diretório de saída
-    """
-    global f5_tts_service
-    
-    if not f5_tts_service:
-        raise HTTPException(status_code=503, detail="Serviço F5-TTS não disponível")
-    
     try:
-        removed_count = f5_tts_service.cleanup_old_files(max_age_hours)
+        # Validar nome do arquivo
+        if not filename.endswith('.mp3') or not filename.startswith('output_'):
+            raise HTTPException(status_code=400, detail="Nome de arquivo inválido")
+        
+        # Construir caminho do arquivo
+        file_path = os.path.join(voice_service.output_dir, filename)
+        
+        # Verificar se arquivo existe
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+        
+        # Retornar arquivo
+        return FileResponse(
+            path=file_path,
+            media_type="audio/mpeg",
+            filename=filename
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao obter arquivo: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao obter arquivo: {str(e)}")
+
+@router.get("/voices")
+async def get_available_voices():
+    """
+    Listar vozes disponíveis
+    """
+    try:
+        voices = voice_service.get_available_voices()
         return {
-            "success": True,
-            "message": f"Limpeza concluída",
-            "files_removed": removed_count,
-            "max_age_hours": max_age_hours
+            "available_voices": voices,
+            "default_voice": voice_service.default_voice_name,
+            "language_code": voice_service.default_language_code
         }
     except Exception as e:
-        logger.error(f"Erro na limpeza: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+        logger.error(f"❌ Erro ao listar vozes: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao listar vozes: {str(e)}")
+
+@router.get("/model-info")
+async def get_model_info():
+    """
+    Obter informações do serviço GCP Text-to-Speech
+    """
+    try:
+        return voice_service.get_model_info()
+    except Exception as e:
+        logger.error(f"❌ Erro ao obter info do modelo: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao obter informações: {str(e)}")
 
 @router.get("/files")
 async def list_audio_files():
     """
-    Lista arquivos de áudio disponíveis
+    Listar arquivos de áudio disponíveis
     """
-    global f5_tts_service
-    
-    if not f5_tts_service:
-        raise HTTPException(status_code=503, detail="Serviço F5-TTS não disponível")
-    
     try:
-        files = f5_tts_service.list_audio_files()
-        return {
-            "success": True,
-            "files": files,
-            "count": len(files)
-        }
+        return voice_service.list_audio_files()
     except Exception as e:
-        logger.error(f"Erro ao listar arquivos: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+        logger.error(f"❌ Erro ao listar arquivos: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao listar arquivos: {str(e)}")
 
-# ENDPOINTS DEPRECATED - Mantidos para compatibilidade
-@router.post("/generate", response_model=TextToSpeechResponse)
-async def generate_speech(tts_request: TextToSpeechRequest):
+@router.delete("/cleanup")
+async def cleanup_old_files(max_age_hours: int = Query(24, description="Idade máxima dos arquivos em horas")):
     """
-    Gera áudio a partir de texto usando TTS (DEPRECATED - use /synthesize)
+    Limpar arquivos antigos
     """
-    logger.warning("Endpoint /generate está deprecated. Use /synthesize")
-    
-    global f5_tts_service
-    
-    if not f5_tts_service:
-        raise HTTPException(status_code=503, detail="Serviço F5-TTS não disponível")
-    
     try:
-        success, message, audio_path, filename, duration = f5_tts_service.synthesize(
-            text=tts_request.text,
-            voice_speed=tts_request.voice_speed
-        )
+        if max_age_hours < 1:
+            raise HTTPException(status_code=400, detail="max_age_hours deve ser pelo menos 1")
         
-        if success:
-            audio_url = f"/api/v1/audio/{filename}" if filename else None
-            return TextToSpeechResponse(
-                success=True,
-                message=message,
-                audio_url=audio_url,
-                filename=filename,
-                duration=duration,
-                text_length=len(tts_request.text)
-            )
-        else:
-            raise HTTPException(status_code=500, detail=message)
-            
+        result = voice_service.cleanup_old_files(max_age_hours)
+        return result
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Erro na geração de áudio: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+        logger.error(f"❌ Erro na limpeza: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro na limpeza: {str(e)}")
 
-@router.post("/generate-form")
-async def generate_speech_form(
-    text: str = Form(...),
-    voice_speed: Optional[float] = Form(1.0)
-):
+# Manter compatibilidade com endpoint antigo
+@router.post("/synthesize", response_model=SpeakResponse)
+async def synthesize_text_legacy(request: SpeakRequest):
     """
-    Gera áudio a partir de texto usando formulário (DEPRECATED - use /synthesize-form)
+    Endpoint legado para compatibilidade - redireciona para /speak
     """
-    logger.warning("Endpoint /generate-form está deprecated. Use /synthesize-form")
-    tts_request = TextToSpeechRequest(text=text, voice_speed=voice_speed)
-    return await generate_speech(tts_request)
-
-# COMENTADO: Endpoints do Bark deixando para implementação futura
-# @router.get("/bark/voices")
-# async def get_bark_voices():
-#     """Retorna as vozes disponíveis do Bark"""
-#     # Implementação futura
-
-# @router.post("/bark/generate")
-# async def generate_bark_speech(tts_request: TextToSpeechRequest):
-#     """Gera áudio usando o Bark"""
-#     # Implementação futura 
+    return await text_to_speech(request) 

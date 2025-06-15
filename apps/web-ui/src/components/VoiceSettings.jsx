@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import audioService from '../services/audioService'
+import audioService from '../services/audioService.js'
 
 /**
  * Componente para configurações avançadas de voz

@@ -6,7 +6,7 @@ services:
     container_name: empatia-mongodb-dev
     restart: unless-stopped
     ports:
-      - "${MONGODB_PORT:-27017}:27017"
+      - "127.0.0.1:${MONGODB_PORT:-27017}:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-admin123}
@@ -18,13 +18,13 @@ services:
     networks:
       - empatia-network
 
-  # MongoDB Express (interface web para MongoDB)
+  # MongoDB Express (interface web para MongoDB) - Mantendo para desenvolvimento
   mongo-express:
     image: mongo-express:1.0.0
     container_name: empatia-mongo-express-dev
     restart: unless-stopped
     ports:
-      - "${MONGO_EXPRESS_PORT:-8081}:8081"
+      - "127.0.0.1:${MONGO_EXPRESS_PORT:-8081}:8081"
     environment:
       - ME_CONFIG_MONGODB_ADMINUSERNAME=${ME_CONFIG_MONGODB_ADMINUSERNAME:-admin}
       - ME_CONFIG_MONGODB_ADMINPASSWORD=${ME_CONFIG_MONGODB_ADMINPASSWORD:-admin123}
@@ -42,7 +42,7 @@ services:
     image: redis:7-alpine
     container_name: empatia-redis-dev
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data_dev:/data
     networks:
@@ -62,8 +62,9 @@ services:
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
     volumes:
       - ./data/tts_output:/app/tts_output
+      - ./services/gateway-service/src:/app/src
     ports:
-      - "${GATEWAY_PORT:-8000}:8000"
+      - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
     depends_on:
       - mongodb
@@ -77,7 +78,7 @@ services:
       context: ./services/ai-service
       dockerfile: Dockerfile
     ports:  
-      - "${AI_SERVICE_PORT:-8001}:8001"
+      - "127.0.0.1:${AI_SERVICE_PORT:-8001}:8001"
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
@@ -91,7 +92,7 @@ services:
       context: ./services/avatar-service 
       dockerfile: Dockerfile
     ports:
-      - "${AVATAR_SERVICE_PORT:-8002}:8002"
+      - "127.0.0.1:${AVATAR_SERVICE_PORT:-8002}:8002"
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
@@ -111,7 +112,7 @@ services:
     volumes:
       - ./services/emotion-service/src:/app/src
     ports:
-      - "${EMOTION_SERVICE_PORT:-8003}:8003"
+      - "127.0.0.1:${EMOTION_SERVICE_PORT:-8003}:8003"
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload", "--log-level", "debug"]
     networks:
       - empatia-network
@@ -122,35 +123,29 @@ services:
       dockerfile: Dockerfile
     container_name: empatia-voice-service-dev
     ports:
-      - "${VOICE_SERVICE_PORT:-8004}:8004"
+      - "127.0.0.1:${VOICE_SERVICE_PORT:-8004}:8004"
     environment:
       # Configurações básicas
       - PYTHONPATH=/app
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
       
-      # Configurações F5-TTS
-      - F5_TTS_MODEL=${F5_TTS_MODEL:-firstpixel/F5-TTS-pt-br}
-      - F5_TTS_DEVICE=${F5_TTS_DEVICE:-cpu}
-      - F5_TTS_OUTPUT_DIR=/app/tts_output
-      
-      # Configurações de cache
-      - HF_HOME=/tmp/huggingface_cache
-      - TRANSFORMERS_CACHE=/tmp/transformers_cache
-      - TORCH_HOME=/tmp/torch_cache
+      # Configurações Google Cloud Text-to-Speech
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-deff8cdf0d47.json
+      - TTS_OUTPUT_DIR=/app/output
+      - VOICE_SERVICE_BASE_URL=http://localhost:8004
       
       # Configurações do serviço
-      - VOICE_SERVICE_HOST=0.0.0.0
-      - VOICE_SERVICE_PORT=8004
-      - VOICE_SERVICE_BASE_URL=${VOICE_SERVICE_BASE_URL:-http://localhost:8004}
+      - HOST=0.0.0.0
+      - PORT=8004
+      - WORKERS=1
     volumes:
       # Volume para desenvolvimento (hot reload)
       - ./services/voice-service/src:/app/src
-      # Volume compartilhado para arquivos de áudio - mapeado para diretório local
-      - ./data/tts_output:/app/tts_output
-      # Cache volumes para melhor performance
-      - f5_tts_cache_dev:/tmp/huggingface_cache
-      - torch_cache_dev:/tmp/torch_cache
+      # Volume compartilhado para arquivos de áudio
+      - ./data/tts_output:/app/output
+      # Volume para credenciais do GCP (mapeando o arquivo JSON real)
+      - ./services/voice-service/credentials/empathia-462921-deff8cdf0d47.json:/app/credentials/empathia-462921-deff8cdf0d47.json:ro
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8004", "--reload", "--log-level", "debug"]
     networks:
       - empatia-network
@@ -159,7 +154,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s
+      start_period: 60s
 
   web-ui:
     build:
@@ -173,7 +168,7 @@ services:
       - ./apps/web-ui/public:/app/public
       - /app/node_modules
     ports:
-      - "${WEB_UI_PORT:-3000}:3000"
+      - "127.0.0.1:${WEB_UI_PORT:-3000}:3000"
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     networks:
       - empatia-network
@@ -183,7 +178,7 @@ services:
       context: ./apps/admin-panel
       dockerfile: Dockerfile.dev
     ports:
-      - "${ADMIN_PANEL_PORT:-3001}:3001"
+      - "127.0.0.1:${ADMIN_PANEL_PORT:-3001}:3001"
     environment:
       - NODE_ENV=development
       - VITE_API_URL=http://localhost:8000
@@ -209,7 +204,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: empatia-admin-panel-dev
     ports:
-      - "3011:3011"
+      - "127.0.0.1:3011:3011"
     volumes:
       - ./apps/admin-panel:/app
       - /app/node_modules

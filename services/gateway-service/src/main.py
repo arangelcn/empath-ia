@@ -27,6 +27,11 @@ class ChatRequest(BaseModel):
 class ConversationRequest(BaseModel):
     session_id: str
 
+class UserPreferencesRequest(BaseModel):
+    session_id: str
+    username: str
+    selected_voice: str
+
 # Criar app FastAPI
 app = FastAPI(
     title="empatIA Gateway Service",
@@ -160,6 +165,50 @@ async def start_conversation(request: ConversationRequest):
     except Exception as e:
         logger.error(f"Erro ao iniciar conversa: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.post("/api/user/preferences")
+async def save_user_preferences(request: UserPreferencesRequest):
+    """Salva as preferências do usuário (nome, voz) para uma sessão."""
+    try:
+        # Garante que a conversa exista antes de tentar atualizá-la
+        await chat_service.start_or_get_conversation(request.session_id)
+
+        updated_data = {
+            "user_preferences": {
+                "username": request.username,
+                "selected_voice": request.selected_voice,
+                "completed_welcome": True
+            }
+        }
+        
+        result = await chat_service.update_conversation_data(request.session_id, updated_data)
+        
+        if result:
+            return {"success": True, "message": "Preferências salvas com sucesso."}
+        else:
+            raise HTTPException(status_code=404, detail="Sessão não encontrada após a criação.")
+            
+    except Exception as e:
+        logger.error(f"Erro ao salvar preferências: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/user/status/{session_id}")
+async def get_user_status(session_id: str):
+    """Verifica se o usuário já completou a tela de boas-vindas."""
+    try:
+        conversation = await chat_service.get_conversation_by_session_id(session_id)
+        
+        if conversation:
+            preferences = conversation.get("user_preferences", {})
+            completed_welcome = preferences.get("completed_welcome", False)
+            username = preferences.get("username")
+            return {"success": True, "data": {"is_onboarded": completed_welcome, "username": username}}
+        else:
+            return {"success": True, "data": {"is_onboarded": False, "username": None}}
+            
+    except Exception as e:
+        logger.error(f"Erro ao verificar status do usuário: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/chat/conversations")
 async def list_conversations(limit: int = 10):
@@ -396,7 +445,7 @@ async def voice_audio(filename: str):
             if response.status_code == 200:
                 return Response(
                     content=response.content,
-                    media_type="audio/wav",
+                    media_type="audio/mpeg",
                     headers={"Content-Disposition": f"inline; filename={filename}"}
                 )
             else:

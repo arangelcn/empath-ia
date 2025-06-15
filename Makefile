@@ -48,7 +48,7 @@ setup: ## Configuração inicial do projeto
 
 dev: ## Inicia ambiente de desenvolvimento com hot reload
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento com live reload...${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+	@docker compose -f docker-compose.dev.yml up --build
 
 dev-detached: ## Inicia ambiente de desenvolvimento em background
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento (background) com live reload...${NC}"
