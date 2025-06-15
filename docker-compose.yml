@@ -159,6 +159,20 @@ services:
     networks:
       - empatia-network
 
+  # Admin Panel - React + Vite Frontend
+  admin-panel:
+    build: ./apps/admin-panel
+    container_name: empatia-admin-panel
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:8000}
+    ports:
+      - "${ADMIN_PANEL_PORT:-3001}:3000"
+    depends_on:
+      - gateway
+    networks:
+      - empatia-network
+
   # OpenFace - Análise Facial (sob demanda)
   openface:
     build: ./infrastructure/docker/base/openface-base

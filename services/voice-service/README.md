@@ -1,55 +1,86 @@
-# Voice Service - F5-TTS Português Brasileiro
+# Voice Service - Google Cloud Text-to-Speech
 
-Serviço de síntese de voz (Text-to-Speech) usando o modelo F5-TTS otimizado para português brasileiro.
+Serviço de síntese de voz (Text-to-Speech) usando Google Cloud Text-to-Speech API com vozes neurais em português brasileiro.
 
 ## 🎯 Características
 
-- **Modelo**: F5-TTS-pt-br (firstpixel/F5-TTS-pt-br)
+- **Provedor**: Google Cloud Text-to-Speech API
 - **Idioma**: Português Brasileiro
-- **Qualidade**: Alta fidelidade com síntese neural
-- **Formato**: WAV (24kHz)
+- **Qualidade**: Vozes neurais de alta fidelidade
+- **Formato**: MP3 (alta qualidade)
 - **API**: RESTful com FastAPI
-- **Treinamento**: +200 horas de áudio PT-BR (Common Voice + Facebook)
+- **Vozes**: Múltiplas opções neurais e WaveNet
 
-## 📝 Otimizações para Português Brasileiro
+## 🎙️ Vozes Disponíveis
 
-### ✅ Processamento de Texto Automático
-- **Conversão de Números**: Números são automaticamente convertidos para palavras (`123` → `cento e vinte e três`)
-- **Normalização**: Texto convertido para minúsculas conforme recomendação do modelo
-- **Pontuação Inteligente**: Adição automática de vírgulas para pausas naturais
-- **Caracteres Especiais**: Preservação de acentos e caracteres específicos do português
+### Vozes Neurais (Recomendadas)
+- **pt-BR-Neural2-A**: Voz feminina neural (padrão)
+- **pt-BR-Neural2-B**: Voz masculina neural
+- **pt-BR-Neural2-C**: Voz feminina neural alternativa
 
-### 🎙️ Qualidade de Áudio
-- **Áudio de Referência**: Usa arquivo de referência otimizado (5-9 segundos)
-- **Texto Curto**: Processamento otimizado para linhas curtas de texto
-- **Pausas Naturais**: Vírgulas adicionadas automaticamente após conjunções
+### Vozes WaveNet
+- **pt-BR-Wavenet-A**: Voz feminina WaveNet
+- **pt-BR-Wavenet-B**: Voz masculina WaveNet
 
-## 🚀 Funcionalidades
+### Vozes Standard
+- **pt-BR-Standard-A**: Voz feminina padrão
+- **pt-BR-Standard-B**: Voz masculina padrão
+
+## ✨ Funcionalidades
 
 ### ✅ Implementado
 - ✅ Síntese de texto em português brasileiro
-- ✅ API REST completa
-- ✅ Limpeza e normalização de texto para PT-BR
-- ✅ Gerenciamento automático de arquivos
-- ✅ Health checks
+- ✅ API REST completa com FastAPI
+- ✅ Múltiplas vozes neurais e WaveNet
+- ✅ Seleção dinâmica de voz por requisição
+- ✅ Gerenciamento automático de arquivos de áudio
+- ✅ URLs públicas para arquivos gerados
+- ✅ Health checks e monitoramento
 - ✅ Logs detalhados
-- ✅ Suporte a Docker
+- ✅ Suporte completo a Docker
+- ✅ Integração com Gateway Service
+- ✅ Limpeza automática de arquivos antigos
 
-### 🔄 Em Desenvolvimento
-- 🔄 Múltiplas vozes
-- 🔄 Controle de velocidade
-- 🔄 Controle de tom
-- 🔄 Arquivo de referência personalizado
+### 🔄 Planejado
+- 🔄 Controle de velocidade de fala
+- 🔄 Controle de tom e pitch
+- 🔄 Efeitos de áudio (reverb, eco)
+- 🔄 Suporte a SSML avançado
 
 ## 📋 Pré-requisitos
 
 - Docker e Docker Compose
+- Google Cloud Project com Text-to-Speech API habilitada
+- Service Account JSON com permissões adequadas
 - Python 3.9+ (para desenvolvimento local)
-- CUDA (opcional, para aceleração GPU)
 
-## 🛠️ Instalação
+## 🛠️ Instalação e Configuração
 
-### Docker (Recomendado)
+### 1. Configuração Google Cloud
+
+1. **Criar projeto no Google Cloud Console**
+   ```bash
+   # Acesse: https://console.cloud.google.com/
+   ```
+
+2. **Habilitar Text-to-Speech API**
+   ```bash
+   # No console: APIs & Services > Library > Cloud Text-to-Speech API > Enable
+   ```
+
+3. **Criar Service Account**
+   ```bash
+   # IAM & Admin > Service Accounts > Create Service Account
+   # Adicionar role: Cloud Text-to-Speech User
+   ```
+
+4. **Baixar credenciais JSON**
+   ```bash
+   # Service Account > Keys > Add Key > Create new key > JSON
+   # Salvar como: services/voice-service/credentials/empathia-462921-deff8cdf0d47.json
+   ```
+
+### 2. Docker (Recomendado)
 
 ```bash
 # Construir e iniciar o serviço
@@ -57,15 +88,21 @@ docker-compose up -d voice-service
 
 # Verificar logs
 docker logs empatia-voice-service-dev -f
+
+# Verificar saúde
+curl http://localhost:8004/health
 ```
 
-### Desenvolvimento Local
+### 3. Desenvolvimento Local
 
 ```bash
 cd services/voice-service
 
 # Instalar dependências
 pip install -r requirements.txt
+
+# Configurar credenciais
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
 
 # Executar o serviço
 python -m uvicorn src.main:app --host 0.0.0.0 --port 8004 --reload
@@ -76,67 +113,50 @@ python -m uvicorn src.main:app --host 0.0.0.0 --port 8004 --reload
 ### Variáveis de Ambiente
 
 ```bash
-# Diretório de saída dos arquivos de áudio
-F5_TTS_OUTPUT_DIR=/app/tts_output
+# Credenciais Google Cloud (obrigatório)
+GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-deff8cdf0d47.json
 
-# Configurações do modelo
-F5_TTS_MODEL=firstpixel/F5-TTS-pt-br
-F5_TTS_DEVICE=auto  # auto, cpu, cuda
+# Diretório de saída dos arquivos de áudio
+TTS_OUTPUT_DIR=/app/output
+
+# URL base para servir arquivos de áudio
+VOICE_SERVICE_BASE_URL=http://localhost:8004
 
 # Configurações da API
-API_HOST=0.0.0.0
-API_PORT=8004
+HOST=0.0.0.0
+PORT=8004
+WORKERS=1
+
+# Configurações de desenvolvimento
+DEBUG=true
+LOG_LEVEL=DEBUG
+PYTHONPATH=/app
 ```
 
-## 🚀 Aceleração por GPU
+### Estrutura de Arquivos
 
-O Voice Service suporta aceleração por GPU para melhor performance na síntese de voz.
-
-### Configuração de GPU
-
-Para habilitar GPU, configure as seguintes variáveis de ambiente:
-
-```bash
-# Dispositivo F5-TTS (auto detecta GPU automaticamente)
-F5_TTS_DEVICE=cuda  # ou 'auto' para detecção automática
-
-# Configurações CUDA (quando usando GPU)
-CUDA_VISIBLE_DEVICES=0
-NVIDIA_VISIBLE_DEVICES=all
-NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ```
-
-### Pré-requisitos para GPU
-
-1. **NVIDIA Docker Runtime** instalado
-2. **Drivers NVIDIA** compatíveis
-3. **CUDA** 11.8+ (incluído na imagem Docker)
-
-### Verificar Uso de GPU
-
-```bash
-# Verificar nos logs se GPU foi detectada
-docker logs empatia-voice-service-dev | grep -i "cuda\|gpu"
-
-# Monitorar uso da GPU
-nvidia-smi
-
-# Durante síntese, verificar atividade
-watch -n 1 nvidia-smi
+services/voice-service/
+├── src/
+│   ├── main.py                 # FastAPI app principal
+│   ├── api/
+│   │   └── v1/
+│   │       └── endpoints/      # Endpoints da API
+│   ├── models/                 # Modelos Pydantic
+│   └── services/
+│       └── gcp_tts_service.py  # Serviço Google Cloud TTS
+├── credentials/
+│   └── empathia-*.json         # Credenciais Google Cloud
+├── output/                     # Arquivos de áudio gerados
+├── requirements.txt            # Dependências Python
+└── Dockerfile                  # Container Docker
 ```
-
-### Performance GPU vs CPU
-
-- **CPU**: ~10-30 segundos para textos médios
-- **GPU**: ~2-8 segundos para textos médios (3-5x mais rápido)
-
-Para mais detalhes, consulte: [GPU_SETUP.md](./GPU_SETUP.md)
 
 ## 📚 API Endpoints
 
 ### Health Check
 ```http
-GET /api/v1/health
+GET /health
 ```
 
 **Resposta:**
@@ -144,13 +164,11 @@ GET /api/v1/health
 {
   "status": "healthy",
   "service": "voice-service",
-  "timestamp": "2024-01-01T12:00:00",
-  "model_info": {
-    "model_name": "firstpixel/F5-TTS-pt-br",
-    "device": "cpu",
-    "model_loaded": true,
-    "sample_rate": 24000,
-    "output_dir": "/app/tts_output"
+  "timestamp": "2024-01-01T12:00:00Z",
+  "version": "1.0.0",
+  "google_cloud": {
+    "credentials_loaded": true,
+    "project_id": "empathia-462921"
   }
 }
 ```
@@ -161,7 +179,8 @@ POST /api/v1/synthesize
 Content-Type: application/json
 
 {
-  "text": "Olá! Este é um teste de síntese de voz em português brasileiro."
+  "text": "Olá! Como posso ajudá-lo hoje?",
+  "voice": "pt-BR-Neural2-A"
 }
 ```
 
@@ -169,134 +188,139 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "message": "Áudio sintetizado com F5-TTS",
-  "audio_path": "/app/tts_output/f5tts_20240101_120000_abc123.wav",
-  "filename": "f5tts_20240101_120000_abc123.wav",
-  "audio_url": "/api/v1/audio/f5tts_20240101_120000_abc123.wav",
-  "duration": 3.45,
-  "text_length": 65
+  "message": "Áudio gerado com sucesso usando pt-BR-Neural2-A",
+  "audio_url": "http://localhost:8004/audio/output_1234567890_abc123.mp3",
+  "duration": 2.5,
+  "voice_used": "pt-BR-Neural2-A",
+  "text_length": 28,
+  "file_size": 45678
 }
 ```
 
 ### Obter Arquivo de Áudio
 ```http
-GET /api/v1/audio/{filename}
+GET /audio/{filename}
 ```
 
-### Informações do Modelo
+### Listar Vozes Disponíveis
 ```http
-GET /api/v1/model-info
+GET /api/v1/voices
 ```
 
-### Listar Arquivos
+**Resposta:**
+```json
+{
+  "success": true,
+  "voices": [
+    {
+      "name": "pt-BR-Neural2-A",
+      "gender": "FEMALE",
+      "type": "Neural2",
+      "description": "Voz feminina neural de alta qualidade"
+    },
+    {
+      "name": "pt-BR-Neural2-B",
+      "gender": "MALE",
+      "type": "Neural2",
+      "description": "Voz masculina neural de alta qualidade"
+    }
+  ]
+}
+```
+
+### Informações do Serviço
 ```http
-GET /api/v1/files
+GET /api/v1/info
 ```
 
-### Limpeza de Arquivos Antigos
+### Limpeza de Arquivos
 ```http
 DELETE /api/v1/cleanup?max_age_hours=24
 ```
 
-## 🎙️ Exemplos de Uso
+## 🔗 Integração com Gateway
 
-### cURL
+O Voice Service é integrado ao Gateway Service para uso transparente:
 
+```http
+# Via Gateway (recomendado)
+POST /api/voice/speak
+Content-Type: application/json
+
+{
+  "text": "Texto para síntese",
+  "voice": "pt-BR-Neural2-B"
+}
+```
+
+## 🎵 Qualidade de Áudio
+
+### Configurações de Áudio
+- **Formato**: MP3
+- **Taxa de Amostragem**: 24kHz
+- **Bitrate**: 64kbps (otimizado para web)
+- **Canais**: Mono
+
+### Performance
+- **Latência**: ~1-3 segundos para textos curtos
+- **Qualidade**: Vozes neurais com naturalidade superior
+- **Tamanho**: ~1MB por minuto de áudio
+
+## 🔍 Monitoramento e Logs
+
+### Logs Estruturados
 ```bash
-# Sintetizar texto
-curl -X POST "http://localhost:8004/api/v1/synthesize" \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Olá! Como você está hoje?"}'
-
-# Baixar áudio gerado
-curl -O "http://localhost:8004/api/v1/audio/f5tts_20240101_120000_abc123.wav"
-```
-
-### Python
-
-```python
-import requests
-
-# Sintetizar texto
-response = requests.post(
-    "http://localhost:8004/api/v1/synthesize",
-    json={"text": "Bem-vindo ao sistema de síntese de voz!"}
-)
-
-if response.status_code == 200:
-    data = response.json()
-    audio_url = f"http://localhost:8004{data['audio_url']}"
-    print(f"Áudio disponível em: {audio_url}")
-```
-
-### JavaScript
-
-```javascript
-// Sintetizar texto
-const response = await fetch('http://localhost:8004/api/v1/synthesize', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    text: 'Esta é uma mensagem de teste em português brasileiro.'
-  })
-});
-
-const data = await response.json();
-console.log('Áudio gerado:', data.audio_url);
-```
-
-## 🔍 Monitoramento
-
-### Logs
-```bash
-# Ver logs em tempo real
+# Visualizar logs em tempo real
 docker logs empatia-voice-service-dev -f
 
-# Ver logs específicos
-docker logs empatia-voice-service-dev | grep "F5-TTS"
+# Filtrar por nível
+docker logs empatia-voice-service-dev 2>&1 | grep "ERROR"
 ```
 
-### Health Check
-```bash
-# Verificar status do serviço
-curl http://localhost:8004/api/v1/health
-```
+### Métricas Disponíveis
+- Tempo de resposta da síntese
+- Taxa de sucesso/erro
+- Uso de diferentes vozes
+- Tamanho dos arquivos gerados
 
-## 🐛 Troubleshooting
+## 🚨 Troubleshooting
 
 ### Problemas Comuns
 
-#### 1. Modelo não carrega
+1. **Credenciais não encontradas**
+   ```bash
+   # Verificar se o arquivo existe
+   ls -la services/voice-service/credentials/
+   
+   # Verificar variável de ambiente
+   docker exec empatia-voice-service-dev env | grep GOOGLE
+   ```
+
+2. **API não habilitada**
+   ```bash
+   # Verificar logs para erros de API
+   docker logs empatia-voice-service-dev | grep "API"
+   ```
+
+3. **Arquivos não sendo servidos**
+   ```bash
+   # Verificar diretório de output
+   docker exec empatia-voice-service-dev ls -la /app/output/
+   ```
+
+### Testes Manuais
+
 ```bash
-# Verificar logs de inicialização
-docker logs empatia-voice-service-dev | grep -E "(Loading|Error|Failed)"
+# Testar síntese diretamente
+curl -X POST http://localhost:8004/api/v1/synthesize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Teste de síntese de voz",
+    "voice": "pt-BR-Neural2-A"
+  }'
 
-# Verificar espaço em disco
-docker exec empatia-voice-service-dev df -h
-```
-
-#### 2. Áudio silencioso
-- Verificar se o modelo F5-TTS-pt-br foi carregado corretamente
-- Verificar logs para erros de síntese
-- Testar com texto simples: "Olá, teste."
-
-#### 3. Erro de memória
-```bash
-# Verificar uso de memória
-docker stats empatia-voice-service-dev
-
-# Ajustar recursos do container se necessário
-```
-
-#### 4. Arquivos não encontrados
-```bash
-# Verificar diretório de saída
-docker exec empatia-voice-service-dev ls -la /app/tts_output/
-
-# Verificar permissões
-docker exec empatia-voice-service-dev ls -la /app/
+# Testar arquivo de áudio
+curl -I http://localhost:8004/audio/nome_do_arquivo.mp3
 ```
 
 ## 🔧 Desenvolvimento

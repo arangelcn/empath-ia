@@ -11,6 +11,7 @@ import logging
 # Importar modelos e serviços
 from .models.database import init_mongodb, close_mongodb
 from .services.chat_service import ChatService
+from .api.admin import router as admin_router
 
 # Configurar logging
 logging.basicConfig(
@@ -60,6 +61,9 @@ SERVICE_URLS = {
 
 # Instância do serviço de chat
 chat_service = ChatService()
+
+# Incluir rotas de administração
+app.include_router(admin_router)
 
 # Eventos de startup e shutdown
 @app.on_event("startup")
@@ -202,9 +206,17 @@ async def get_user_status(session_id: str):
             preferences = conversation.get("user_preferences", {})
             completed_welcome = preferences.get("completed_welcome", False)
             username = preferences.get("username")
-            return {"success": True, "data": {"is_onboarded": completed_welcome, "username": username}}
+            selected_voice = preferences.get("selected_voice")
+            return {
+                "success": True, 
+                "data": {
+                    "is_onboarded": completed_welcome, 
+                    "username": username,
+                    "selected_voice": selected_voice
+                }
+            }
         else:
-            return {"success": True, "data": {"is_onboarded": False, "username": None}}
+            return {"success": True, "data": {"is_onboarded": False, "username": None, "selected_voice": None}}
             
     except Exception as e:
         logger.error(f"Erro ao verificar status do usuário: {e}")

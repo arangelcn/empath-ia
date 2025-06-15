@@ -45,6 +45,7 @@ class ChatService:
                         "created_at": conversation.created_at.isoformat(),
                         "message_count": conversation.message_count,
                         "history": history,
+                        "user_preferences": conversation.user_preferences,
                         "is_new": False
                     }
             
@@ -61,6 +62,7 @@ class ChatService:
                 "created_at": conversation.created_at.isoformat(),
                 "message_count": 0,
                 "history": [],
+                "user_preferences": {},
                 "is_new": True
             }
             
@@ -88,7 +90,7 @@ class ChatService:
             user_message_id = await self.message_repo.create_message(user_msg)
             
             # Gerar resposta da IA (por enquanto, resposta padrão)
-            ai_response = await self._generate_ai_response(user_message, conversation_data["history"])
+            ai_response = await self._generate_ai_response(user_message, conversation_data["history"], conversation_data)
             
             # Salvar resposta da IA
             ai_msg = MessageModel(
@@ -122,7 +124,8 @@ class ChatService:
                     "timestamp": ai_msg.created_at.isoformat(),
                     "hasVideo": ai_response.get("has_video", False),
                     "videoUrl": ai_response.get("video_url"),
-                    "audioUrl": ai_response.get("audio_url")
+                    "audioUrl": ai_response.get("audio_url"),
+                    "voiceUsed": ai_response.get("voice_used")
                 },
                 "processing_time_ms": int((time.time() - start_time) * 1000),
                 "total_messages": conversation_data["message_count"] + 2
@@ -144,7 +147,7 @@ class ChatService:
             
             raise
     
-    async def _generate_ai_response(self, user_message: str, history: List[Dict]) -> Dict[str, Any]:
+    async def _generate_ai_response(self, user_message: str, history: List[Dict], conversation_data: Dict = None) -> Dict[str, Any]:
         """
         Gerar resposta da IA (temporariamente resposta padrão) e sintetizar áudio.
         """
@@ -164,13 +167,32 @@ class ChatService:
         else:
             response_text = f"Entendo sua preocupação. É importante que você tenha compartilhado isso comigo. Vamos explorar essa questão juntos. Pode me contar mais detalhes sobre como isso afeta seu dia a dia?"
 
-        # Sintetizar áudio com o Voice Service
+        # Obter voz selecionada das preferências do usuário
+        selected_voice = "pt-BR-Neural2-A"  # Voz padrão
+        if conversation_data and conversation_data.get("user_preferences"):
+            user_voice = conversation_data["user_preferences"].get("selected_voice")
+            if user_voice:
+                selected_voice = user_voice
+                logger.info(f"🎤 Usando voz selecionada pelo usuário: {selected_voice}")
+
+        # Sintetizar áudio com o Voice Service usando a voz selecionada
         audio_url = None
         try:
             async with httpx.AsyncClient() as client:
+                voice_request = {
+                    "text": response_text,
+                    "voice_name": selected_voice,
+                    "language_code": "pt-BR",
+                    "speaking_rate": 1.0,
+                    "pitch": 0.0,
+                    "volume_gain_db": 0.0
+                }
+                
+                logger.info(f"🎙️ Solicitando síntese com voz: {selected_voice}")
+                
                 response_voice = await client.post(
-                    f"{VOICE_SERVICE_URL}/api/v1/synthesize",
-                    json={"text": response_text, "language": "pt", "speed": 1.0},
+                    f"{VOICE_SERVICE_URL}/api/v1/speak",
+                    json=voice_request,
                     timeout=30
                 )
                 if response_voice.status_code == 200:
@@ -181,6 +203,7 @@ class ChatService:
                         filename = voice_audio_url.split("/")[-1]
                         # Construir URL que aponta para o proxy do gateway
                         audio_url = f"{GATEWAY_URL}/api/voice/audio/{filename}"
+                        logger.info(f"✅ Áudio gerado com sucesso: {filename}")
                 else:
                     logger.error(f"Voice service error: {response_voice.status_code} - {response_voice.text}")
         except Exception as e:
@@ -190,7 +213,8 @@ class ChatService:
             "content": response_text,
             "has_video": False,
             "video_url": None,
-            "audio_url": audio_url
+            "audio_url": audio_url,
+            "voice_used": selected_voice
         }
     
     async def get_conversation_history(self, session_id: str) -> Dict[str, Any]:

@@ -8,27 +8,37 @@ const WelcomeScreen = ({ onComplete, sessionId }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Vozes reais do Google Cloud TTS com interface amigável
   const voiceOptions = [
     {
-      id: 'suave',
-      label: 'Voz Suave',
-      description: 'Calma e relaxante',
+      id: 'pt-BR-Neural2-A',
+      label: 'Voz Feminina Suave',
       emoji: '🌸',
       color: 'from-pink-400 to-purple-500'
     },
     {
-      id: 'energica',
-      label: 'Voz Enérgica',
-      description: 'Animada e motivadora',
+      id: 'pt-BR-Neural2-B',
+      label: 'Voz Masculina Confiante',
       emoji: '⚡',
+      color: 'from-blue-400 to-indigo-500'
+    },
+    {
+      id: 'pt-BR-Wavenet-A',
+      label: 'Voz Feminina Profissional',
+      emoji: '💼',
+      color: 'from-emerald-400 to-teal-500'
+    },
+    {
+      id: 'pt-BR-Wavenet-B',
+      label: 'Voz Masculina Amigável',
+      emoji: '🎯',
       color: 'from-orange-400 to-red-500'
     },
     {
-      id: 'neutra',
-      label: 'Voz Neutra',
-      description: 'Equilibrada e profissional',
-      emoji: '🎯',
-      color: 'from-blue-400 to-indigo-500'
+      id: 'pt-BR-Wavenet-C',
+      label: 'Voz Feminina Calorosa',
+      emoji: '🌺',
+      color: 'from-rose-400 to-pink-500'
     }
   ];
 
@@ -77,7 +87,7 @@ const WelcomeScreen = ({ onComplete, sessionId }) => {
             <label className="block text-gray-800 text-sm font-medium mb-3">
               Escolha o estilo de voz:
             </label>
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-64 overflow-y-auto">
               {voiceOptions.map((voice) => (
                 <div
                   key={voice.id}
@@ -92,7 +102,6 @@ const WelcomeScreen = ({ onComplete, sessionId }) => {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-medium text-gray-900">{voice.label}</h3>
-                      <p className="text-sm text-gray-600">{voice.description}</p>
                     </div>
                   </div>
                 </div>

@@ -61,4 +61,19 @@ export const saveUserPreferences = async (sessionId, username, selectedVoice) =>
     console.error('Erro ao salvar preferências:', error.response?.data || error.message);
     throw error;
   }
+};
+
+/**
+ * Busca o histórico de mensagens de uma sessão.
+ * @param {string} sessionId - O ID da sessão atual.
+ * @returns {Promise<object>} O histórico de mensagens.
+ */
+export const getChatHistory = async (sessionId) => {
+  try {
+    const response = await apiClient.get(`/chat/history/${sessionId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao buscar histórico de mensagens:', error.response?.data || error.message);
+    throw error;
+  }
 }; 

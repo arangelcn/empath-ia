@@ -6,11 +6,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 3011,
+    port: 3000,
     strictPort: true,
     cors: true,
     hmr: {
-      port: 3011,
+      port: 3000,
     },
     watch: {
       usePolling: true,
@@ -42,7 +42,7 @@ export default defineConfig({
   },
   // Configuração para SPA (necessário para React Router)
   preview: {
-    port: 3011,
+    port: 3000,
     strictPort: true,
   },
 }) 

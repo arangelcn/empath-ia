@@ -160,14 +160,18 @@ class AudioService {
         return { success: false, message: 'TTS desabilitado' }
       }
 
+      // Obter a voz selecionada pelo usuário
+      const selectedVoice = localStorage.getItem('empatia_selected_voice') || 'pt-BR-Neural2-A'
+
       const requestData = {
         text: text.substring(0, 1000), // Limite de caracteres
+        voice_name: selectedVoice, // Usar a voz selecionada pelo usuário
         voice_speed: options.speed || this.defaultSpeed
       }
 
-      console.log('🎤 Solicitando F5-TTS para:', `"${text.substring(0, 50)}..."`)
+      console.log('🎤 Solicitando síntese de voz para:', `"${text.substring(0, 50)}..."`)
       console.log('📊 Configurações:', {
-        modelo: this.currentModel,
+        voz: selectedVoice,
         velocidade: requestData.voice_speed,
         caracteres: text.length
       })

@@ -9,6 +9,7 @@ const generateSessionId = () => `session_${Date.now()}_${Math.random().toString(
 function App() {
   const [sessionId, setSessionId] = useState('');
   const [username, setUsername] = useState('');
+  const [selectedVoice, setSelectedVoice] = useState('');
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -24,10 +25,13 @@ function App() {
       try {
         const response = await getUserStatus(currentSessionId);
         if (response.success) {
-          const { is_onboarded, username: fetchedUsername } = response.data;
+          const { is_onboarded, username: fetchedUsername, selected_voice } = response.data;
           setIsOnboarded(is_onboarded);
           if (fetchedUsername) {
             setUsername(fetchedUsername);
+          }
+          if (selected_voice) {
+            setSelectedVoice(selected_voice);
           }
         }
       } catch (error) {
@@ -40,9 +44,13 @@ function App() {
     initializeSession();
   }, []);
 
-  const handleWelcomeComplete = ({ username: newUsername }) => {
+  const handleWelcomeComplete = ({ username: newUsername, voice }) => {
     setUsername(newUsername);
+    setSelectedVoice(voice);
     setIsOnboarded(true);
+    
+    // Armazenar a voz selecionada no localStorage para uso do audioService
+    localStorage.setItem('empatia_selected_voice', voice);
   };
 
   if (isLoading) {

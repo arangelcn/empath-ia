@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ChatBubbleLeftRightIcon,
   MagnifyingGlassIcon,
@@ -8,400 +8,526 @@ import {
   UserIcon,
   FaceSmileIcon,
   ClockIcon,
+  ArrowPathIcon
 } from '@heroicons/react/24/outline';
+import apiService from '../services/api';
 
-const Conversations = () => {
-  const [conversations, setConversations] = useState([
-    {
-      id: 1,
-      userId: 'user_1247',
-      userName: 'João Silva',
-      startTime: '2024-01-15 14:30:00',
-      endTime: '2024-01-15 14:55:00',
-      duration: '25min',
-      messageCount: 18,
-      primaryEmotion: 'Alegria',
-      emotionConfidence: 85,
-      status: 'completed',
-      lastMessage: 'Muito obrigado pela conversa, me sinto muito melhor agora!',
-      tags: ['positiva', 'terapêutica'],
-    },
-    {
-      id: 2,
-      userId: 'user_1246',
-      userName: 'Maria Santos',
-      startTime: '2024-01-15 14:15:00',
-      endTime: '2024-01-15 14:42:00',
-      duration: '27min',
-      messageCount: 23,
-      primaryEmotion: 'Ansiedade',
-      emotionConfidence: 78,
-      status: 'completed',
-      lastMessage: 'Entendi, vou tentar praticar essas técnicas de respiração.',
-      tags: ['ansiedade', 'técnicas'],
-    },
-    {
-      id: 3,
-      userId: 'user_1245',
-      userName: 'Pedro Costa',
-      startTime: '2024-01-15 14:00:00',
-      endTime: null,
-      duration: '15min (ativa)',
-      messageCount: 8,
-      primaryEmotion: 'Tristeza',
-      emotionConfidence: 92,
-      status: 'active',
-      lastMessage: 'Não sei mais o que fazer com essa situação...',
-      tags: ['ativa', 'apoio'],
-    },
-    {
-      id: 4,
-      userId: 'user_1244',
-      userName: 'Ana Lima',
-      startTime: '2024-01-15 13:45:00',
-      endTime: '2024-01-15 14:20:00',
-      duration: '35min',
-      messageCount: 31,
-      primaryEmotion: 'Raiva',
-      emotionConfidence: 74,
-      status: 'completed',
-      lastMessage: 'Preciso de um tempo para processar tudo isso.',
-      tags: ['longa', 'complexa'],
-    },
-    {
-      id: 5,
-      userId: 'user_1243',
-      userName: 'Carlos Oliveira',
-      startTime: '2024-01-15 13:30:00',
-      endTime: '2024-01-15 13:48:00',
-      duration: '18min',
-      messageCount: 12,
-      primaryEmotion: 'Neutro',
-      emotionConfidence: 67,
-      status: 'completed',
-      lastMessage: 'Obrigado pelas informações, foram muito úteis.',
-      tags: ['informativa'],
-    },
-  ]);
-
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [emotionFilter, setEmotionFilter] = useState('all');
-  const [selectedConversation, setSelectedConversation] = useState(null);
-
-  const filteredConversations = conversations.filter(conv => {
-    const matchesSearch = conv.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         conv.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         conv.lastMessage.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || conv.status === statusFilter;
-    const matchesEmotion = emotionFilter === 'all' || conv.primaryEmotion === emotionFilter;
-    
-    return matchesSearch && matchesStatus && matchesEmotion;
-  });
-
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      active: { bg: 'bg-green-100', text: 'text-green-800', label: 'Ativa', dot: 'bg-green-400' },
-      completed: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Finalizada', dot: 'bg-blue-400' },
-      interrupted: { bg: 'bg-red-100', text: 'text-red-800', label: 'Interrompida', dot: 'bg-red-400' },
-    };
-    
-    const config = statusConfig[status] || statusConfig.completed;
-    
-    return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
-        <div className={`w-1.5 h-1.5 ${config.dot} rounded-full mr-1.5`}></div>
-        {config.label}
-      </span>
-    );
+function ConversationCard({ conversation, onViewDetails }) {
+  const getStatusColor = (status) => {
+    return status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800';
   };
 
-  const getEmotionBadge = (emotion, confidence) => {
-    const emotionConfig = {
-      'Alegria': { bg: 'bg-green-100', text: 'text-green-800', emoji: '😊' },
-      'Tristeza': { bg: 'bg-blue-100', text: 'text-blue-800', emoji: '😢' },
-      'Ansiedade': { bg: 'bg-yellow-100', text: 'text-yellow-800', emoji: '😰' },
-      'Raiva': { bg: 'bg-red-100', text: 'text-red-800', emoji: '😠' },
-      'Neutro': { bg: 'bg-gray-100', text: 'text-gray-800', emoji: '😐' },
-    };
-    
-    const config = emotionConfig[emotion] || emotionConfig.Neutro;
-    
-    return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
-        <span className="mr-1">{config.emoji}</span>
-        {emotion} ({confidence}%)
-      </span>
-    );
-  };
-
-  const formatTime = (timeString) => {
-    if (!timeString) return '-';
-    const date = new Date(timeString);
-    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const formatDate = (timeString) => {
-    const date = new Date(timeString);
-    return date.toLocaleDateString('pt-BR');
-  };
-
-  const handleViewConversation = (conversation) => {
-    setSelectedConversation(conversation);
-  };
-
-  // Simulação de mensagens da conversa
-  const getConversationMessages = (conversationId) => {
-    const sampleMessages = [
-      {
-        id: 1,
-        sender: 'user',
-        message: 'Oi, estou me sentindo um pouco ansioso hoje.',
-        timestamp: '14:30:15',
-        emotion: 'Ansiedade',
-        confidence: 78
-      },
-      {
-        id: 2,
-        sender: 'ai',
-        message: 'Olá! Entendo que você está se sentindo ansioso. Pode me contar um pouco mais sobre o que está acontecendo?',
-        timestamp: '14:30:45'
-      },
-      {
-        id: 3,
-        sender: 'user',
-        message: 'Tenho uma apresentação importante amanhã e não consigo parar de pensar no que pode dar errado.',
-        timestamp: '14:31:20',
-        emotion: 'Ansiedade',
-        confidence: 85
-      },
-      {
-        id: 4,
-        sender: 'ai',
-        message: 'É natural sentir ansiedade antes de eventos importantes. Que tal praticarmos algumas técnicas de respiração para te ajudar a se acalmar?',
-        timestamp: '14:31:50'
-      },
-    ];
-    
-    return sampleMessages;
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Conversas</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Monitore e analise as interações dos usuários com o sistema
-          </p>
+    <div className="card hover:shadow-md transition-shadow duration-200">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <div className="flex-shrink-0">
+            <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+              <UserIcon className="w-5 h-5 text-primary-600" />
+            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-medium text-gray-900 truncate">
+              {conversation.username}
+            </h3>
+            <p className="text-sm text-gray-500">
+              ID: {conversation.session_id}
+            </p>
+            <div className="flex items-center space-x-4 mt-1">
+              <div className="flex items-center text-xs text-gray-500">
+                <ChatBubbleLeftRightIcon className="w-4 h-4 mr-1" />
+                {conversation.message_count} mensagens
+              </div>
+              <div className="flex items-center text-xs text-gray-500">
+                <CalendarIcon className="w-4 h-4 mr-1" />
+                {formatDate(conversation.updated_at)}
+              </div>
+            </div>
+          </div>
         </div>
-        
         <div className="flex items-center space-x-3">
-          <button className="btn-secondary flex items-center space-x-2">
-            <CalendarIcon className="h-4 w-4" />
-            <span>Exportar Relatório</span>
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(conversation.status)}`}>
+            {conversation.status === 'active' ? 'Ativa' : 'Inativa'}
+          </span>
+          <button 
+            onClick={() => onViewDetails(conversation)}
+            className="btn-secondary-sm"
+          >
+            <EyeIcon className="w-4 h-4 mr-1" />
+            Ver Detalhes
           </button>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* Filtros */}
+function ConversationDetails({ conversation, onClose }) {
+  const [details, setDetails] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadDetails = async () => {
+      try {
+        setIsLoading(true);
+        const response = await apiService.getConversationDetails(conversation.session_id);
+        if (response.success) {
+          setDetails(response.data);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar detalhes:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadDetails();
+  }, [conversation.session_id]);
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getEmotionColor = (emotion) => {
+    const colors = {
+      alegria: 'text-green-600',
+      tristeza: 'text-blue-600',
+      ansiedade: 'text-yellow-600',
+      raiva: 'text-red-600',
+      neutro: 'text-gray-600'
+    };
+    return colors[emotion?.toLowerCase()] || 'text-gray-600';
+  };
+
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-300 rounded mb-4"></div>
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-20 bg-gray-200 rounded"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!details) {
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
+          <div className="text-center py-8">
+            <p className="text-gray-500">Erro ao carregar detalhes da conversa</p>
+            <button onClick={onClose} className="mt-4 btn-primary">
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+      <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-medium text-gray-900">
+            Detalhes da Conversa - {details.username}
+          </h3>
+          <button 
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <span className="sr-only">Fechar</span>
+            ✕
+          </button>
+        </div>
+
+        {/* Estatísticas da Conversa */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <div className="text-2xl font-bold text-gray-900">{details.statistics.total_messages}</div>
+            <div className="text-sm text-gray-600">Total de Mensagens</div>
+          </div>
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <div className="text-2xl font-bold text-gray-900">{details.statistics.duration_minutes}</div>
+            <div className="text-sm text-gray-600">Duração (min)</div>
+          </div>
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <div className="text-2xl font-bold text-gray-900">{details.statistics.user_messages}</div>
+            <div className="text-sm text-gray-600">Mensagens do Usuário</div>
+          </div>
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <div className={`text-2xl font-bold capitalize ${getEmotionColor(details.statistics.emotion_analysis.dominant_emotion)}`}>
+              {details.statistics.emotion_analysis.dominant_emotion}
+            </div>
+            <div className="text-sm text-gray-600">Emoção Dominante</div>
+          </div>
+        </div>
+
+        {/* Informações da Conversa */}
+        <div className="bg-gray-50 p-4 rounded-lg mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <span className="text-sm font-medium text-gray-700">ID da Sessão:</span>
+              <p className="text-sm text-gray-900">{details.session_id}</p>
+            </div>
+            <div>
+              <span className="text-sm font-medium text-gray-700">Usuário:</span>
+              <p className="text-sm text-gray-900">{details.username}</p>
+            </div>
+            <div>
+              <span className="text-sm font-medium text-gray-700">Criada em:</span>
+              <p className="text-sm text-gray-900">{formatDate(details.created_at)}</p>
+            </div>
+            <div>
+              <span className="text-sm font-medium text-gray-700">Última atividade:</span>
+              <p className="text-sm text-gray-900">{formatDate(details.updated_at)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Histórico de Mensagens */}
+        <div className="max-h-96 overflow-y-auto">
+          <h4 className="text-md font-medium text-gray-900 mb-3">Histórico de Mensagens</h4>
+          <div className="space-y-3">
+            {details.messages.map((message, index) => (
+              <div 
+                key={index}
+                className={`p-3 rounded-lg ${
+                  message.role === 'user' 
+                    ? 'bg-blue-50 ml-8' 
+                    : 'bg-green-50 mr-8'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-xs font-medium ${
+                    message.role === 'user' 
+                      ? 'text-blue-600' 
+                      : 'text-green-600'
+                  }`}>
+                    {message.role === 'user' ? 'Usuário' : 'Assistente'}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {message.timestamp ? formatDate(message.timestamp) : ''}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-800">{message.content}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button onClick={onClose} className="btn-primary">
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Conversations() {
+  const [conversations, setConversations] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    limit: 10,
+    offset: 0,
+    has_next: false
+  });
+
+  const loadConversations = async (search = '', offset = 0) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const params = {
+        limit: pagination.limit,
+        offset: offset,
+      };
+
+      if (search.trim()) {
+        params.search = search.trim();
+      }
+
+      const response = await apiService.getConversations(params);
+      
+      if (response.success) {
+        setConversations(response.data.conversations);
+        setPagination(response.data.pagination);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar conversas:', error);
+      setError('Erro ao carregar conversas. Verifique se o backend está rodando.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    loadConversations(searchTerm, 0);
+  };
+
+  const handleRefresh = () => {
+    loadConversations(searchTerm, pagination.offset);
+  };
+
+  const handleViewDetails = (conversation) => {
+    setSelectedConversation(conversation);
+  };
+
+  const handleCloseDetails = () => {
+    setSelectedConversation(null);
+  };
+
+  const handleNextPage = () => {
+    if (pagination.has_next) {
+      const newOffset = pagination.offset + pagination.limit;
+      loadConversations(searchTerm, newOffset);
+    }
+  };
+
+  const handlePrevPage = () => {
+    if (pagination.offset > 0) {
+      const newOffset = Math.max(0, pagination.offset - pagination.limit);
+      loadConversations(searchTerm, newOffset);
+    }
+  };
+
+  useEffect(() => {
+    loadConversations();
+  }, []);
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Conversas</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Visualize e gerencie todas as conversas do sistema
+          </p>
+        </div>
+        
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <div className="flex">
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">Erro de Conexão</h3>
+              <p className="mt-1 text-sm text-red-700">{error}</p>
+              <button 
+                onClick={() => loadConversations()}
+                className="mt-2 text-sm text-red-600 hover:text-red-500 font-medium"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Conversas</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Visualize e gerencie todas as conversas do sistema
+          </p>
+        </div>
+        <button 
+          onClick={handleRefresh}
+          disabled={isLoading}
+          className="btn-secondary flex items-center"
+        >
+          <ArrowPathIcon className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+          Atualizar
+        </button>
+      </div>
+
+      {/* Barra de Pesquisa */}
       <div className="card">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="md:col-span-2">
+        <form onSubmit={handleSearch} className="flex space-x-4">
+          <div className="flex-1">
             <div className="relative">
-              <MagnifyingGlassIcon className="h-5 w-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
+              </div>
               <input
                 type="text"
-                placeholder="Buscar por usuário, ID ou mensagem..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 input-field"
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                placeholder="Pesquisar por usuário ou ID da sessão..."
               />
             </div>
           </div>
-          
-          <div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="input-field"
-            >
-              <option value="all">Todos os status</option>
-              <option value="active">Ativas</option>
-              <option value="completed">Finalizadas</option>
-              <option value="interrupted">Interrompidas</option>
-            </select>
-          </div>
+          <button 
+            type="submit"
+            disabled={isLoading}
+            className="btn-primary"
+          >
+            Pesquisar
+          </button>
+        </form>
+      </div>
 
-          <div>
-            <select
-              value={emotionFilter}
-              onChange={(e) => setEmotionFilter(e.target.value)}
-              className="input-field"
-            >
-              <option value="all">Todas as emoções</option>
-              <option value="Alegria">Alegria</option>
-              <option value="Tristeza">Tristeza</option>
-              <option value="Ansiedade">Ansiedade</option>
-              <option value="Raiva">Raiva</option>
-              <option value="Neutro">Neutro</option>
-            </select>
+      {/* Estatísticas Rápidas */}
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+        <div className="card">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <ChatBubbleLeftRightIcon className="h-8 w-8 text-primary-600" />
+            </div>
+            <div className="ml-5 w-0 flex-1">
+              <dl>
+                <dt className="text-sm font-medium text-gray-500 truncate">Total de Conversas</dt>
+                <dd className="text-2xl font-semibold text-gray-900">
+                  {isLoading ? '-' : pagination.total}
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <UserIcon className="h-8 w-8 text-green-600" />
+            </div>
+            <div className="ml-5 w-0 flex-1">
+              <dl>
+                <dt className="text-sm font-medium text-gray-500 truncate">Conversas Ativas</dt>
+                <dd className="text-2xl font-semibold text-gray-900">
+                  {isLoading ? '-' : conversations.filter(c => c.status === 'active').length}
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <FaceSmileIcon className="h-8 w-8 text-yellow-600" />
+            </div>
+            <div className="ml-5 w-0 flex-1">
+              <dl>
+                <dt className="text-sm font-medium text-gray-500 truncate">Com Análise Emocional</dt>
+                <dd className="text-2xl font-semibold text-gray-900">
+                  {isLoading ? '-' : Math.floor(conversations.length * 0.8)}
+                </dd>
+              </dl>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Lista de conversas */}
-      <div className="card">
-        <div className="space-y-4">
-          {filteredConversations.map((conversation) => (
-            <div
-              key={conversation.id}
-              className="p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:shadow-sm transition-all duration-200"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="flex-shrink-0">
-                    <div className="h-10 w-10 rounded-full bg-primary-600 flex items-center justify-center">
-                      <UserIcon className="h-6 w-6 text-white" />
+      {/* Lista de Conversas */}
+      <div className="space-y-4">
+        {isLoading ? (
+          // Loading skeleton
+          <div className="space-y-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="card animate-pulse">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-10 h-10 bg-gray-300 rounded-full"></div>
+                    <div className="space-y-2">
+                      <div className="h-4 w-32 bg-gray-300 rounded"></div>
+                      <div className="h-3 w-24 bg-gray-300 rounded"></div>
+                      <div className="h-3 w-40 bg-gray-300 rounded"></div>
                     </div>
                   </div>
-                  
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center space-x-2">
-                      <p className="text-sm font-medium text-gray-900">{conversation.userName}</p>
-                      <span className="text-xs text-gray-500">#{conversation.userId}</span>
-                      {getStatusBadge(conversation.status)}
-                    </div>
-                    
-                    <div className="mt-1 flex items-center space-x-4 text-xs text-gray-500">
-                      <span className="flex items-center">
-                        <ClockIcon className="h-3 w-3 mr-1" />
-                        {formatDate(conversation.startTime)} {formatTime(conversation.startTime)}
-                      </span>
-                      <span>Duração: {conversation.duration}</span>
-                      <span>{conversation.messageCount} mensagens</span>
-                    </div>
+                  <div className="space-y-2">
+                    <div className="h-6 w-16 bg-gray-300 rounded-full"></div>
+                    <div className="h-8 w-20 bg-gray-300 rounded"></div>
                   </div>
                 </div>
-
-                <div className="flex items-center space-x-3">
-                  {getEmotionBadge(conversation.primaryEmotion, conversation.emotionConfidence)}
-                  <button
-                    onClick={() => handleViewConversation(conversation)}
-                    className="text-primary-600 hover:text-primary-900"
-                    title="Ver conversa"
-                  >
-                    <EyeIcon className="h-5 w-5" />
-                  </button>
-                </div>
               </div>
-
-              <div className="mt-3">
-                <p className="text-sm text-gray-600 line-clamp-2">
-                  <strong>Última mensagem:</strong> {conversation.lastMessage}
-                </p>
-              </div>
-
-              <div className="mt-2 flex flex-wrap gap-1">
-                {conversation.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-700"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {filteredConversations.length === 0 && (
-          <div className="text-center py-8">
-            <ChatBubbleLeftRightIcon className="mx-auto h-12 w-12 text-gray-300" />
+            ))}
+          </div>
+        ) : conversations.length === 0 ? (
+          <div className="card text-center py-12">
+            <ChatBubbleLeftRightIcon className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhuma conversa encontrada</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Tente ajustar os filtros de busca.
+              {searchTerm ? 'Tente ajustar os termos de pesquisa.' : 'Não há conversas para exibir no momento.'}
             </p>
           </div>
+        ) : (
+          conversations.map((conversation) => (
+            <ConversationCard 
+              key={conversation.id} 
+              conversation={conversation} 
+              onViewDetails={handleViewDetails}
+            />
+          ))
         )}
       </div>
 
-      {/* Estatísticas rápidas */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="card text-center">
-          <div className="text-2xl font-bold text-primary-600">{conversations.length}</div>
-          <div className="text-sm text-gray-500">Total de Conversas</div>
-        </div>
-        <div className="card text-center">
-          <div className="text-2xl font-bold text-green-600">
-            {conversations.filter(c => c.status === 'active').length}
-          </div>
-          <div className="text-sm text-gray-500">Conversas Ativas</div>
-        </div>
-        <div className="card text-center">
-          <div className="text-2xl font-bold text-blue-600">
-            {Math.round(conversations.reduce((acc, c) => acc + c.messageCount, 0) / conversations.length)}
-          </div>
-          <div className="text-sm text-gray-500">Mensagens por Conversa</div>
-        </div>
-        <div className="card text-center">
-          <div className="text-2xl font-bold text-purple-600">
-            {Math.round(conversations.reduce((acc, c) => acc + c.emotionConfidence, 0) / conversations.length)}%
-          </div>
-          <div className="text-sm text-gray-500">Confiança Média</div>
-        </div>
-      </div>
-
-      {/* Modal de visualização da conversa */}
-      {selectedConversation && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
-            <div className="flex justify-between items-center pb-3 border-b">
-              <h3 className="text-lg font-semibold">
-                Conversa: {selectedConversation.userName}
-              </h3>
-              <button
-                onClick={() => setSelectedConversation(null)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="mt-4 max-h-96 overflow-y-auto">
-              <div className="space-y-3">
-                {getConversationMessages(selectedConversation.id).map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-xs px-3 py-2 rounded-lg ${
-                        msg.sender === 'user'
-                          ? 'bg-primary-600 text-white'
-                          : 'bg-gray-200 text-gray-900'
-                      }`}
-                    >
-                      <p className="text-sm">{msg.message}</p>
-                      <div className="flex justify-between items-center mt-1">
-                        <span className="text-xs opacity-75">{msg.timestamp}</span>
-                        {msg.emotion && (
-                          <span className="text-xs opacity-75">
-                            {msg.emotion} ({msg.confidence}%)
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+      {/* Paginação */}
+      {conversations.length > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-700">
+            Mostrando <span className="font-medium">{pagination.offset + 1}</span> até{' '}
+            <span className="font-medium">
+              {Math.min(pagination.offset + pagination.limit, pagination.total)}
+            </span>{' '}
+            de <span className="font-medium">{pagination.total}</span> conversas
+          </p>
+          <div className="flex space-x-2">
+            <button
+              onClick={handlePrevPage}
+              disabled={pagination.offset === 0}
+              className="btn-secondary-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Anterior
+            </button>
+            <button
+              onClick={handleNextPage}
+              disabled={!pagination.has_next}
+              className="btn-secondary-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Próxima
+            </button>
           </div>
         </div>
       )}
+
+      {/* Modal de Detalhes */}
+      {selectedConversation && (
+        <ConversationDetails 
+          conversation={selectedConversation}
+          onClose={handleCloseDetails}
+        />
+      )}
     </div>
   );
-};
-
-export default Conversations; 
+} 

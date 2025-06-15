@@ -133,9 +133,10 @@ class GCPTextToSpeechService:
             voice_name = voice_name or self.default_voice_name
             language_code = language_code or self.default_language_code
             
-            # Validar voz
-            if voice_name not in self.available_voices:
-                logger.warning(f"Voz {voice_name} não encontrada, usando padrão {self.default_voice_name}")
+            # Validar voz usando a lista dinâmica do GCP
+            available_voices_gcp = self.get_available_voices()
+            if voice_name not in available_voices_gcp:
+                logger.warning(f"Voz {voice_name} não encontrada no GCP, usando padrão {self.default_voice_name}")
                 voice_name = self.default_voice_name
             
             # Gerar nome do arquivo
@@ -147,11 +148,20 @@ class GCPTextToSpeechService:
             # Configurar entrada de texto
             synthesis_input = texttospeech.SynthesisInput(text=text)
             
-            # Configurar voz
-            voice_gender = getattr(
-                texttospeech.SsmlVoiceGender, 
-                self.available_voices[voice_name]["gender"]
-            )
+            # Configurar voz - usar informações do GCP se disponível, senão usar fallback
+            voice_gender = texttospeech.SsmlVoiceGender.FEMALE  # padrão
+            if voice_name in available_voices_gcp:
+                gcp_voice_info = available_voices_gcp[voice_name]
+                if gcp_voice_info.get("ssml_gender") == "MALE":
+                    voice_gender = texttospeech.SsmlVoiceGender.MALE
+                elif gcp_voice_info.get("ssml_gender") == "FEMALE":
+                    voice_gender = texttospeech.SsmlVoiceGender.FEMALE
+            elif voice_name in self.available_voices:
+                # Fallback para lista hardcoded se não encontrar no GCP
+                voice_gender = getattr(
+                    texttospeech.SsmlVoiceGender, 
+                    self.available_voices[voice_name]["gender"]
+                )
             
             voice = texttospeech.VoiceSelectionParams(
                 language_code=language_code,

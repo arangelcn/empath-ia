@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Loader2, Brain, Volume2 } from 'lucide-react';
-import { sendMessage } from '../../services/api.js';
+import { sendMessage, getChatHistory } from '../../services/api.js';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer.js';
 
 interface Message {
@@ -35,14 +35,53 @@ const EmotionBadge = ({ emotion }) => {
 };
 
 const ChatScreen = ({ sessionId, username }) => {
-  const [messages, setMessages] = useState<Message[]>([
-    { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje?` }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [currentEmotion, setCurrentEmotion] = useState('Neutro');
   const messagesEndRef = useRef(null);
   const { playAudio, isPlaying, activeAudioUrl } = useAudioPlayer();
+  const lastPlayedMessageRef = useRef(null);
+
+  // Carregar histórico de mensagens quando o componente for montado
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      try {
+        setIsLoadingHistory(true);
+        const response = await getChatHistory(sessionId);
+        
+        if (response.success && response.data.history && response.data.history.length > 0) {
+          // Converter histórico do backend para o formato do frontend
+          const historyMessages: Message[] = response.data.history.map((msg: any) => ({
+            id: msg.id,
+            type: msg.type === 'user' ? 'user' : 'ai',
+            content: msg.content,
+            audioUrl: msg.audio_url || undefined,
+          }));
+          
+          setMessages(historyMessages);
+        } else {
+          // Se não há histórico, mostrar mensagem de boas-vindas
+          setMessages([
+            { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje?` }
+          ]);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar histórico:', error);
+        // Em caso de erro, mostrar mensagem de boas-vindas
+        setMessages([
+          { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje?` }
+        ]);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+
+    if (sessionId && username) {
+      loadChatHistory();
+    }
+  }, [sessionId, username]);
 
   useEffect(() => {
     const intervalId = setInterval(async () => {
@@ -60,12 +99,22 @@ const ChatScreen = ({ sessionId, username }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
     const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.type === 'ai' && lastMessage.audioUrl) {
+    
+    if (lastMessage?.type === 'ai' && 
+        lastMessage.audioUrl && 
+        lastMessage.id !== lastPlayedMessageRef.current &&
+        !isPlaying) {
+      
+      console.log('🎵 Nova mensagem de IA detectada, reproduzindo áudio:', lastMessage.id);
+      lastPlayedMessageRef.current = lastMessage.id;
+      
       setTimeout(() => {
-        playAudio(lastMessage.audioUrl, () => {});
-      }, 100);
+        playAudio(lastMessage.audioUrl, () => {
+          console.log('✅ Reprodução da mensagem finalizada:', lastMessage.id);
+        });
+      }, 200);
     }
-  }, [messages]);
+  }, [messages, isPlaying, playAudio]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
@@ -117,43 +166,54 @@ const ChatScreen = ({ sessionId, username }) => {
       <EmotionBadge emotion={currentEmotion} />
       
       <div className="flex-1 overflow-y-auto mb-4 p-4 space-y-4">
-        {messages.map((message) => (
-          <div key={message.id} className={`flex items-start gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-             {message.type === 'ai' && (
-              <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white flex-shrink-0">
-                <Brain size={20} />
+        {isLoadingHistory ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+              <p className="text-gray-600">Carregando histórico de mensagens...</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {messages.map((message) => (
+              <div key={message.id} className={`flex items-start gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                 {message.type === 'ai' && (
+                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white flex-shrink-0">
+                    <Brain size={20} />
+                  </div>
+                )}
+                <div className={`max-w-lg p-3 rounded-lg flex items-center ${
+                    message.type === 'user'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-800 border border-gray-200'
+                  }`}>
+                  <p className="flex-1">{message.content}</p>
+                  {message.type === 'ai' && message.audioUrl && (
+                    <button
+                      onClick={() => playAudio(message.audioUrl, () => {})}
+                      className={`ml-2 text-gray-500 hover:text-blue-700`}
+                    >
+                      <Volume2 size={16} className={activeAudioUrl === message.audioUrl && isPlaying ? 'animate-pulse text-blue-500' : ''} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {isLoading && (
+              <div className="flex items-start gap-3 justify-start">
+                <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white flex-shrink-0">
+                  <Brain size={20} />
+                </div>
+                <div className="max-w-lg p-3 rounded-lg bg-white text-gray-800 border border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                    <span>Pensando...</span>
+                  </div>
+                </div>
               </div>
             )}
-            <div className={`max-w-lg p-3 rounded-lg flex items-center ${
-                message.type === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-white text-gray-800 border border-gray-200'
-              }`}>
-              <p className="flex-1">{message.content}</p>
-              {message.type === 'ai' && message.audioUrl && (
-                <button
-                  onClick={() => playAudio(message.audioUrl, () => {})}
-                  className={`ml-2 text-gray-500 hover:text-blue-700`}
-                >
-                  <Volume2 size={16} className={activeAudioUrl === message.audioUrl && isPlaying ? 'animate-pulse text-blue-500' : ''} />
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-
-        {isLoading && (
-          <div className="flex items-start gap-3 justify-start">
-            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white flex-shrink-0">
-              <Brain size={20} />
-            </div>
-            <div className="max-w-lg p-3 rounded-lg bg-white text-gray-800 border border-gray-200">
-              <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                <span>Pensando...</span>
-              </div>
-            </div>
-          </div>
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -165,12 +225,12 @@ const ChatScreen = ({ sessionId, username }) => {
           onChange={(e) => setInputValue(e.target.value)}
           onKeyPress={handleKeyPress}
           placeholder="Digite sua mensagem..."
-          disabled={isLoading}
+          disabled={isLoading || isLoadingHistory}
           className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
           onClick={handleSendMessage}
-          disabled={isLoading || !inputValue.trim()}
+          disabled={isLoading || !inputValue.trim() || isLoadingHistory}
           className="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
         >
           {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
