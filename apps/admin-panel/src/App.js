@@ -10,6 +10,7 @@ import SystemStatus from './pages/SystemStatus';
 import UserManagement from './pages/UserManagement';
 import Analytics from './pages/Analytics';
 import Conversations from './pages/Conversations';
+import SessionManagement from './pages/SessionManagement';
 import Settings from './pages/Settings';
 
 function AuthenticatedApp() {
@@ -22,6 +23,7 @@ function AuthenticatedApp() {
         <Route path="/users" element={<UserManagement />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/conversations" element={<Conversations />} />
+        <Route path="/sessions" element={<SessionManagement />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>

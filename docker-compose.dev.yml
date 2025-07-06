@@ -60,6 +60,8 @@ services:
       - DATABASE_NAME=${DATABASE_NAME:-empatia_db}
       - SQL_DEBUG=${DEBUG:-true}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7860,http://localhost:3000}
+      - HOT_RELOAD=${HOT_RELOAD:-true}
     volumes:
       - ./data/tts_output:/app/tts_output
       - ./services/gateway-service/src:/app/src
@@ -83,6 +85,8 @@ services:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - MODEL_NAME=${MODEL_NAME:-gpt-4o}
+      - HOT_RELOAD=${HOT_RELOAD:-true}
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--log-level", "debug"]
     networks:
       - empatia-network
@@ -98,6 +102,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
       - DID_API_USERNAME=${DID_API_USERNAME:-}
       - DID_API_PASSWORD=${DID_API_PASSWORD:-}
+      - HOT_RELOAD=${HOT_RELOAD:-true}
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload", "--log-level", "debug"]
     networks:
       - empatia-network
@@ -109,6 +114,9 @@ services:
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - OPENFACE_MODEL_PATH=${OPENFACE_MODEL_PATH:-/models/openface}
+      - EMOTION_CONFIDENCE_THRESHOLD=${EMOTION_CONFIDENCE_THRESHOLD:-0.7}
+      - HOT_RELOAD=${HOT_RELOAD:-true}
     volumes:
       - ./services/emotion-service/src:/app/src
     ports:
@@ -131,7 +139,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
       
       # Configurações Google Cloud Text-to-Speech
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-deff8cdf0d47.json
+      - GOOGLE_APPLICATION_CREDENTIALS=${CREDENTIALS_JSON:-/app/credentials/empathia-462921-deff8cdf0d47.json}
       - TTS_OUTPUT_DIR=/app/output
       - VOICE_SERVICE_BASE_URL=http://localhost:8004
       
@@ -139,6 +147,7 @@ services:
       - HOST=0.0.0.0
       - PORT=8004
       - WORKERS=1
+      - HOT_RELOAD=${HOT_RELOAD:-true}
     volumes:
       # Volume para desenvolvimento (hot reload)
       - ./services/voice-service/src:/app/src
@@ -163,12 +172,14 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+      - BACKEND_URL=${BACKEND_URL:-http://gateway-service:8000}
+      - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
+      - VITE_GOOGLE_REDIRECT_URI=${VITE_GOOGLE_REDIRECT_URI:-http://localhost:7860}
     volumes:
       - ./apps/web-ui/src:/app/src
       - ./apps/web-ui/public:/app/public
-      - /app/node_modules
     ports:
-      - "127.0.0.1:${WEB_UI_PORT:-3000}:3000"
+      - "127.0.0.1:${WEB_UI_PORT:-7860}:3000"
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     networks:
       - empatia-network
@@ -177,8 +188,9 @@ services:
     build:
       context: ./apps/admin-panel
       dockerfile: Dockerfile.dev
+    container_name: empatia-admin-panel-dev
     ports:
-      - "127.0.0.1:${ADMIN_PANEL_PORT:-3001}:3001"
+      - "127.0.0.1:${ADMIN_PANEL_PORT:-3001}:3000"
     environment:
       - NODE_ENV=development
       - VITE_API_URL=http://localhost:8000
@@ -186,6 +198,7 @@ services:
       - VITE_VOICE_SERVICE_URL=http://localhost:8004
       - VITE_AI_SERVICE_URL=http://localhost:8001
       - VITE_AVATAR_SERVICE_URL=http://localhost:8002
+      - BACKEND_URL=${BACKEND_URL:-http://gateway-service:8000}
     depends_on:
       - gateway
       - emotion-service
@@ -196,20 +209,6 @@ services:
     volumes:
       - ./apps/admin-panel/src:/app/src
       - ./apps/admin-panel/public:/app/public
-      - /app/node_modules
-
-  admin-panel-dev:
-    build:
-      context: ./apps/admin-panel
-      dockerfile: Dockerfile.dev
-    container_name: empatia-admin-panel-dev
-    ports:
-      - "127.0.0.1:3011:3011"
-    volumes:
-      - ./apps/admin-panel:/app
-      - /app/node_modules
-    networks:
-      - empatia-network
 
 # Volumes para dados persistentes
 volumes:

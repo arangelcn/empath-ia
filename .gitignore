@@ -198,6 +198,10 @@ tramp
 ehthumbs.db
 Thumbs.db
 
+# ===== PROJECT KNOWLEDGE =====
+# Arquivo de conhecimento centralizado do projeto
+PROJECT_KNOWLEDGE.md
+
 # Docker
 .docker/
 docker-compose.override.yml
@@ -417,7 +421,6 @@ shared_data/*.mp4
 *.pb
 *.onnx
 *.tflite
-models/
 checkpoints/
 
 # Datasets

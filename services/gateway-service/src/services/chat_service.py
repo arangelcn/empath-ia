@@ -2,284 +2,341 @@
 Serviço de chat - orquestra conversas e mensagens
 """
 
-import time
 import os
 import httpx
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import logging
-
-from ..models.conversation import ConversationModel, ConversationRepository
-from ..models.message import MessageModel, MessageRepository
+from ..models.database import get_collection
 
 logger = logging.getLogger(__name__)
 
-AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://ai-service:8001")
-VOICE_SERVICE_URL = os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004")
-GATEWAY_URL = os.getenv("GATEWAY_URL", "http://localhost:8000")
-
 class ChatService:
-    """
-    Serviço principal para gerenciar conversas e mensagens
-    """
+    """Serviço de chat com persistência MongoDB"""
     
     def __init__(self):
-        self.conversation_repo = ConversationRepository()
-        self.message_repo = MessageRepository()
+        self.ai_service_url = os.getenv("AI_SERVICE_URL", "http://ai-service:8001")
+        # self.voice_service_url = os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004")  # Comentado temporariamente
     
-    async def start_or_get_conversation(self, session_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Iniciar nova conversa ou recuperar existente
-        """
+    async def start_or_get_conversation(self, session_id: str) -> Dict[str, Any]:
+        """Iniciar ou recuperar conversa existente"""
         try:
-            if session_id:
-                # Tentar recuperar conversa existente
-                conversation = await self.conversation_repo.get_conversation_by_session_id(session_id)
-                if conversation:
-                    # Carregar histórico de mensagens
-                    history = await self.message_repo.get_conversation_history(conversation.id)
-                    
-                    return {
-                        "conversation_id": conversation.id,
-                        "session_id": conversation.session_id,
-                        "created_at": conversation.created_at.isoformat(),
-                        "message_count": conversation.message_count,
-                        "history": history,
-                        "user_preferences": conversation.user_preferences,
-                        "is_new": False
-                    }
+            conversations = get_collection("conversations")
             
-            # Criar nova conversa
-            conversation = ConversationModel()
-            if session_id:
-                conversation.session_id = session_id
+            # Verificar se a conversa já existe
+            existing = await conversations.find_one({"session_id": session_id})
             
-            conversation_id = await self.conversation_repo.create_conversation(conversation)
-            
-            return {
-                "conversation_id": conversation_id,
-                "session_id": conversation.session_id,
-                "created_at": conversation.created_at.isoformat(),
-                "message_count": 0,
-                "history": [],
-                "user_preferences": {},
-                "is_new": True
-            }
-            
+            if existing:
+                logger.info(f"📖 Recuperando conversa existente: {session_id}")
+                return {
+                    "session_id": session_id,
+                    "exists": True,
+                    "user_preferences": existing.get("user_preferences", {}),
+                    "created_at": existing.get("created_at"),
+                    "updated_at": existing.get("updated_at")
+                }
+            else:
+                # Criar nova conversa
+                conversation_data = {
+                    "session_id": session_id,
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                    "user_preferences": {},
+                    "message_count": 0
+                }
+                
+                await conversations.insert_one(conversation_data)
+                logger.info(f"🆕 Nova conversa criada: {session_id}")
+                
+                return {
+                    "session_id": session_id,
+                    "exists": False,
+                    "created_at": conversation_data["created_at"]
+                }
+                
         except Exception as e:
-            logger.error(f"Erro ao iniciar/recuperar conversa: {e}")
+            logger.error(f"❌ Erro ao iniciar/recuperar conversa: {e}")
             raise
     
     async def process_user_message(self, session_id: str, user_message: str) -> Dict[str, Any]:
-        """
-        Processar mensagem do usuário e gerar resposta
-        """
-        start_time = time.time()
-        
+        """Processar mensagem do usuário e gerar resposta"""
         try:
-            # Obter ou criar conversa
-            conversation_data = await self.start_or_get_conversation(session_id)
-            conversation_id = conversation_data["conversation_id"]
+            # Garantir que a conversa existe
+            await self.start_or_get_conversation(session_id)
+            
+            # Buscar preferências do usuário
+            conversations = get_collection("conversations")
+            conversation = await conversations.find_one({"session_id": session_id})
+            selected_voice = None
+            voice_enabled = True  # padrão habilitado
+            if conversation:
+                user_prefs = conversation.get("user_preferences", {})
+                selected_voice = user_prefs.get("selected_voice")
+                voice_enabled = user_prefs.get("voice_enabled", True)
+            if not selected_voice:
+                selected_voice = "pt-BR-Neural2-A"  # fallback padrão
             
             # Salvar mensagem do usuário
-            user_msg = MessageModel(
-                conversation_id=conversation_id,
-                content=user_message,
-                message_type="user"
-            )
-            user_message_id = await self.message_repo.create_message(user_msg)
+            user_msg_id = await self._save_message(session_id, "user", user_message)
             
-            # Gerar resposta da IA (por enquanto, resposta padrão)
-            ai_response = await self._generate_ai_response(user_message, conversation_data["history"], conversation_data)
+            # Obter resposta da IA
+            ai_response = await self._get_ai_response(user_message, session_id, selected_voice, voice_enabled)
             
             # Salvar resposta da IA
-            ai_msg = MessageModel(
-                conversation_id=conversation_id,
-                content=ai_response["content"],
-                message_type="ai",
-                has_video=ai_response.get("has_video", False),
-                video_url=ai_response.get("video_url"),
-                processing_time_ms=int((time.time() - start_time) * 1000)
-            )
-            ai_message_id = await self.message_repo.create_message(ai_msg)
+            ai_msg_id = await self._save_message(session_id, "ai", ai_response["content"], ai_response.get("audio_url"))
             
-            # Atualizar contador de mensagens na conversa
-            await self.conversation_repo.increment_message_count(conversation_id)
-            await self.conversation_repo.increment_message_count(conversation_id)  # User + AI
+            # Atualizar contador de mensagens
+            await self._update_message_count(session_id)
             
-            # Retornar resposta formatada para o frontend
             return {
+                "id": ai_msg_id,
+                "content": ai_response["content"],
+                "audioUrl": ai_response.get("audio_url"),
                 "session_id": session_id,
-                "conversation_id": conversation_id,
-                "user_message": {
-                    "id": user_message_id,
-                    "content": user_message,
-                    "type": "user",
-                    "timestamp": user_msg.created_at.isoformat()
-                },
-                "ai_response": {
-                    "id": ai_message_id,
-                    "content": ai_response["content"],
-                    "type": "ai",
-                    "timestamp": ai_msg.created_at.isoformat(),
-                    "hasVideo": ai_response.get("has_video", False),
-                    "videoUrl": ai_response.get("video_url"),
-                    "audioUrl": ai_response.get("audio_url"),
-                    "voiceUsed": ai_response.get("voice_used")
-                },
-                "processing_time_ms": int((time.time() - start_time) * 1000),
-                "total_messages": conversation_data["message_count"] + 2
+                "provider": ai_response.get("provider", "unknown"),
+                "model": ai_response.get("model", "unknown")
             }
             
         except Exception as e:
-            logger.error(f"Erro ao processar mensagem: {e}")
-            
-            # Salvar mensagem de erro
-            try:
-                error_msg = MessageModel(
-                    conversation_id=conversation_id if 'conversation_id' in locals() else "unknown",
-                    content=f"Erro interno: {str(e)}",
-                    message_type="error"
-                )
-                await self.message_repo.create_message(error_msg)
-            except:
-                pass  # Se não conseguir salvar erro, não falhar novamente
-            
+            logger.error(f"❌ Erro ao processar mensagem: {e}")
             raise
-    
-    async def _generate_ai_response(self, user_message: str, history: List[Dict], conversation_data: Dict = None) -> Dict[str, Any]:
-        """
-        Gerar resposta da IA (temporariamente resposta padrão) e sintetizar áudio.
-        """
-        # Respostas padrão baseadas em contexto simples
-        user_lower = user_message.lower()
-        
-        if any(word in user_lower for word in ["olá", "oi", "hello", "hi"]):
-            response_text = "Olá! Sou sua psicóloga virtual. Como posso ajudá-lo hoje? Conte-me o que está sentindo."
-        elif any(word in user_lower for word in ["triste", "deprimido", "depressão", "mal"]):
-            response_text = "Entendo que você está passando por um momento difícil. É muito corajoso buscar ajuda. Pode me contar mais sobre o que está sentindo? Lembre-se: você não está sozinho."
-        elif any(word in user_lower for word in ["ansioso", "ansiedade", "nervoso", "preocupado"]):
-            response_text = "A ansiedade é algo muito comum e tratável. Vamos trabalhar juntos para encontrar estratégias que funcionem para você. Que situações costumam despertar essa ansiedade?"
-        elif any(word in user_lower for word in ["obrigado", "obrigada", "thank", "thanks"]):
-            response_text = "Fico feliz em poder ajudar! É um prazer acompanhá-lo nessa jornada. Como você está se sentindo agora?"
-        elif any(word in user_lower for word in ["tchau", "bye", "adeus"]):
-            response_text = "Foi um prazer conversar com você. Lembre-se: estou sempre aqui quando precisar. Cuide-se bem! 💙"
-        else:
-            response_text = f"Entendo sua preocupação. É importante que você tenha compartilhado isso comigo. Vamos explorar essa questão juntos. Pode me contar mais detalhes sobre como isso afeta seu dia a dia?"
-
-        # Obter voz selecionada das preferências do usuário
-        selected_voice = "pt-BR-Neural2-A"  # Voz padrão
-        if conversation_data and conversation_data.get("user_preferences"):
-            user_voice = conversation_data["user_preferences"].get("selected_voice")
-            if user_voice:
-                selected_voice = user_voice
-                logger.info(f"🎤 Usando voz selecionada pelo usuário: {selected_voice}")
-
-        # Sintetizar áudio com o Voice Service usando a voz selecionada
-        audio_url = None
-        try:
-            async with httpx.AsyncClient() as client:
-                voice_request = {
-                    "text": response_text,
-                    "voice_name": selected_voice,
-                    "language_code": "pt-BR",
-                    "speaking_rate": 1.0,
-                    "pitch": 0.0,
-                    "volume_gain_db": 0.0
-                }
-                
-                logger.info(f"🎙️ Solicitando síntese com voz: {selected_voice}")
-                
-                response_voice = await client.post(
-                    f"{VOICE_SERVICE_URL}/api/v1/speak",
-                    json=voice_request,
-                    timeout=30
-                )
-                if response_voice.status_code == 200:
-                    voice_response = response_voice.json()
-                    voice_audio_url = voice_response.get("audio_url")
-                    if voice_audio_url:
-                        # Extrair apenas o nome do arquivo da URL do voice-service
-                        filename = voice_audio_url.split("/")[-1]
-                        # Construir URL que aponta para o proxy do gateway
-                        audio_url = f"{GATEWAY_URL}/api/voice/audio/{filename}"
-                        logger.info(f"✅ Áudio gerado com sucesso: {filename}")
-                else:
-                    logger.error(f"Voice service error: {response_voice.status_code} - {response_voice.text}")
-        except Exception as e:
-            logger.warning(f"Falha ao contatar o Voice Service: {e}")
-
-        return {
-            "content": response_text,
-            "has_video": False,
-            "video_url": None,
-            "audio_url": audio_url,
-            "voice_used": selected_voice
-        }
     
     async def get_conversation_history(self, session_id: str) -> Dict[str, Any]:
-        """
-        Obter histórico completo de uma conversa
-        """
+        """Obter histórico completo de uma conversa"""
         try:
-            conversation_data = await self.start_or_get_conversation(session_id)
+            messages = get_collection("messages")
+            
+            # Buscar todas as mensagens da sessão
+            cursor = messages.find(
+                {"session_id": session_id},
+                sort=[("created_at", 1)]
+            )
+            
+            history = []
+            async for msg in cursor:
+                history.append({
+                    "id": str(msg["_id"]),
+                    "type": msg["type"],
+                    "content": msg["content"],
+                    "audio_url": msg.get("audio_url"),
+                    "created_at": msg["created_at"]
+                })
             
             return {
                 "session_id": session_id,
-                "conversation_id": conversation_data["conversation_id"],
-                "created_at": conversation_data["created_at"],
-                "message_count": conversation_data["message_count"],
-                "history": conversation_data["history"]
+                "history": history,
+                "message_count": len(history)
             }
             
         except Exception as e:
-            logger.error(f"Erro ao obter histórico: {e}")
+            logger.error(f"❌ Erro ao obter histórico: {e}")
             raise
+    
+    async def update_conversation_data(self, session_id: str, update_data: Dict[str, Any]) -> bool:
+        """Atualizar dados da conversa"""
+        try:
+            conversations = get_collection("conversations")
+            
+            update_data["updated_at"] = datetime.utcnow()
+            
+            result = await conversations.update_one(
+                {"session_id": session_id},
+                {"$set": update_data}
+            )
+            
+            return result.modified_count > 0 or result.matched_count > 0
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao atualizar conversa: {e}")
+            raise
+    
+    async def _save_message(self, session_id: str, message_type: str, content: str, audio_url: Optional[str] = None) -> str:
+        """Salvar mensagem no MongoDB"""
+        try:
+            messages = get_collection("messages")
+            
+            message_data = {
+                "session_id": session_id,
+                "type": message_type,
+                "content": content,
+                "audio_url": audio_url,
+                "created_at": datetime.utcnow()
+            }
+            
+            result = await messages.insert_one(message_data)
+            return str(result.inserted_id)
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao salvar mensagem: {e}")
+            raise
+    
+    async def _get_ai_response(self, user_message: str, session_id: str, selected_voice: str, voice_enabled: bool = True) -> Dict[str, Any]:
+        """Obter resposta da IA via AI Service com contexto da conversa"""
+        try:
+            # Obter histórico da conversa para contexto
+            conversation_history = await self._get_conversation_context(session_id)
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Preparar payload com contexto
+                payload = {
+                    "message": user_message,
+                    "session_id": session_id
+                }
+                
+                # Adicionar histórico se disponível (últimas 6 mensagens para otimizar tokens)
+                if conversation_history:
+                    # Limitar a últimas 6 mensagens para economizar tokens
+                    limited_history = conversation_history[-6:]
+                    payload["conversation_history"] = limited_history
+                    logger.info(f"📊 Enviando contexto: {len(limited_history)} mensagens para sessão {session_id}")
+                
+                # Obter resposta textual da IA
+                response = await client.post(
+                    f"{self.ai_service_url}/chat",
+                    json=payload
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    ai_response_text = data.get("response", "Desculpe, não consegui processar sua mensagem.")
+                    
+                    return {
+                        "content": ai_response_text,
+                        "audio_url": None,  # Não geramos mais áudio
+                        "provider": data.get("provider", "unknown"),
+                        "model": data.get("model", "unknown")
+                    }
+                else:
+                    logger.warning(f"⚠️ AI Service retornou {response.status_code}")
+                    return {
+                        "content": "Desculpe, o serviço de IA está temporariamente indisponível.",
+                        "audio_url": None,
+                        "provider": "fallback",
+                        "model": "fallback"
+                    }
+                    
+        except Exception as e:
+            logger.error(f"❌ Erro ao obter resposta da IA: {e}")
+            return {
+                "content": "Desculpe, ocorreu um erro ao processar sua mensagem.",
+                "audio_url": None,
+                "provider": "fallback",
+                "model": "fallback"
+            }
+    
+    async def _get_conversation_context(self, session_id: str) -> List[Dict[str, Any]]:
+        """Obter contexto da conversa para enviar ao AI Service"""
+        try:
+            messages = get_collection("messages")
+            
+            # Buscar mensagens da sessão (excluindo a atual)
+            cursor = messages.find(
+                {"session_id": session_id},
+                sort=[("created_at", 1)]
+            )
+            
+            context = []
+            async for msg in cursor:
+                # Converter para formato esperado pelo AI Service
+                context.append({
+                    "type": msg["type"],
+                    "content": msg["content"]
+                })
+            
+            return context
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao obter contexto da conversa: {e}")
+            return []
+    
+    # async def _generate_audio(self, text: str, session_id: str, voice: str) -> Optional[str]:
+    #     """Gerar áudio via Voice Service - COMENTADO TEMPORARIAMENTE"""
+    #     try:
+    #         async with httpx.AsyncClient(timeout=60.0) as client:
+    #             response = await client.post(
+    #                 f"{self.voice_service_url}/api/v1/synthesize",
+    #                 json={
+    #                     "text": text,
+    #                     "voice": voice,
+    #                     "speed": 1.0,
+    #                     "pitch": 0.0
+    #             }
+    #             )
+    #             
+    #             if response.status_code == 200:
+    #                 data = response.json()
+    #                 audio_url = data.get("audio_url")
+    #                 if audio_url:
+    #                     # Extrair o nome do arquivo da URL completa
+    #                     audio_filename = audio_url.split("/")[-1]
+    #                     # Retornar URL para acessar o áudio via gateway
+    #                     return f"/api/voice/audio/{audio_filename}"
+    #                 else:
+    #                     logger.warning("⚠️ Voice Service não retornou URL do áudio")
+    #                     return None
+    #             else:
+    #                 logger.warning(f"⚠️ Voice Service retornou {response.status_code}: {response.text}")
+    #                 return None
+    #                 
+    #     except Exception as e:
+    #         logger.error(f"❌ Erro ao gerar áudio: {e}")
+    #         return None
+    
+    async def _update_message_count(self, session_id: str):
+        """Atualizar contador de mensagens da conversa"""
+        try:
+            conversations = get_collection("conversations")
+            await conversations.update_one(
+                {"session_id": session_id},
+                {"$inc": {"message_count": 1}, "$set": {"updated_at": datetime.utcnow()}}
+            )
+        except Exception as e:
+            logger.error(f"❌ Erro ao atualizar contador: {e}")
     
     async def list_recent_conversations(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Listar conversas recentes
         """
         try:
-            conversations = await self.conversation_repo.list_conversations(limit=limit)
+            conversations = get_collection("conversations")
+            
+            cursor = conversations.find(
+                {},
+                sort=[("updated_at", -1)],
+                limit=limit
+            )
             
             result = []
-            for conv in conversations:
+            async for conv in cursor:
                 result.append({
-                    "conversation_id": conv.id,
-                    "session_id": conv.session_id,
-                    "created_at": conv.created_at.isoformat(),
-                    "message_count": conv.message_count
+                    "session_id": conv["session_id"],
+                    "created_at": conv["created_at"],
+                    "updated_at": conv["updated_at"],
+                    "message_count": conv.get("message_count", 0)
                 })
                 
             return result
             
         except Exception as e:
-            logger.error(f"Erro ao listar conversas: {e}")
+            logger.error(f"❌ Erro ao listar conversas: {e}")
             raise
 
     async def get_conversation_by_session_id(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Busca uma conversa pelo session_id e retorna como dicionário."""
         try:
-            conversation = await self.conversation_repo.get_conversation_by_session_id(session_id)
-            if conversation:
-                # Converte o modelo Pydantic para um dicionário
-                return conversation.model_dump(by_alias=True)
-            return None
-        except Exception as e:
-            logger.error(f"Erro ao buscar conversa por session_id: {e}")
-            raise
-
-    async def update_conversation_data(self, session_id: str, data: Dict[str, Any]) -> bool:
-        """Atualiza uma conversa com novos dados."""
-        try:
-            conversation = await self.conversation_repo.get_conversation_by_session_id(session_id)
-            if not conversation:
-                return False
+            conversations = get_collection("conversations")
+            conversation = await conversations.find_one({"session_id": session_id})
             
-            # O método de atualização deve estar no repositório
-            success = await self.conversation_repo.update_conversation(conversation.id, data)
-            return success
+            if conversation:
+                return {
+                    "session_id": conversation["session_id"],
+                    "created_at": conversation["created_at"],
+                    "updated_at": conversation["updated_at"],
+                    "message_count": conversation.get("message_count", 0),
+                    "user_preferences": conversation.get("user_preferences", {})
+                }
+            return None
+            
         except Exception as e:
-            logger.error(f"Erro ao atualizar dados da conversa: {e}")
+            logger.error(f"❌ Erro ao buscar conversa por session_id: {e}")
             raise 

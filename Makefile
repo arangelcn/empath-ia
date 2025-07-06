@@ -45,17 +45,24 @@ setup: ## Configuração inicial do projeto
 	@touch data/{shared,models,uploads,logs}/.gitkeep
 	@echo "${GREEN}✅ Configuração inicial concluída!${NC}"
 	@echo "${BLUE}📝 Edite o arquivo .env com suas configurações${NC}"
+	@echo "${YELLOW}⚠️  IMPORTANTE: Configure as seguintes variáveis no .env:${NC}"
+	@echo "${BLUE}   - OPENAI_API_KEY (obrigatório)${NC}"
+	@echo "${BLUE}   - CREDENTIALS_JSON (para Google Cloud TTS)${NC}"
+	@echo "${BLUE}   - DID_API_USERNAME/DID_API_PASSWORD (opcional, para avatar)${NC}"
 
 dev: ## Inicia ambiente de desenvolvimento com hot reload
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento com live reload...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
 	@docker compose -f docker-compose.dev.yml up --build
 
 dev-detached: ## Inicia ambiente de desenvolvimento em background
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento (background) com live reload...${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
+	@docker compose -f docker-compose.dev.yml up --build -d
 
 dev-services: ## Inicia apenas os serviços backend (sem web-ui)
 	@echo "${YELLOW}🚀 Iniciando apenas serviços backend...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
 	@docker compose -f $(DOCKER_COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb
 
 # ===== COMANDOS MONGODB =====
@@ -112,10 +119,12 @@ build-prod: ## Constrói imagens para produção
 
 deploy-dev: build ## Deploy em ambiente de desenvolvimento
 	@echo "${YELLOW}🚀 Fazendo deploy em desenvolvimento...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
 	@docker compose -f $(DOCKER_COMPOSE_DEV) up -d
 
 deploy-prod: build-prod ## Deploy em ambiente de produção
 	@echo "${YELLOW}🚀 Fazendo deploy em produção...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
 	@docker compose -f $(DOCKER_COMPOSE_PROD) up -d
 
 # ===== CONTROLE DE SERVIÇOS =====
@@ -166,11 +175,13 @@ health: ## Verifica saúde de todos os serviços
 
 monitor: ## Abre ferramentas de monitoramento
 	@echo "${BLUE}📊 Ferramentas de monitoramento:${NC}"
-	@echo " - Web UI: http://localhost:3000"
+	@echo " - Web UI: http://localhost:7860"
+	@echo " - Admin Panel: http://localhost:3001"
 	@echo " - Gateway API: http://localhost:8000/docs"
 	@echo " - AI Service: http://localhost:8001/docs"
 	@echo " - Avatar Service: http://localhost:8002/docs"
 	@echo " - Emotion Service: http://localhost:8003/docs"
+	@echo " - Voice Service: http://localhost:8004/docs"
 	@echo " - MongoDB Express: http://localhost:8081"
 	@echo " - Redis: localhost:6379"
 	@echo " - PostgreSQL: localhost:5432"
@@ -281,6 +292,39 @@ env-create: ## Cria arquivo .env a partir do .env.example
 	@test ! -f .env || (echo "${RED}❌ Arquivo .env já existe${NC}" && exit 1)
 	@cp .env.example .env
 	@echo "${GREEN}✅ Arquivo .env criado! Edite as variáveis conforme necessário.${NC}"
+
+env-validate: ## Valida configurações do .env
+	@echo "${YELLOW}🔍 Validando configurações do .env...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado${NC}" && exit 1)
+	@echo "${GREEN}✅ Arquivo .env encontrado${NC}"
+	@echo "${BLUE}📋 Verificando variáveis obrigatórias:${NC}"
+	@if grep -q "OPENAI_API_KEY=open_ia_api_key" .env; then \
+		echo "${RED}⚠️  OPENAI_API_KEY não configurada${NC}"; \
+	else \
+		echo "${GREEN}✅ OPENAI_API_KEY configurada${NC}"; \
+	fi
+	@if grep -q "CREDENTIALS_JSON=path_to_credentials" .env; then \
+		echo "${RED}⚠️  CREDENTIALS_JSON não configurada${NC}"; \
+	else \
+		echo "${GREEN}✅ CREDENTIALS_JSON configurada${NC}"; \
+	fi
+	@if grep -q "DID_API_USERNAME=seu_username_aqui" .env; then \
+		echo "${YELLOW}⚠️  DID_API_USERNAME não configurada (opcional)${NC}"; \
+	else \
+		echo "${GREEN}✅ DID_API_USERNAME configurada${NC}"; \
+	fi
+	@echo "${BLUE}📋 Verificando arquivos de credenciais:${NC}"
+	@if [ -f "services/voice-service/credentials/empathia-462921-deff8cdf0d47.json" ]; then \
+		echo "${GREEN}✅ Arquivo de credenciais GCP encontrado${NC}"; \
+	else \
+		echo "${RED}⚠️  Arquivo de credenciais GCP não encontrado${NC}"; \
+		echo "${BLUE}   Coloque o arquivo JSON em: services/voice-service/credentials/${NC}"; \
+	fi
+	@echo "${BLUE}📋 Verificando portas:${NC}"
+	@echo " - Gateway: ${GATEWAY_PORT:-8000}"
+	@echo " - Web UI: ${WEB_UI_PORT:-7860}"
+	@echo " - Admin Panel: ${ADMIN_PANEL_PORT:-3001}"
+	@echo "${GREEN}✅ Validação concluída${NC}"
 
 # Default target
 .DEFAULT_GOAL := help 

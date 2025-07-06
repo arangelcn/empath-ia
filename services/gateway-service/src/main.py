@@ -11,6 +11,9 @@ import logging
 # Importar modelos e serviços
 from .models.database import init_mongodb, close_mongodb
 from .services.chat_service import ChatService
+from .services.user_service import UserService
+from .services.therapeutic_session_service import TherapeuticSessionService
+from .services.user_therapeutic_session_service import UserTherapeuticSessionService
 from .api.admin import router as admin_router
 
 # Configurar logging
@@ -32,6 +35,7 @@ class UserPreferencesRequest(BaseModel):
     session_id: str
     username: str
     selected_voice: str
+    voice_enabled: bool = True
 
 # Criar app FastAPI
 app = FastAPI(
@@ -59,8 +63,11 @@ SERVICE_URLS = {
     "voice": os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004")
 }
 
-# Instância do serviço de chat
+# Instâncias dos serviços
 chat_service = ChatService()
+user_service = UserService()
+therapeutic_session_service = TherapeuticSessionService()
+user_therapeutic_session_service = UserTherapeuticSessionService()
 
 # Incluir rotas de administração
 app.include_router(admin_router)
@@ -129,7 +136,9 @@ async def send_message(request: ChatRequest):
         
         return {
             "success": True,
-            "data": result
+            "data": {
+                "ai_response": result
+            }
         }
         
     except Exception as e:
@@ -172,7 +181,7 @@ async def start_conversation(request: ConversationRequest):
 
 @app.post("/api/user/preferences")
 async def save_user_preferences(request: UserPreferencesRequest):
-    """Salva as preferências do usuário (nome, voz) para uma sessão."""
+    """Salva as preferências do usuário (nome, voz, voz habilitada) para uma sessão."""
     try:
         # Garante que a conversa exista antes de tentar atualizá-la
         await chat_service.start_or_get_conversation(request.session_id)
@@ -181,6 +190,7 @@ async def save_user_preferences(request: UserPreferencesRequest):
             "user_preferences": {
                 "username": request.username,
                 "selected_voice": request.selected_voice,
+                "voice_enabled": request.voice_enabled,
                 "completed_welcome": True
             }
         }
@@ -190,36 +200,363 @@ async def save_user_preferences(request: UserPreferencesRequest):
         if result:
             return {"success": True, "message": "Preferências salvas com sucesso."}
         else:
-            raise HTTPException(status_code=404, detail="Sessão não encontrada após a criação.")
+            return {"success": False, "message": "Erro ao salvar preferências."}
             
     except Exception as e:
         logger.error(f"Erro ao salvar preferências: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @app.get("/api/user/status/{session_id}")
 async def get_user_status(session_id: str):
-    """Verifica se o usuário já completou a tela de boas-vindas."""
+    """Obtém o status de onboarding do usuário para uma sessão."""
     try:
         conversation = await chat_service.get_conversation_by_session_id(session_id)
         
-        if conversation:
-            preferences = conversation.get("user_preferences", {})
-            completed_welcome = preferences.get("completed_welcome", False)
-            username = preferences.get("username")
-            selected_voice = preferences.get("selected_voice")
+        if not conversation:
             return {
-                "success": True, 
+                "success": True,
                 "data": {
-                    "is_onboarded": completed_welcome, 
-                    "username": username,
-                    "selected_voice": selected_voice
+                    "is_onboarded": False,
+                    "username": None,
+                    "selected_voice": None
                 }
             }
-        else:
-            return {"success": True, "data": {"is_onboarded": False, "username": None, "selected_voice": None}}
-            
+        
+        user_prefs = conversation.get("user_preferences", {})
+        
+        return {
+            "success": True,
+            "data": {
+                "is_onboarded": user_prefs.get("completed_welcome", False),
+                "username": user_prefs.get("username"),
+                "selected_voice": user_prefs.get("selected_voice")
+            }
+        }
+        
     except Exception as e:
-        logger.error(f"Erro ao verificar status do usuário: {e}")
+        logger.error(f"Erro ao obter status do usuário: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+# ===== ENDPOINTS DE SESSÕES TERAPÊUTICAS =====
+
+@app.get("/api/sessions")
+async def get_therapeutic_sessions(active_only: bool = True, limit: int = 50):
+    """
+    Obter sessões terapêuticas ativas (endpoint público)
+    """
+    try:
+        result = await therapeutic_session_service.list_sessions(
+            limit=limit,
+            offset=0,
+            active_only=active_only
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Erro ao buscar sessões terapêuticas: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.get("/api/sessions/{session_id}")
+async def get_therapeutic_session(session_id: str):
+    """
+    Obter detalhes de uma sessão terapêutica específica
+    """
+    try:
+        session = await therapeutic_session_service.get_session(session_id)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Sessão terapêutica não encontrada")
+        
+        return {
+            "success": True,
+            "data": {
+                "id": str(session["_id"]),
+                "session_id": session["session_id"],
+                "title": session["title"],
+                "subtitle": session["subtitle"],
+                "objective": session["objective"],
+                "initial_prompt": session["initial_prompt"],
+                "is_active": session["is_active"],
+                "created_at": session["created_at"].isoformat(),
+                "updated_at": session["updated_at"].isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter sessão terapêutica: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.post("/api/session/complete")
+async def complete_session(request: Request):
+    """
+    Marcar uma sessão como concluída para um usuário
+    """
+    try:
+        data = await request.json()
+        session_id = data.get("session_id")
+        user_id = data.get("user_id")
+        
+        if not session_id or not user_id:
+            raise HTTPException(status_code=400, detail="session_id e user_id são obrigatórios")
+        
+        # Aqui você pode implementar a lógica para marcar a sessão como concluída
+        # Por exemplo, salvar no banco de dados o progresso do usuário
+        
+        return {
+            "success": True,
+            "data": {
+                "session_id": session_id,
+                "user_id": user_id,
+                "completed_at": datetime.now().isoformat(),
+                "message": "Sessão marcada como concluída"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao marcar sessão como concluída: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+# ===== ENDPOINTS DE SESSÕES TERAPÊUTICAS DOS USUÁRIOS =====
+
+@app.get("/api/user/{username}/sessions")
+async def get_user_sessions(username: str, status: Optional[str] = None):
+    """Obter sessões terapêuticas de um usuário"""
+    try:
+        sessions = await user_therapeutic_session_service.get_user_sessions(username, status)
+        
+        return {
+            "success": True,
+            "data": {
+                "username": username,
+                "sessions": sessions,
+                "total": len(sessions)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter sessões do usuário {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.get("/api/user/{username}/sessions/{session_id}")
+async def get_user_session(username: str, session_id: str):
+    """Obter uma sessão específica de um usuário"""
+    try:
+        session = await user_therapeutic_session_service.get_user_session(username, session_id)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Sessão não encontrada")
+        
+        return {
+            "success": True,
+            "data": session
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter sessão {session_id} do usuário {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.post("/api/user/{username}/sessions/{session_id}/unlock")
+async def unlock_user_session(username: str, session_id: str):
+    """Desbloquear uma sessão para o usuário"""
+    try:
+        success = await user_therapeutic_session_service.unlock_session(username, session_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Sessão não encontrada")
+        
+        return {
+            "success": True,
+            "message": f"Sessão {session_id} desbloqueada com sucesso"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao desbloquear sessão {session_id} para usuário {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.post("/api/user/{username}/sessions/{session_id}/start")
+async def start_user_session(username: str, session_id: str):
+    """Iniciar uma sessão para o usuário"""
+    try:
+        success = await user_therapeutic_session_service.start_session(username, session_id)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Sessão não encontrada")
+        
+        return {
+            "success": True,
+            "message": f"Sessão {session_id} iniciada com sucesso"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao iniciar sessão {session_id} para usuário {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.post("/api/user/{username}/sessions/{session_id}/complete")
+async def complete_user_session(username: str, session_id: str, request: Request):
+    """Marcar uma sessão como concluída para o usuário"""
+    try:
+        data = await request.json()
+        progress = data.get("progress", 100)
+        
+        success = await user_therapeutic_session_service.complete_session(username, session_id, progress)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Sessão não encontrada")
+        
+        return {
+            "success": True,
+            "message": f"Sessão {session_id} concluída com sucesso"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao concluir sessão {session_id} para usuário {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.get("/api/user/{username}/progress")
+async def get_user_progress(username: str):
+    """Obter progresso geral do usuário"""
+    try:
+        progress = await user_therapeutic_session_service.get_user_progress(username)
+        
+        return {
+            "success": True,
+            "data": progress
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter progresso do usuário {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+# ===== ENDPOINTS DE USUÁRIO =====
+
+class UserCreateRequest(BaseModel):
+    username: str
+    email: Optional[str] = None
+    preferences: Optional[Dict[str, Any]] = None
+
+class UserUpdateRequest(BaseModel):
+    email: Optional[str] = None
+    preferences: Optional[Dict[str, Any]] = None
+    is_active: Optional[bool] = None
+
+@app.post("/api/user/create")
+async def create_user(request: UserCreateRequest):
+    """Criar novo usuário"""
+    try:
+        result = await user_service.create_user(
+            username=request.username,
+            email=request.email,
+            preferences=request.preferences
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erro ao criar usuário: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/user/{username}")
+async def get_user(username: str):
+    """Obter detalhes de um usuário"""
+    try:
+        user = await user_service.get_user(username)
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        return {
+            "success": True,
+            "data": user
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter usuário: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/user/{username}/preferences")
+async def update_user_preferences(username: str, preferences: Dict[str, Any]):
+    """Atualizar preferências do usuário"""
+    try:
+        success = await user_service.update_user_preferences(username, preferences)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        return {
+            "success": True,
+            "message": "Preferências atualizadas com sucesso"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao atualizar preferências: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/user/{username}/login")
+async def user_login(username: str):
+    """Registrar login do usuário e clonar sessões terapêuticas"""
+    try:
+        success = await user_service.update_last_login(username)
+        
+        if not success:
+            # Se o usuário não existe, criar automaticamente
+            await user_service.create_user(username=username)
+            await user_service.update_last_login(username)
+        
+        # Clonar sessões terapêuticas para o usuário
+        clone_result = await user_therapeutic_session_service.clone_sessions_for_user(username)
+        
+        # Desbloquear a primeira sessão se não houver nenhuma desbloqueada
+        unlock_result = await user_therapeutic_session_service.unlock_first_session(username)
+        
+        return {
+            "success": True,
+            "message": "Login registrado com sucesso",
+            "sessions_cloned": clone_result["cloned_count"],
+            "total_templates": clone_result["total_templates"],
+            "first_session_unlocked": unlock_result
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao registrar login: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/user/{username}/stats")
+async def get_user_stats(username: str):
+    """Obter estatísticas do usuário"""
+    try:
+        stats = await user_service.get_user_stats(username)
+        
+        if not stats:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter estatísticas do usuário: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/chat/conversations")
@@ -465,28 +802,6 @@ async def voice_audio(filename: str):
                 
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
-
-# Endpoint para sessão completa
-@app.post("/api/session/complete")
-async def complete_session(request: Request):
-    """
-    Endpoint orquestrado que combina análise emocional + resposta IA + avatar
-    TODO: Implementar orquestração completa
-    """
-    body = await request.json()
-    
-    return {
-        "session_id": "session-123",
-        "status": "development",
-        "message": "Orquestração completa em desenvolvimento",
-        "note": "Use /api/chat/send para chat com persistência",
-        "steps": [
-            "1. Análise emocional (emotion-service)",
-            "2. Processamento IA (ai-service)", 
-            "3. Geração avatar (avatar-service)"
-        ],
-        "input": body
-    }
 
 # Configurações do gateway
 @app.get("/config")

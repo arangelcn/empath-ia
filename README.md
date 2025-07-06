@@ -1,4 +1,4 @@
-# Empath.IA - Psicóloga Virtual com IA
+# Empath.IA - Psicólogo Virtual com IA
 
 Uma plataforma completa de terapia virtual baseada na abordagem humanística de Carl Rogers, integrando análise emocional em tempo real, síntese de voz avançada e interface conversacional intuitiva.
 

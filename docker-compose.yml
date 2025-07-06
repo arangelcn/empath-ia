@@ -27,8 +27,11 @@ services:
       - AVATAR_SERVICE_URL=${AVATAR_SERVICE_URL:-http://avatar-service:8002}
       - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://emotion-service:8003}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
-      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia_db?authSource=admin}
-      - DATABASE_NAME=${DATABASE_NAME:-empatia_db}
+      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - DATABASE_NAME=${DATABASE_NAME:-empatia}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEBUG=${DEBUG:-false}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}
     volumes:
       - ./services/gateway-service:/app
       - ./data/shared:/shared_data
@@ -60,8 +63,14 @@ services:
       - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - MODEL_NAME=${MODEL_NAME:-gpt-4o}
+      - AI_SERVICE_PORT=${AI_SERVICE_PORT:-8001}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./services/ai-service:/app
+    ports:
+      - "${AI_SERVICE_PORT:-8001}:8001"
     networks:
       - empatia-network
     develop:
@@ -81,6 +90,9 @@ services:
     environment:
       - DID_API_USERNAME=${DID_API_USERNAME:-}
       - DID_API_PASSWORD=${DID_API_PASSWORD:-}
+      - AVATAR_SERVICE_PORT=${AVATAR_SERVICE_PORT:-8002}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./services/avatar-service:/app
     networks:
@@ -99,6 +111,12 @@ services:
     container_name: empatia-emotion-service
     env_file:
       - .env
+    environment:
+      - OPENFACE_MODEL_PATH=${OPENFACE_MODEL_PATH:-/models/openface}
+      - EMOTION_CONFIDENCE_THRESHOLD=${EMOTION_CONFIDENCE_THRESHOLD:-0.7}
+      - EMOTION_SERVICE_PORT=${EMOTION_SERVICE_PORT:-8003}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./services/emotion-service:/app
       - ./data/shared:/shared_data
@@ -122,13 +140,17 @@ services:
       - VOICE_SERVICE_PORT=${VOICE_SERVICE_PORT:-8004}
       - VOICE_SERVICE_BASE_URL=${VOICE_SERVICE_BASE_URL:-http://localhost:8004}
       # Configurações Google Cloud Text-to-Speech
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-deff8cdf0d47.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-28cb9105b799.json
       - TTS_OUTPUT_DIR=/app/output
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./services/voice-service:/app
       - ./data/tts_output:/app/output
       # Volume para credenciais do GCP
-      - ./services/voice-service/credentials/empathia-462921-deff8cdf0d47.json:/app/credentials/empathia-462921-deff8cdf0d47.json:ro
+      - ./services/voice-service/credentials/empathia-462921-28cb9105b799.json:/app/credentials/empathia-462921-28cb9105b799.json:ro
+    ports:
+      - "${VOICE_SERVICE_PORT:-8004}:8004"
     networks:
       - empatia-network
     healthcheck:
@@ -152,8 +174,9 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+      - BACKEND_URL=${BACKEND_URL:-http://gateway-service:8000}
     ports:
-      - "${WEB_UI_PORT:-3000}:3000"
+      - "${WEB_UI_PORT:-7860}:3000"
     depends_on:
       - gateway
     networks:
@@ -166,6 +189,7 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:8000}
+      - BACKEND_URL=${BACKEND_URL:-http://gateway-service:8000}
     ports:
       - "${ADMIN_PANEL_PORT:-3001}:3000"
     depends_on:
@@ -201,8 +225,9 @@ services:
     container_name: empatia-postgres
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-empatia}
-      - POSTGRES_USER=${POSTGRES_USER:-empatia}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-empatia123}
+      - POSTGRES_USER=${POSTGRES_USER:-empatia_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-strong_password_here}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://empatia_user:strong_password_here@db:5432/empatia}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:

@@ -107,6 +107,35 @@ class ApiService {
   async getAllServicesHealth() {
     return this.get('/health/all');
   }
+
+  // ===== ENDPOINTS PARA SESSÕES TERAPÊUTICAS =====
+
+  // Listar sessões terapêuticas
+  async getTherapeuticSessions(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/api/admin/therapeutic-sessions${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  // Obter detalhes de uma sessão terapêutica
+  async getTherapeuticSession(sessionId) {
+    return this.get(`/api/admin/therapeutic-sessions/${sessionId}`);
+  }
+
+  // Criar nova sessão terapêutica
+  async createTherapeuticSession(sessionData) {
+    return this.post('/api/admin/therapeutic-sessions', sessionData);
+  }
+
+  // Atualizar sessão terapêutica
+  async updateTherapeuticSession(sessionId, sessionData) {
+    return this.put(`/api/admin/therapeutic-sessions/${sessionId}`, sessionData);
+  }
+
+  // Deletar sessão terapêutica
+  async deleteTherapeuticSession(sessionId) {
+    return this.delete(`/api/admin/therapeutic-sessions/${sessionId}`);
+  }
 }
 
 // Instância singleton

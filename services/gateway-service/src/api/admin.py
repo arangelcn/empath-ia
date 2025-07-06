@@ -6,15 +6,36 @@ from fastapi import APIRouter, HTTPException, Query
 from datetime import datetime, timedelta
 import logging
 from typing import Dict, List, Optional, Any
-from ..models.database import get_async_collection
+from pydantic import BaseModel
+from ..models.database import get_collection, get_therapeutic_sessions_collection
 from ..services.chat_service import ChatService
+from ..services.user_service import UserService
+from ..services.therapeutic_session_service import TherapeuticSessionService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
-# Instância do serviço de chat
+# Instâncias dos serviços
 chat_service = ChatService()
+user_service = UserService()
+therapeutic_session_service = TherapeuticSessionService()
+
+# Modelos Pydantic para sessões terapêuticas
+class TherapeuticSessionCreate(BaseModel):
+    session_id: str
+    title: str
+    subtitle: str
+    objective: str
+    initial_prompt: str
+    is_active: bool = True
+
+class TherapeuticSessionUpdate(BaseModel):
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    objective: Optional[str] = None
+    initial_prompt: Optional[str] = None
+    is_active: Optional[bool] = None
 
 @router.get("/stats")
 async def get_dashboard_stats():
@@ -22,8 +43,8 @@ async def get_dashboard_stats():
     Obter estatísticas gerais para o dashboard
     """
     try:
-        conversations_collection = await get_async_collection("conversations")
-        messages_collection = await get_async_collection("messages")
+        conversations_collection = get_collection("conversations")
+        messages_collection = get_collection("messages")
         
         # Estatísticas básicas
         total_conversations = await conversations_collection.count_documents({})
@@ -64,7 +85,7 @@ async def get_conversations_list(
     Listar conversas com paginação e busca
     """
     try:
-        conversations_collection = await get_async_collection("conversations")
+        conversations_collection = get_collection("conversations")
         
         # Filtro de busca
         filter_query = {}
@@ -164,7 +185,7 @@ async def get_emotions_analysis(
     Obter análise de emoções dos últimos dias
     """
     try:
-        conversations_collection = await get_async_collection("conversations")
+        conversations_collection = get_collection("conversations")
         
         # Período de análise
         start_date = datetime.utcnow() - timedelta(days=days)
@@ -220,7 +241,7 @@ async def get_realtime_activity():
     Obter atividade em tempo real
     """
     try:
-        conversations_collection = await get_async_collection("conversations")
+        conversations_collection = get_collection("conversations")
         
         # Últimas 5 atividades
         last_hour = datetime.utcnow() - timedelta(hours=1)
@@ -308,4 +329,330 @@ def calculate_conversation_duration(conversation: Dict) -> int:
     created_at = conversation["created_at"]
     updated_at = conversation["updated_at"]
     duration = updated_at - created_at
-    return int(duration.total_seconds() / 60) 
+    return int(duration.total_seconds() / 60)
+
+# ===== ENDPOINTS PARA SESSÕES TERAPÊUTICAS =====
+
+@router.post("/therapeutic-sessions")
+async def create_therapeutic_session(session: TherapeuticSessionCreate):
+    """
+    Criar nova sessão terapêutica
+    """
+    try:
+        session_data = {
+            "session_id": session.session_id,
+            "title": session.title,
+            "subtitle": session.subtitle,
+            "objective": session.objective,
+            "initial_prompt": session.initial_prompt,
+            "is_active": session.is_active
+        }
+        
+        result = await therapeutic_session_service.create_session(session_data)
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erro ao criar sessão terapêutica: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/therapeutic-sessions")
+async def list_therapeutic_sessions(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    active_only: bool = Query(False),
+    search: Optional[str] = None
+):
+    """
+    Listar sessões terapêuticas com paginação e filtros
+    """
+    try:
+        result = await therapeutic_session_service.list_sessions(
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            search=search
+        )
+        return result
+        
+    except Exception as e:
+        logger.error(f"Erro ao listar sessões terapêuticas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/therapeutic-sessions/{session_id}")
+async def get_therapeutic_session(session_id: str):
+    """
+    Obter detalhes de uma sessão terapêutica
+    """
+    try:
+        session = await therapeutic_session_service.get_session(session_id)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Sessão terapêutica não encontrada")
+        
+        return {
+            "success": True,
+            "data": {
+                "id": str(session["_id"]),
+                "session_id": session["session_id"],
+                "title": session["title"],
+                "subtitle": session["subtitle"],
+                "objective": session["objective"],
+                "initial_prompt": session["initial_prompt"],
+                "is_active": session["is_active"],
+                "created_at": session["created_at"].isoformat(),
+                "updated_at": session["updated_at"].isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter sessão terapêutica: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/therapeutic-sessions/{session_id}")
+async def update_therapeutic_session(session_id: str, session_update: TherapeuticSessionUpdate):
+    """
+    Atualizar uma sessão terapêutica
+    """
+    try:
+        # Preparar dados para atualização
+        update_data = {}
+        
+        if session_update.title is not None:
+            update_data["title"] = session_update.title
+        if session_update.subtitle is not None:
+            update_data["subtitle"] = session_update.subtitle
+        if session_update.objective is not None:
+            update_data["objective"] = session_update.objective
+        if session_update.initial_prompt is not None:
+            update_data["initial_prompt"] = session_update.initial_prompt
+        if session_update.is_active is not None:
+            update_data["is_active"] = session_update.is_active
+        
+        success = await therapeutic_session_service.update_session(session_id, update_data)
+        
+        if not success:
+            raise HTTPException(status_code=400, detail="Nenhuma alteração foi feita")
+        
+        return {
+            "success": True,
+            "data": {
+                "session_id": session_id,
+                "message": "Sessão terapêutica atualizada com sucesso"
+            }
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erro ao atualizar sessão terapêutica: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/therapeutic-sessions/{session_id}")
+async def delete_therapeutic_session(session_id: str):
+    """
+    Deletar uma sessão terapêutica
+    """
+    try:
+        success = await therapeutic_session_service.delete_session(session_id)
+        
+        if not success:
+            raise HTTPException(status_code=400, detail="Erro ao deletar sessão")
+        
+        return {
+            "success": True,
+            "data": {
+                "session_id": session_id,
+                "message": "Sessão terapêutica deletada com sucesso"
+            }
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erro ao deletar sessão terapêutica: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ===== ENDPOINTS PARA USUÁRIOS =====
+
+# Instância do serviço de usuários
+user_service = UserService()
+
+# Modelos Pydantic para usuários
+class UserCreate(BaseModel):
+    username: str
+    email: Optional[str] = None
+    preferences: Optional[Dict[str, Any]] = None
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+    preferences: Optional[Dict[str, Any]] = None
+    is_active: Optional[bool] = None
+
+@router.post("/users")
+async def create_user(user: UserCreate):
+    """
+    Criar novo usuário
+    """
+    try:
+        result = await user_service.create_user(
+            username=user.username,
+            email=user.email,
+            preferences=user.preferences
+        )
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erro ao criar usuário: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/users")
+async def list_users(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    active_only: bool = Query(True),
+    search: Optional[str] = None
+):
+    """
+    Listar usuários com paginação e busca
+    """
+    try:
+        users = await user_service.list_users(
+            limit=limit,
+            offset=offset,
+            active_only=active_only
+        )
+        
+        # Filtrar por busca se especificado
+        if search:
+            users = [u for u in users if search.lower() in u["username"].lower()]
+        
+        # Contar total para paginação
+        total_users = await user_service.list_users(limit=1000, active_only=active_only)
+        if search:
+            total_users = [u for u in total_users if search.lower() in u["username"].lower()]
+        
+        return {
+            "success": True,
+            "data": {
+                "users": users,
+                "pagination": {
+                    "total": len(total_users),
+                    "limit": limit,
+                    "offset": offset,
+                    "has_next": offset + limit < len(total_users)
+                }
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao listar usuários: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/users/{username}")
+async def get_user(username: str):
+    """
+    Obter detalhes de um usuário
+    """
+    try:
+        user = await user_service.get_user(username)
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        # Obter estatísticas do usuário
+        stats = await user_service.get_user_stats(username)
+        
+        return {
+            "success": True,
+            "data": {
+                "user": user,
+                "stats": stats
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter usuário: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/users/{username}")
+async def update_user(username: str, user_update: UserUpdate):
+    """
+    Atualizar usuário
+    """
+    try:
+        user = await user_service.get_user(username)
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        # Atualizar preferências se fornecidas
+        if user_update.preferences is not None:
+            await user_service.update_user_preferences(username, user_update.preferences)
+        
+        # Atualizar outros campos se necessário
+        if user_update.is_active is not None and not user_update.is_active:
+            await user_service.deactivate_user(username)
+        
+        return {
+            "success": True,
+            "message": "Usuário atualizado com sucesso"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao atualizar usuário: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/users/{username}")
+async def deactivate_user(username: str):
+    """
+    Desativar usuário
+    """
+    try:
+        success = await user_service.deactivate_user(username)
+        
+        if not success:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        return {
+            "success": True,
+            "message": "Usuário desativado com sucesso"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao desativar usuário: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/users/{username}/stats")
+async def get_user_statistics(username: str):
+    """
+    Obter estatísticas detalhadas de um usuário
+    """
+    try:
+        stats = await user_service.get_user_stats(username)
+        
+        if not stats:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        return {
+            "success": True,
+            "data": stats
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter estatísticas do usuário: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 

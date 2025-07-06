@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import ChatScreen from './components/Chat/ChatScreen.tsx';
-import WelcomeScreen from './components/WelcomeScreen.jsx';
+import LoginScreen from './components/LoginScreen.jsx';
+import HomeScreen from './components/Home/HomeScreen.jsx';
 import { Brain, Loader2 } from 'lucide-react';
 import { getUserStatus } from './services/api.js';
 
 const generateSessionId = () => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-function App() {
+function AppRoutes() {
   const [sessionId, setSessionId] = useState('');
   const [username, setUsername] = useState('');
   const [selectedVoice, setSelectedVoice] = useState('');
+  // const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);  // Comentado temporariamente
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const initializeSession = async () => {
@@ -21,6 +25,12 @@ function App() {
         localStorage.setItem('empatia_session_id', currentSessionId);
       }
       setSessionId(currentSessionId);
+
+      // Carregar preferência de voz do localStorage - COMENTADO TEMPORARIAMENTE
+      // const savedVoiceEnabled = localStorage.getItem('empatia_voice_enabled');
+      // if (savedVoiceEnabled !== null) {
+      //   setIsVoiceEnabled(savedVoiceEnabled === 'true');
+      // }
 
       try {
         const response = await getUserStatus(currentSessionId);
@@ -44,14 +54,36 @@ function App() {
     initializeSession();
   }, []);
 
-  const handleWelcomeComplete = ({ username: newUsername, voice }) => {
+  const handleLoginComplete = ({ username: newUsername, voice, voiceEnabled, userData }) => {
     setUsername(newUsername);
     setSelectedVoice(voice);
+    // setIsVoiceEnabled(voiceEnabled);  // Comentado temporariamente
     setIsOnboarded(true);
     
-    // Armazenar a voz selecionada no localStorage para uso do audioService
+    // Armazenar as preferências no localStorage
     localStorage.setItem('empatia_selected_voice', voice);
+    // localStorage.setItem('empatia_voice_enabled', voiceEnabled.toString());  // Comentado temporariamente
+    
+    // Armazenar dados do usuário se disponíveis
+    if (userData) {
+      localStorage.setItem('empatia_user_data', JSON.stringify(userData));
+    }
+    navigate('/home');
   };
+
+  const handleLogout = () => {
+    setIsOnboarded(false);
+    setUsername('');
+    setSelectedVoice('');
+    localStorage.removeItem('empatia_user_data');
+    localStorage.removeItem('empatia_selected_voice');
+    navigate('/');
+  };
+
+  // const handleVoiceToggle = (enabled) => {  // Comentado temporariamente
+  //   setIsVoiceEnabled(enabled);
+  //   localStorage.setItem('empatia_voice_enabled', enabled.toString());
+  // };
 
   if (isLoading) {
     return (
@@ -62,34 +94,42 @@ function App() {
     );
   }
 
-  if (!isOnboarded) {
-    return <WelcomeScreen onComplete={handleWelcomeComplete} sessionId={sessionId} />;
-  }
-
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col justify-center items-center p-4">
-      <div className="w-full max-w-4xl">
-        <header className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <Brain className="w-12 h-12 text-blue-500" />
-            <h1 className="text-4xl font-bold text-gray-800">empatIA</h1>
-          </div>
-          <p className="text-gray-600 text-lg">
-            Sessão de chat com seu psicólogo virtual.
-          </p>
-        </header>
+    <Routes>
+      {!isOnboarded && (
+        <Route path="/*" element={<LoginScreen onComplete={handleLoginComplete} sessionId={sessionId} />} />
+      )}
+      {isOnboarded && (
+        <>
+          <Route path="/home" element={
+            <HomeScreen 
+              username={username}
+              onLogout={handleLogout}
+            />
+          } />
+          <Route path="/chat/:sessionId" element={
+            <ChatScreen 
+              username={username || (localStorage.getItem('empatia_user_data') ? JSON.parse(localStorage.getItem('empatia_user_data')).name : 'Usuário')} 
+            />
+          } />
+          <Route path="/chat" element={
+            <ChatScreen 
+              sessionId={sessionId} 
+              username={username || (localStorage.getItem('empatia_user_data') ? JSON.parse(localStorage.getItem('empatia_user_data')).name : 'Usuário')} 
+            />
+          } />
+          <Route path="/*" element={<Navigate to="/home" replace />} />
+        </>
+      )}
+    </Routes>
+  );
+}
 
-        <main>
-          <ChatScreen sessionId={sessionId} username={username} />
-        </main>
-        
-        <footer className="text-center mt-8">
-          <p className="text-gray-500 text-sm">
-            Todas as conversas são privadas e seguras.
-          </p>
-        </footer>
-      </div>
-    </div>
+function App() {
+  return (
+    <Router>
+      <AppRoutes />
+    </Router>
   );
 }
 

@@ -8,13 +8,15 @@ import {
   CpuChipIcon,
   ChartBarIcon,
   Cog6ToothIcon,
-  ArrowRightOnRectangleIcon
+  ArrowRightOnRectangleIcon,
+  FunnelIcon
 } from '@heroicons/react/24/outline';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
+  { name: 'Sessões Terapêuticas', href: '/sessions', icon: FunnelIcon },
   { name: 'Configurações de Emoção', href: '/emotion-settings', icon: FaceSmileIcon },
   { name: 'Configurações de Áudio', href: '/audio-settings', icon: SpeakerWaveIcon },
   { name: 'Status do Sistema', href: '/system-status', icon: CpuChipIcon },

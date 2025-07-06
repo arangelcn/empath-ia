@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Brain, Volume2 } from 'lucide-react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { Heart, LogOut, Send } from 'lucide-react';
 import { sendMessage, getChatHistory } from '../../services/api.js';
-import { useAudioPlayer } from '../../hooks/useAudioPlayer.js';
+import Button from '../Common/Button.jsx';
+import Loading from '../Common/Loading.jsx';
+import EmotionBadge from './EmotionBadge.jsx';
+import WebcamEmotionCapture from '../EmotionAnalysis/WebcamEmotionCapture.jsx';
 
 interface Message {
   id: string;
@@ -11,45 +15,70 @@ interface Message {
 }
 
 const fetchEmotion = async () => {
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  if (Math.random() > 0.9) throw new Error('Falha ao buscar emoção');
-  const emotions = ['Feliz', 'Triste', 'Neutro', 'Surpreso', 'Com Raiva'];
-  return { emotion: emotions[Math.floor(Math.random() * emotions.length)] };
+  try {
+    const response = await fetch('/api/emotion/latest');
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.warn('Erro ao buscar emoção:', error);
+  }
+  return { emotion: 'Serena' };
 };
 
-const EmotionBadge = ({ emotion }) => {
-  const emotionMap = {
-    'Feliz': { emoji: '😊', style: 'bg-green-100 text-green-800' },
-    'Triste': { emoji: '😢', style: 'bg-blue-100 text-blue-800' },
-    'Neutro': { emoji: '😐', style: 'bg-gray-100 text-gray-800' },
-    'Surpreso': { emoji: '😮', style: 'bg-yellow-100 text-yellow-800' },
-    'Com Raiva': { emoji: '😠', style: 'bg-red-100 text-red-800' },
-  };
-  const current = emotionMap[emotion] || emotionMap['Neutro'];
+const MessageBubble = ({ message, isTyping = false }) => {
+  const isUser = message.type === 'user';
+  
   return (
-    <div className={`absolute top-4 right-4 flex items-center gap-2 rounded-full px-3 py-1 shadow-md text-sm font-medium ${current.style}`}>
-      <span>{current.emoji}</span>
-      <span>{emotion}</span>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+      <div className={`max-w-[80%] px-4 py-3 rounded-2xl shadow-therapy-soft text-sm transition-all duration-200
+        ${isUser 
+          ? 'bg-blue-500 text-white rounded-br-md hover:shadow-lg' 
+          : 'bg-white dark:bg-dark-surface border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-md hover:shadow-lg'
+        }
+      `}>
+        {isTyping ? (
+          <div className="flex items-center gap-2">
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 bg-current rounded-full animate-pulse"></div>
+              <div className="w-2 h-2 bg-current rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+              <div className="w-2 h-2 bg-current rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+            </div>
+            <span className="text-xs opacity-70">Digitando...</span>
+          </div>
+        ) : (
+          <p className="leading-relaxed reading-spacing">{message.content}</p>
+        )}
+      </div>
     </div>
   );
 };
 
-const ChatScreen = ({ sessionId, username }) => {
+const ChatScreen = ({ username }) => {
+  const { sessionId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Usar sessionId da URL
+  const currentSessionId = sessionId;
+  
+  // Obter informações da sessão do state (passado pelo navigate)
+  const sessionInfo = location.state || {};
+  const { sessionTitle, userSession } = sessionInfo;
+  
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const [currentEmotion, setCurrentEmotion] = useState('Neutro');
+  const [currentEmotion, setCurrentEmotion] = useState('Serena');
   const messagesEndRef = useRef(null);
-  const { playAudio, isPlaying, activeAudioUrl } = useAudioPlayer();
-  const lastPlayedMessageRef = useRef(null);
 
   // Carregar histórico de mensagens quando o componente for montado
   useEffect(() => {
     const loadChatHistory = async () => {
       try {
         setIsLoadingHistory(true);
-        const response = await getChatHistory(sessionId);
+        const response = await getChatHistory(currentSessionId);
         
         if (response.success && response.data.history && response.data.history.length > 0) {
           // Converter histórico do backend para o formato do frontend
@@ -64,24 +93,24 @@ const ChatScreen = ({ sessionId, username }) => {
         } else {
           // Se não há histórico, mostrar mensagem de boas-vindas
           setMessages([
-            { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje?` }
+            { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje? Estou aqui para te escutar e apoiar em sua jornada de autoconhecimento.` }
           ]);
         }
       } catch (error) {
         console.error('Erro ao carregar histórico:', error);
         // Em caso de erro, mostrar mensagem de boas-vindas
         setMessages([
-          { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje?` }
+          { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje? Estou aqui para te escutar e apoiar em sua jornada de autoconhecimento.` }
         ]);
       } finally {
         setIsLoadingHistory(false);
       }
     };
 
-    if (sessionId && username) {
+    if (currentSessionId && username) {
       loadChatHistory();
     }
-  }, [sessionId, username]);
+  }, [currentSessionId, username]);
 
   useEffect(() => {
     const intervalId = setInterval(async () => {
@@ -89,7 +118,7 @@ const ChatScreen = ({ sessionId, username }) => {
         const response = await fetchEmotion();
         setCurrentEmotion(response.emotion);
       } catch (error) {
-        setCurrentEmotion('Neutro');
+        setCurrentEmotion('Serena');
       }
     }, 5000);
     return () => clearInterval(intervalId);
@@ -97,24 +126,7 @@ const ChatScreen = ({ sessionId, username }) => {
   
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-
-    const lastMessage = messages[messages.length - 1];
-    
-    if (lastMessage?.type === 'ai' && 
-        lastMessage.audioUrl && 
-        lastMessage.id !== lastPlayedMessageRef.current &&
-        !isPlaying) {
-      
-      console.log('🎵 Nova mensagem de IA detectada, reproduzindo áudio:', lastMessage.id);
-      lastPlayedMessageRef.current = lastMessage.id;
-      
-      setTimeout(() => {
-        playAudio(lastMessage.audioUrl, () => {
-          console.log('✅ Reprodução da mensagem finalizada:', lastMessage.id);
-        });
-      }, 200);
-    }
-  }, [messages, isPlaying, playAudio]);
+  }, [messages]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
@@ -130,7 +142,7 @@ const ChatScreen = ({ sessionId, username }) => {
     setIsLoading(true);
 
     try {
-      const response = await sendMessage(currentInput, sessionId);
+      const response = await sendMessage(currentInput, currentSessionId);
       if (response.success) {
         const { ai_response } = response.data;
         const aiMessage: Message = {
@@ -140,7 +152,6 @@ const ChatScreen = ({ sessionId, username }) => {
           audioUrl: ai_response.audioUrl,
         };
         setMessages(prev => [...prev, aiMessage]);
-
       }
     } catch (error) {
       const errorMessage = {
@@ -161,81 +172,94 @@ const ChatScreen = ({ sessionId, username }) => {
     }
   };
 
+  // Handler para receber emoção da webcam
+  const handleWebcamEmotion = (result) => {
+    if (result && result.dominant_emotion) {
+      setCurrentEmotion(result.dominant_emotion);
+    }
+  };
+
   return (
-    <div className="relative flex flex-col h-[80vh] bg-gray-50 p-4 rounded-2xl shadow-lg">
-      <EmotionBadge emotion={currentEmotion} />
-      
-      <div className="flex-1 overflow-y-auto mb-4 p-4 space-y-4">
-        {isLoadingHistory ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="flex flex-col items-center gap-3">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-              <p className="text-gray-600">Carregando histórico de mensagens...</p>
+    <div className="min-h-screen flex flex-col bg-background-light dark:bg-background-dark transition-colors duration-300">
+      {/* Header */}
+      <div className="relative z-10 bg-white/95 dark:bg-dark-surface/95 backdrop-blur-xl border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="avatar-therapy-calm p-1">
+              <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center">
+                <Heart className="w-5 h-5 text-primary-500" strokeWidth={2} />
+              </div>
+            </div>
+            <div>
+              <h1 className="font-heading font-semibold text-text-primary dark:text-text-primary-dark">
+                <span className="text-gradient-therapy">Empath</span>.IA
+              </h1>
+              <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+                Seu companheiro terapêutico
+              </p>
             </div>
           </div>
-        ) : (
-          <>
-            {messages.map((message) => (
-              <div key={message.id} className={`flex items-start gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                 {message.type === 'ai' && (
-                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white flex-shrink-0">
-                    <Brain size={20} />
-                  </div>
-                )}
-                <div className={`max-w-lg p-3 rounded-lg flex items-center ${
-                    message.type === 'user'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white text-gray-800 border border-gray-200'
-                  }`}>
-                  <p className="flex-1">{message.content}</p>
-                  {message.type === 'ai' && message.audioUrl && (
-                    <button
-                      onClick={() => playAudio(message.audioUrl, () => {})}
-                      className={`ml-2 text-gray-500 hover:text-blue-700`}
-                    >
-                      <Volume2 size={16} className={activeAudioUrl === message.audioUrl && isPlaying ? 'animate-pulse text-blue-500' : ''} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {isLoading && (
-              <div className="flex items-start gap-3 justify-start">
-                <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white flex-shrink-0">
-                  <Brain size={20} />
-                </div>
-                <div className="max-w-lg p-3 rounded-lg bg-white text-gray-800 border border-gray-200">
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                    <span>Pensando...</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-        <div ref={messagesEndRef} />
+          <div className="flex items-center gap-3">
+            <EmotionBadge emotion={currentEmotion} />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/home')}
+              title="Sair da sessão"
+            >
+              <LogOut className="w-5 h-5" />
+            </Button>
+          </div>
+        </div>
       </div>
 
-      <div className="mt-auto flex gap-3 p-4 bg-white border-t border-gray-200 rounded-b-2xl">
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Digite sua mensagem..."
-          disabled={isLoading || isLoadingHistory}
-          className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          onClick={handleSendMessage}
-          disabled={isLoading || !inputValue.trim() || isLoadingHistory}
-          className="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+      {/* WebcamEmotionCapture invisível, mas ativo */}
+      <div className="hidden">
+        <WebcamEmotionCapture onEmotionDetected={handleWebcamEmotion} />
+      </div>
+
+      {/* Área de mensagens */}
+      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full px-2 sm:px-0 py-4 overflow-y-auto">
+        {isLoadingHistory ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loading size="lg" text="Carregando conversa..." />
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col gap-4 pb-4">
+            {messages.map((msg, idx) => (
+              <MessageBubble key={msg.id} message={msg} />
+            ))}
+            {isLoading && <MessageBubble message={{ id: 'typing', type: 'ai', content: '' }} isTyping />}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+      </div>
+
+      {/* Input fixo no rodapé */}
+      <div className="w-full max-w-4xl mx-auto px-2 sm:px-0 pb-4 sticky bottom-0 z-20 bg-background-light dark:bg-background-dark">
+        <form
+          className="flex items-center gap-2 bg-white dark:bg-dark-surface border border-gray-200 dark:border-gray-700 rounded-2xl shadow-md px-4 py-2"
+          onSubmit={e => { e.preventDefault(); handleSendMessage(); }}
         >
-          {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-          <span>Enviar</span>
-        </button>
+          <textarea
+            className="flex-1 resize-none bg-transparent outline-none text-sm text-text-primary dark:text-text-primary-dark placeholder-gray-400 py-2"
+            rows={1}
+            placeholder="Digite sua mensagem..."
+            value={inputValue}
+            onChange={e => setInputValue(e.target.value)}
+            onKeyDown={handleKeyPress}
+            disabled={isLoading}
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            size="icon"
+            disabled={isLoading || !inputValue.trim()}
+            className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"
+          >
+            <Send className="w-5 h-5 md:w-7 md:h-7" />
+          </Button>
+        </form>
       </div>
     </div>
   );

@@ -1,0 +1,187 @@
+import React from 'react';
+import { motion } from 'framer-motion';
+import { 
+  Lock, 
+  Unlock, 
+  CheckCircle, 
+  PlayCircle, 
+  Clock,
+  BookOpen,
+  Target
+} from 'lucide-react';
+
+const SessionCard = ({ 
+  session, 
+  isUnlocked, 
+  isCompleted, 
+  isCurrent, 
+  onSelect,
+  index 
+}) => {
+  const getStatusIcon = () => {
+    if (isCompleted) {
+      return <CheckCircle className="w-6 h-6 text-emerald-500" />;
+    }
+    if (isCurrent) {
+      return <PlayCircle className="w-6 h-6 text-orange-500" />;
+    }
+    if (isUnlocked) {
+      return <Unlock className="w-6 h-6 text-serenity-500" />;
+    }
+    return <Lock className="w-6 h-6 text-gray-400" />;
+  };
+
+  const getStatusText = () => {
+    if (isCompleted) {
+      return "Concluída";
+    }
+    if (isCurrent) {
+      return "Em Andamento";
+    }
+    if (isUnlocked) {
+      return "Disponível";
+    }
+    return "Bloqueada";
+  };
+
+  const getStatusColor = () => {
+    if (isCompleted) {
+      return "bg-emerald-50 border-emerald-200 text-emerald-700";
+    }
+    if (isCurrent) {
+      return "bg-orange-50 border-orange-200 text-orange-700";
+    }
+    if (isUnlocked) {
+      return "bg-serenity-50 border-serenity-200 text-serenity-700";
+    }
+    return "bg-gray-50 border-gray-200 text-gray-500";
+  };
+
+  const getCardStyle = () => {
+    if (isCompleted) {
+      return "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200 shadow-emerald-100";
+    }
+    if (isCurrent) {
+      return "bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 shadow-orange-100";
+    }
+    if (isUnlocked) {
+      return "bg-gradient-to-br from-serenity-50 to-serenity-100 border-serenity-200 shadow-serenity-100 hover:shadow-serenity-200";
+    }
+    return "bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200 shadow-gray-100 opacity-60";
+  };
+
+  const canInteract = isUnlocked || isCurrent;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ 
+        duration: 0.5, 
+        delay: index * 0.1,
+        ease: "easeOut"
+      }}
+      whileHover={canInteract ? { 
+        scale: 1.02, 
+        y: -2,
+        transition: { duration: 0.2 }
+      } : {}}
+      className={`relative p-6 rounded-2xl border-2 transition-all duration-300 ${getCardStyle()} ${
+        canInteract ? 'hover:shadow-lg cursor-pointer' : 'cursor-not-allowed'
+      }`}
+      onClick={() => canInteract && onSelect(session)}
+    >
+      {/* Número da sessão */}
+      <div className="absolute -top-3 -left-3 w-8 h-8 rounded-full bg-gradient-to-br from-serenity-500 to-turquoise-500 text-white flex items-center justify-center font-bold text-sm shadow-lg">
+        {index + 1}
+      </div>
+
+      {/* Status badge */}
+      <div className={`absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor()}`}>
+        <div className="flex items-center gap-1">
+          {getStatusIcon()}
+          {getStatusText()}
+        </div>
+      </div>
+
+      {/* Conteúdo principal */}
+      <div className="space-y-4">
+        <div>
+          <h3 className="font-heading text-lg text-text-primary dark:text-text-primary-dark font-semibold mb-2">
+            {session.title}
+          </h3>
+          
+          {session.subtitle && (
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-2">
+              {session.subtitle}
+            </p>
+          )}
+          
+          {session.description && (
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark reading-spacing">
+              {session.description}
+            </p>
+          )}
+        </div>
+
+
+
+        {/* Informações da sessão */}
+        <div className="flex items-center gap-4 text-xs text-gray-500">
+          <div className="flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            <span>{session.estimated_duration || 30} min</span>
+          </div>
+          
+          {session.difficulty && (
+            <div className="flex items-center gap-1">
+              <Target className="w-3 h-3" />
+              <span className="capitalize">{session.difficulty}</span>
+            </div>
+          )}
+          
+          {session.category && (
+            <div className="flex items-center gap-1">
+              <BookOpen className="w-3 h-3" />
+              <span className="capitalize">{session.category}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Botão de ação */}
+        {canInteract && (
+          <div className="pt-2">
+            <button
+              className={`w-full px-4 py-2 rounded-xl font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+                isCompleted 
+                  ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                  : isCurrent
+                    ? 'bg-orange-500 text-white hover:bg-orange-600'
+                    : 'bg-serenity-500 text-white hover:bg-serenity-600'
+              }`}
+            >
+              {isCompleted ? (
+                <>
+                  <CheckCircle className="w-4 h-4" />
+                  Revisar Sessão
+                </>
+              ) : isCurrent ? (
+                <>
+                  <PlayCircle className="w-4 h-4" />
+                  Continuar Sessão
+                </>
+              ) : (
+                <>
+                  <Unlock className="w-4 h-4" />
+                  Iniciar Sessão
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+export default SessionCard; 
