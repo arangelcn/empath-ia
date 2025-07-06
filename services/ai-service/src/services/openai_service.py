@@ -88,12 +88,39 @@ Você: "Entendo que você está passando por um momento difícil. É muito coraj
 
 Lembre-se: você é um psicólogo virtual, não substitui terapia profissional em casos graves."""
     
-    def _create_conversation_context(self, session_id: str, user_message: str, conversation_history: Optional[List[Dict]] = None) -> List[Dict]:
+    def _create_conversation_context(self, session_id: str, user_message: str, conversation_history: Optional[List[Dict]] = None, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None) -> List[Dict]:
         """
         Criar contexto da conversa para o OpenAI com otimização de tokens
         """
+        # Criar prompt do sistema baseado no objetivo da sessão
+        system_prompt = self._create_system_prompt()
+        
+        # Se há initial_prompt fornecido diretamente, usá-lo (tem prioridade)
+        if initial_prompt:
+            enhanced_prompt = f"""
+INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
+{initial_prompt}
+
+{system_prompt}
+"""
+            system_prompt = enhanced_prompt
+        # Se há objetivo da sessão, incorporá-lo no prompt do sistema
+        elif session_objective:
+            objective_text = f"""
+OBJETIVO DESTA SESSÃO:
+Título: {session_objective.get('title', 'Sessão Terapêutica')}
+Subtitle: {session_objective.get('subtitle', '')}
+Objetivo: {session_objective.get('objective', '')}
+
+INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
+{session_objective.get('initial_prompt', '')}
+
+{system_prompt}
+"""
+            system_prompt = objective_text
+        
         messages = [
-            {"role": "system", "content": self._create_system_prompt()}
+            {"role": "system", "content": system_prompt}
         ]
         
         # Processar histórico com otimizações
@@ -170,7 +197,9 @@ Lembre-se: você é um psicólogo virtual, não substitui terapia profissional e
         self, 
         user_message: str, 
         session_id: str,
-        conversation_history: Optional[List[Dict]] = None
+        conversation_history: Optional[List[Dict]] = None,
+        session_objective: Optional[Dict[str, Any]] = None,
+        initial_prompt: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Gerar resposta terapêutica usando OpenAI
@@ -179,6 +208,7 @@ Lembre-se: você é um psicólogo virtual, não substitui terapia profissional e
             user_message: Mensagem do usuário
             session_id: ID da sessão
             conversation_history: Histórico da conversa (opcional)
+            session_objective: Objetivo da sessão terapêutica (opcional)
             
         Returns:
             Dict com resposta e metadados
@@ -190,7 +220,7 @@ Lembre-se: você é um psicólogo virtual, não substitui terapia profissional e
                 return self._fallback_response(user_message)
             
             # Criar contexto da conversa
-            messages = self._create_conversation_context(session_id, user_message, conversation_history)
+            messages = self._create_conversation_context(session_id, user_message, conversation_history, session_objective, initial_prompt)
             
             # Fazer chamada para OpenAI
             response = await self._call_openai(messages)

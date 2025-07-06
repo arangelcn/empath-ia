@@ -8,17 +8,30 @@ const apiClient = axios.create({
 });
 
 /**
- * Envia uma mensagem para o chat.
+ * Envia uma mensagem para o chat e recebe a resposta da IA.
  * @param {string} message - A mensagem do usuário.
  * @param {string} sessionId - O ID da sessão atual.
+ * @param {object} sessionObjective - Objetivo da sessão terapêutica (opcional).
  * @returns {Promise<object>} A resposta da IA.
  */
-export const sendMessage = async (message, sessionId) => {
+export const sendMessage = async (message, sessionId, sessionObjective = null) => {
   try {
-    const response = await apiClient.post('/chat/send', {
+    const payload = {
       message,
       session_id: sessionId,
-    });
+    };
+    
+    // Adicionar objetivo da sessão se fornecido
+    if (sessionObjective) {
+      payload.session_objective = {
+        title: sessionObjective.title,
+        subtitle: sessionObjective.subtitle,
+        objective: sessionObjective.objective,
+        initial_prompt: sessionObjective.initial_prompt
+      };
+    }
+    
+    const response = await apiClient.post('/chat/send', payload);
     return response.data;
   } catch (error) {
     console.error('Erro ao enviar mensagem:', error.response?.data || error.message);

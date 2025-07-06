@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    session_objective: Optional[Dict[str, Any]] = None
 
 class ConversationRequest(BaseModel):
     session_id: str
@@ -131,7 +132,8 @@ async def send_message(request: ChatRequest):
     try:
         result = await chat_service.process_user_message(
             session_id=request.session_id or "default",
-            user_message=request.message
+            user_message=request.message,
+            session_objective=request.session_objective
         )
         
         return {

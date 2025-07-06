@@ -22,6 +22,8 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str = "default"
     conversation_history: Optional[List[Dict[str, Any]]] = None
+    session_objective: Optional[Dict[str, Any]] = None
+    initial_prompt: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -40,7 +42,9 @@ async def chat_with_openai(request: ChatRequest):
         result = await openai_service.generate_therapeutic_response(
             user_message=request.message,
             session_id=request.session_id,
-            conversation_history=request.conversation_history
+            conversation_history=request.conversation_history,
+            session_objective=request.session_objective,
+            initial_prompt=request.initial_prompt
         )
         
         return ChatResponse(**result)

@@ -58,7 +58,7 @@ class ChatService:
             logger.error(f"❌ Erro ao iniciar/recuperar conversa: {e}")
             raise
     
-    async def process_user_message(self, session_id: str, user_message: str) -> Dict[str, Any]:
+    async def process_user_message(self, session_id: str, user_message: str, session_objective: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Processar mensagem do usuário e gerar resposta"""
         try:
             # Garantir que a conversa existe
@@ -76,11 +76,24 @@ class ChatService:
             if not selected_voice:
                 selected_voice = "pt-BR-Neural2-A"  # fallback padrão
             
+            # Verificar se é a primeira mensagem (sem histórico) e buscar initial_prompt
+            initial_prompt = None
+            conversation_history = await self._get_conversation_context(session_id)
+            if not conversation_history:  # Primeira mensagem
+                logger.info(f"🔍 Primeira mensagem da sessão {session_id} - buscando initial_prompt")
+                initial_prompt = await self._get_session_initial_prompt(session_id)
+                if initial_prompt:
+                    logger.info(f"📝 Usando initial_prompt para primeira mensagem da sessão {session_id}: {initial_prompt[:100]}...")
+                else:
+                    logger.info(f"⚠️ Nenhum initial_prompt encontrado para sessão {session_id}")
+            else:
+                logger.info(f"📚 Conversa existente com {len(conversation_history)} mensagens - não usando initial_prompt")
+            
             # Salvar mensagem do usuário
             user_msg_id = await self._save_message(session_id, "user", user_message)
             
-            # Obter resposta da IA
-            ai_response = await self._get_ai_response(user_message, session_id, selected_voice, voice_enabled)
+            # Obter resposta da IA (incluindo initial_prompt se for primeira mensagem)
+            ai_response = await self._get_ai_response(user_message, session_id, selected_voice, voice_enabled, session_objective, initial_prompt)
             
             # Salvar resposta da IA
             ai_msg_id = await self._save_message(session_id, "ai", ai_response["content"], ai_response.get("audio_url"))
@@ -170,7 +183,7 @@ class ChatService:
             logger.error(f"❌ Erro ao salvar mensagem: {e}")
             raise
     
-    async def _get_ai_response(self, user_message: str, session_id: str, selected_voice: str, voice_enabled: bool = True) -> Dict[str, Any]:
+    async def _get_ai_response(self, user_message: str, session_id: str, selected_voice: str, voice_enabled: bool = True, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None) -> Dict[str, Any]:
         """Obter resposta da IA via AI Service com contexto da conversa"""
         try:
             # Obter histórico da conversa para contexto
@@ -180,7 +193,9 @@ class ChatService:
                 # Preparar payload com contexto
                 payload = {
                     "message": user_message,
-                    "session_id": session_id
+                    "session_id": session_id,
+                    "session_objective": session_objective,
+                    "initial_prompt": initial_prompt
                 }
                 
                 # Adicionar histórico se disponível (últimas 6 mensagens para otimizar tokens)
@@ -243,11 +258,35 @@ class ChatService:
                     "content": msg["content"]
                 })
             
+            logger.info(f"🔍 Contexto da conversa {session_id}: {len(context)} mensagens")
             return context
             
         except Exception as e:
             logger.error(f"❌ Erro ao obter contexto da conversa: {e}")
             return []
+    
+    async def _get_session_initial_prompt(self, session_id: str) -> Optional[str]:
+        """Buscar o initial_prompt da sessão terapêutica do usuário"""
+        try:
+            # Buscar na coleção user_therapeutic_sessions
+            user_sessions = get_collection("user_therapeutic_sessions")
+            user_session = await user_sessions.find_one({"session_id": session_id})
+            
+            if user_session and user_session.get("initial_prompt"):
+                return user_session["initial_prompt"]
+            
+            # Se não encontrar, buscar na coleção therapeutic_sessions (template)
+            sessions = get_collection("therapeutic_sessions")
+            session = await sessions.find_one({"session_id": session_id})
+            
+            if session and session.get("initial_prompt"):
+                return session["initial_prompt"]
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao buscar initial_prompt para sessão {session_id}: {e}")
+            return None
     
     # async def _generate_audio(self, text: str, session_id: str, voice: str) -> Optional[str]:
     #     """Gerar áudio via Voice Service - COMENTADO TEMPORARIAMENTE"""

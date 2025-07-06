@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 import { 
   Lock, 
   Unlock, 
@@ -26,7 +25,7 @@ const SessionCard = ({
       return <PlayCircle className="w-6 h-6 text-orange-500" />;
     }
     if (isUnlocked) {
-      return <Unlock className="w-6 h-6 text-serenity-500" />;
+      return <Unlock className="w-6 h-6 text-primary-500" />;
     }
     return <Lock className="w-6 h-6 text-gray-400" />;
   };
@@ -52,7 +51,7 @@ const SessionCard = ({
       return "bg-orange-50 border-orange-200 text-orange-700";
     }
     if (isUnlocked) {
-      return "bg-serenity-50 border-serenity-200 text-serenity-700";
+      return "bg-primary-50 border-primary-200 text-primary-700";
     }
     return "bg-gray-50 border-gray-200 text-gray-500";
   };
@@ -65,7 +64,7 @@ const SessionCard = ({
       return "bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 shadow-orange-100";
     }
     if (isUnlocked) {
-      return "bg-gradient-to-br from-serenity-50 to-serenity-100 border-serenity-200 shadow-serenity-100 hover:shadow-serenity-200";
+      return "bg-gradient-to-br from-primary-50 to-primary-100 border-primary-200 shadow-primary-100 hover:shadow-primary-200";
     }
     return "bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200 shadow-gray-100 opacity-60";
   };
@@ -73,26 +72,14 @@ const SessionCard = ({
   const canInteract = isUnlocked || isCurrent;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ 
-        duration: 0.5, 
-        delay: index * 0.1,
-        ease: "easeOut"
-      }}
-      whileHover={canInteract ? { 
-        scale: 1.02, 
-        y: -2,
-        transition: { duration: 0.2 }
-      } : {}}
+    <div
       className={`relative p-6 rounded-2xl border-2 transition-all duration-300 ${getCardStyle()} ${
         canInteract ? 'hover:shadow-lg cursor-pointer' : 'cursor-not-allowed'
       }`}
       onClick={() => canInteract && onSelect(session)}
     >
       {/* Número da sessão */}
-      <div className="absolute -top-3 -left-3 w-8 h-8 rounded-full bg-gradient-to-br from-serenity-500 to-turquoise-500 text-white flex items-center justify-center font-bold text-sm shadow-lg">
+      <div className="absolute -top-3 -left-3 w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-secondary-500 text-white flex items-center justify-center font-bold text-sm shadow-lg">
         {index + 1}
       </div>
 
@@ -124,8 +111,6 @@ const SessionCard = ({
           )}
         </div>
 
-
-
         {/* Informações da sessão */}
         <div className="flex items-center gap-4 text-xs text-gray-500">
           <div className="flex items-center gap-1">
@@ -152,35 +137,36 @@ const SessionCard = ({
         {canInteract && (
           <div className="pt-2">
             <button
-              className={`w-full px-4 py-2 rounded-xl font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
-                isCompleted 
-                  ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                  : isCurrent
-                    ? 'bg-orange-500 text-white hover:bg-orange-600'
-                    : 'bg-serenity-500 text-white hover:bg-serenity-600'
+              className={`w-full px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg text-white ${
+                isCompleted ? 'bg-emerald-500 hover:bg-emerald-600' : 
+                isCurrent ? 'bg-orange-500 hover:bg-orange-600' : 
+                'bg-primary-500 hover:bg-primary-600'
               }`}
+              style={{
+                backgroundColor: isCompleted ? '#10b981' : isCurrent ? '#f59e0b' : '#4A90E2'
+              }}
             >
               {isCompleted ? (
                 <>
                   <CheckCircle className="w-4 h-4" />
-                  Revisar Sessão
+                  Revisar
                 </>
               ) : isCurrent ? (
                 <>
                   <PlayCircle className="w-4 h-4" />
-                  Continuar Sessão
+                  Continuar
                 </>
               ) : (
                 <>
                   <Unlock className="w-4 h-4" />
-                  Iniciar Sessão
+                  Iniciar
                 </>
               )}
             </button>
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 };
 

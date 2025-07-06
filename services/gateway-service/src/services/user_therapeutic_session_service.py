@@ -72,6 +72,8 @@ class UserTherapeuticSessionService:
                         "title": template_session["title"],
                         "subtitle": template_session.get("subtitle", ""),
                         "description": template_session.get("description", ""),
+                        "objective": template_session.get("objective", ""),  # Incluir objetivo
+                        "initial_prompt": template_session.get("initial_prompt", ""),  # Incluir prompt inicial
                         "category": template_session.get("category", "general"),
                         "difficulty": template_session.get("difficulty", "beginner"),
                         "estimated_duration": template_session.get("estimated_duration", 30),

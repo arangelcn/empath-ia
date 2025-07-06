@@ -99,13 +99,15 @@ async def chat(message: dict):
     user_message = message.get("message", "")
     session_id = message.get("session_id", "default")
     conversation_history = message.get("conversation_history", None)
+    session_objective = message.get("session_objective", None)
     
     try:
         # Usar OpenAI se disponível, senão fallback
         result = await openai_service.generate_therapeutic_response(
             user_message=user_message,
             session_id=session_id,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            session_objective=session_objective
         )
         
         return {

@@ -105,6 +105,7 @@ function AppRoutes() {
             <HomeScreen 
               username={username}
               onLogout={handleLogout}
+              selectedVoice={selectedVoice}
             />
           } />
           <Route path="/chat/:sessionId" element={

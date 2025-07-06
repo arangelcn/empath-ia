@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Heart, LogOut, Send } from 'lucide-react';
-import { sendMessage, getChatHistory } from '../../services/api.js';
+import { Heart, LogOut, Send, Target } from 'lucide-react';
+import { sendMessage, getChatHistory, getTherapeuticSession } from '../../services/api.js';
 import Button from '../Common/Button.jsx';
 import Loading from '../Common/Loading.jsx';
 import EmotionBadge from './EmotionBadge.jsx';
@@ -12,6 +12,13 @@ interface Message {
   type: 'user' | 'ai';
   content: string;
   audioUrl?: string;
+}
+
+interface SessionObjective {
+  title: string;
+  subtitle: string;
+  objective: string;
+  initial_prompt: string;
 }
 
 const fetchEmotion = async () => {
@@ -71,13 +78,34 @@ const ChatScreen = ({ username }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [currentEmotion, setCurrentEmotion] = useState('Serena');
+  const [sessionObjective, setSessionObjective] = useState<SessionObjective | null>(null);
+  const [showObjective, setShowObjective] = useState(true);
   const messagesEndRef = useRef(null);
 
-  // Carregar histórico de mensagens quando o componente for montado
+  // Carregar objetivo da sessão e histórico de mensagens quando o componente for montado
   useEffect(() => {
-    const loadChatHistory = async () => {
+    const loadSessionData = async () => {
       try {
         setIsLoadingHistory(true);
+        
+        // Carregar objetivo da sessão
+        if (currentSessionId) {
+          try {
+            const sessionResponse = await getTherapeuticSession(currentSessionId);
+            if (sessionResponse.success && sessionResponse.data) {
+              setSessionObjective({
+                title: sessionResponse.data.title,
+                subtitle: sessionResponse.data.subtitle,
+                objective: sessionResponse.data.objective,
+                initial_prompt: sessionResponse.data.initial_prompt
+              });
+            }
+          } catch (error) {
+            console.warn('Erro ao carregar objetivo da sessão:', error);
+          }
+        }
+        
+        // Carregar histórico de mensagens
         const response = await getChatHistory(currentSessionId);
         
         if (response.success && response.data.history && response.data.history.length > 0) {
@@ -92,12 +120,14 @@ const ChatScreen = ({ username }) => {
           setMessages(historyMessages);
         } else {
           // Se não há histórico, mostrar mensagem de boas-vindas
+          const welcomeMessage = `Olá, ${username}! Como posso te ajudar hoje? Estou aqui para te escutar e apoiar em sua jornada de autoconhecimento.`;
+          
           setMessages([
-            { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje? Estou aqui para te escutar e apoiar em sua jornada de autoconhecimento.` }
+            { id: `initial-${Date.now()}`, type: 'ai', content: welcomeMessage }
           ]);
         }
       } catch (error) {
-        console.error('Erro ao carregar histórico:', error);
+        console.error('Erro ao carregar dados da sessão:', error);
         // Em caso de erro, mostrar mensagem de boas-vindas
         setMessages([
           { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje? Estou aqui para te escutar e apoiar em sua jornada de autoconhecimento.` }
@@ -108,7 +138,7 @@ const ChatScreen = ({ username }) => {
     };
 
     if (currentSessionId && username) {
-      loadChatHistory();
+      loadSessionData();
     }
   }, [currentSessionId, username]);
 
@@ -142,7 +172,11 @@ const ChatScreen = ({ username }) => {
     setIsLoading(true);
 
     try {
-      const response = await sendMessage(currentInput, currentSessionId);
+      // Passar o objetivo apenas se for a primeira mensagem da sessão
+      const isFirstMessage = messages.length === 0 || (messages.length === 1 && messages[0].type === 'ai');
+      const objectiveToSend = isFirstMessage ? sessionObjective : null;
+      
+      const response = await sendMessage(currentInput, currentSessionId, objectiveToSend);
       if (response.success) {
         const { ai_response } = response.data;
         const aiMessage: Message = {
@@ -217,6 +251,40 @@ const ChatScreen = ({ username }) => {
       <div className="hidden">
         <WebcamEmotionCapture onEmotionDetected={handleWebcamEmotion} />
       </div>
+
+      {/* Objetivo da Sessão */}
+      {sessionObjective && showObjective && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-blue-200 dark:border-blue-800 px-4 py-3">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <Target className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <h3 className="font-medium text-blue-900 dark:text-blue-100">
+                    {sessionObjective.title}
+                  </h3>
+                </div>
+                {sessionObjective.subtitle && (
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
+                    {sessionObjective.subtitle}
+                  </p>
+                )}
+                <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed">
+                  <strong>Objetivo:</strong> {sessionObjective.objective}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowObjective(false)}
+                className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+              >
+                ✕
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Área de mensagens */}
       <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full px-2 sm:px-0 py-4 overflow-y-auto">
