@@ -6,7 +6,9 @@ import {
   LogOut, 
   RefreshCw,
   TrendingUp,
-  Target
+  Target,
+  CheckCircle,
+  Eye
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getSessions, getUserSessions, getUserProgress, startUserSession } from '../../services/api.js';
@@ -105,11 +107,16 @@ const HomeScreen = ({ username, onLogout }) => {
         }
       }
 
-      // Navegar para o chat com a sessão
-      navigate(`/chat/${session.session_id}`, { 
+      // 🔒 CORREÇÃO CRÍTICA: Criar session_id único por usuário
+      // Combinando username com session_id para garantir isolamento total
+      const uniqueSessionId = `${username}_${session.session_id}`;
+
+      // Navegar para o chat com a sessão usando ID único
+      navigate(`/chat/${uniqueSessionId}`, { 
         state: { 
           username,
           sessionTitle: session.title,
+          originalSessionId: session.session_id, // Manter referência original
           userSession: {
             ...userSession,
             status: userSession.status === 'unlocked' ? 'in_progress' : userSession.status
@@ -145,13 +152,13 @@ const HomeScreen = ({ username, onLogout }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-serenity-50 via-white to-turquoise-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 flex items-center justify-center">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="text-center"
         >
-          <div className="w-16 h-16 border-4 border-serenity-200 border-t-serenity-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-16 h-16 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">Carregando sua jornada terapêutica...</p>
         </motion.div>
       </div>
@@ -160,12 +167,12 @@ const HomeScreen = ({ username, onLogout }) => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-serenity-50 via-white to-turquoise-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error}</p>
           <button
             onClick={loadSessions}
-            className="px-4 py-2 bg-serenity-500 text-white rounded-lg hover:bg-serenity-600 transition-colors"
+            className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
           >
             Tentar novamente
           </button>
@@ -175,7 +182,7 @@ const HomeScreen = ({ username, onLogout }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-serenity-50 via-white to-turquoise-50">
+    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50">
       {/* Header */}
       <motion.header
         initial={{ opacity: 0, y: -20 }}
@@ -186,7 +193,7 @@ const HomeScreen = ({ username, onLogout }) => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-serenity-500 to-turquoise-500 rounded-lg flex items-center justify-center">
+              <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
                 <Sparkles className="w-5 h-5 text-white" />
               </div>
               <h1 className="text-xl font-bold text-gray-900 font-manrope">
@@ -197,7 +204,7 @@ const HomeScreen = ({ username, onLogout }) => {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => navigate('/settings')}
-                className="p-2 text-gray-500 hover:text-serenity-600 transition-colors"
+                className="p-2 text-gray-500 hover:text-primary-600 transition-colors"
               >
                 <Settings className="w-5 h-5" />
               </button>
@@ -226,7 +233,7 @@ const HomeScreen = ({ username, onLogout }) => {
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-serenity-500 to-turquoise-500 rounded-lg flex items-center justify-center">
+                    <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
                       <TrendingUp className="w-6 h-6 text-white" />
                     </div>
                     <div>
@@ -240,7 +247,7 @@ const HomeScreen = ({ username, onLogout }) => {
                   </div>
                   
                   <div className="text-right">
-                    <div className="text-2xl font-bold text-serenity-600">
+                    <div className="text-2xl font-bold text-primary-600">
                       {userProgress.overall_progress}%
                     </div>
                     <div className="text-sm text-gray-500">
@@ -256,7 +263,7 @@ const HomeScreen = ({ username, onLogout }) => {
                 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                   <div>
-                    <div className="text-lg font-bold text-serenity-600">
+                    <div className="text-lg font-bold text-green-600">
                       {userProgress.completed_sessions}
                     </div>
                     <div className="text-xs text-gray-500">Concluídas</div>
@@ -299,7 +306,7 @@ const HomeScreen = ({ username, onLogout }) => {
               
               <button
                 onClick={loadSessions}
-                className="p-2 text-gray-500 hover:text-serenity-600 transition-colors"
+                className="p-2 text-gray-500 hover:text-primary-600 transition-colors"
                 title="Atualizar sessões"
               >
                 <RefreshCw className="w-5 h-5" />
@@ -326,7 +333,7 @@ const HomeScreen = ({ username, onLogout }) => {
             {/* Timeline de sessões */}
             <div className="relative">
               {/* Linha da timeline */}
-              <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-serenity-200 to-turquoise-200"></div>
+              <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary-200 to-secondary-200"></div>
               
               {/* Sessões ordenadas por nome */}
               {sessions
@@ -346,16 +353,14 @@ const HomeScreen = ({ username, onLogout }) => {
                       className="relative mb-8 last:mb-0"
                     >
                       {/* Ponto da timeline */}
-                      <div className="absolute left-6 top-6 w-4 h-4 rounded-full border-2 border-white shadow-sm z-10">
+                      <div className="absolute left-5 top-6 w-6 h-6 rounded-full border-2 border-white shadow-sm z-10">
                         {isCompleted ? (
-                          <div className="w-full h-full bg-serenity-500 rounded-full flex items-center justify-center">
-                            <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                            </svg>
+                          <div className="w-full h-full bg-green-500 rounded-full flex items-center justify-center">
+                            <CheckCircle className="w-8 h-8 text-white -m-1" />
                           </div>
                         ) : isCurrent ? (
                           <div className="w-full h-full bg-orange-500 rounded-full flex items-center justify-center">
-                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                            <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse"></div>
                           </div>
                         ) : isUnlocked ? (
                           <div className="w-full h-full bg-blue-500 rounded-full"></div>
@@ -368,12 +373,12 @@ const HomeScreen = ({ username, onLogout }) => {
                       <div className="ml-16">
                         <div className={`
                           bg-white rounded-xl border-2 p-6 shadow-sm transition-all duration-300 hover:shadow-md
-                          ${isCompleted ? 'border-serenity-200 bg-serenity-50' : 
+                          ${isCompleted ? 'border-green-200 bg-green-50' : 
                             isCurrent ? 'border-orange-200 bg-orange-50' :
                             isUnlocked ? 'border-blue-200 bg-blue-50 cursor-pointer hover:border-blue-300' : 
                             'border-gray-200 bg-gray-50'}
                         `}
-                        onClick={() => isUnlocked && handleSessionSelect(template)}
+                        onClick={() => (isUnlocked || isCompleted) && handleSessionSelect(template)}
                         >
                           <div className="flex items-start justify-between mb-4">
                             <div className="flex-1">
@@ -382,7 +387,7 @@ const HomeScreen = ({ username, onLogout }) => {
                                   {template.title}
                                 </h3>
                                 {isCompleted && (
-                                  <span className="px-2 py-1 bg-serenity-100 text-serenity-700 text-xs font-medium rounded-full">
+                                  <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
                                     Concluída
                                   </span>
                                 )}
@@ -413,7 +418,18 @@ const HomeScreen = ({ username, onLogout }) => {
 
                             {/* Botão de ação */}
                             <div className="ml-4 flex flex-col items-end gap-2">
-                              {isUnlocked ? (
+                              {isCompleted ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSessionSelect(template);
+                                  }}
+                                  className="px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg bg-green-500 hover:bg-green-600 text-white hover:scale-105"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                  Visualizar conversa
+                                </button>
+                              ) : isUnlocked ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -421,10 +437,10 @@ const HomeScreen = ({ username, onLogout }) => {
                                   }}
                                   disabled={startingSession === template.session_id}
                                   className={`
-                                    px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg
+                                    px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg text-white hover:scale-105
                                     ${isCurrent ? 
-                                      'bg-orange-500 hover:bg-orange-600 text-white hover:scale-105' :
-                                      'bg-serenity-500 hover:bg-serenity-600 text-white hover:scale-105'
+                                      'bg-orange-500 hover:bg-orange-600' :
+                                      'bg-blue-500 hover:bg-blue-600'
                                     }
                                     ${startingSession === template.session_id ? 'opacity-70 cursor-not-allowed' : ''}
                                   `}
@@ -441,7 +457,7 @@ const HomeScreen = ({ username, onLogout }) => {
                               ) : (
                                 <button
                                   disabled
-                                  className="px-6 py-3 bg-gray-300 text-gray-500 rounded-xl font-bold text-sm cursor-not-allowed opacity-60"
+                                  className="px-6 py-3 bg-gray-300 text-gray-600 rounded-xl font-bold text-sm cursor-not-allowed opacity-60"
                                 >
                                   Bloqueada
                                 </button>

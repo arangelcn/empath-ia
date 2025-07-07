@@ -20,7 +20,7 @@ services:
 
   # MongoDB Express (interface web para MongoDB) - Mantendo para desenvolvimento
   mongo-express:
-    image: mongo-express:1.0.0
+    image: mongo-express:1.0.2
     container_name: empatia-mongo-express-dev
     restart: unless-stopped
     ports:
@@ -32,6 +32,14 @@ services:
       - ME_CONFIG_MONGODB_PORT=${ME_CONFIG_MONGODB_PORT:-27017}
       - ME_CONFIG_BASICAUTH_USERNAME=${ME_CONFIG_BASICAUTH_USERNAME:-admin}
       - ME_CONFIG_BASICAUTH_PASSWORD=${ME_CONFIG_BASICAUTH_PASSWORD:-admin123}
+      # Melhorar performance e timeout
+      - ME_CONFIG_REQUEST_SIZE=100mb
+      - ME_CONFIG_SITE_GRIDFS_ENABLED=true
+      - ME_CONFIG_MONGODB_ENABLE_ADMIN=true
+      # Corrigir problemas de compatibilidade
+      - ME_CONFIG_OPTIONS_EDITORTHEME=default
+      - ME_CONFIG_SITE_SSL_ENABLED=false
+      - ME_CONFIG_MONGODB_CONNECTION_TIMEOUT=5000
     depends_on:
       - mongodb
     networks:

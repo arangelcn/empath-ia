@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, CameraOff, Activity, AlertCircle, Loader2 } from 'lucide-react';
 
-const WebcamEmotionCapture = ({ onEmotionDetected }) => {
+const WebcamEmotionCapture = ({ onEmotionDetected, autoStart = false, hidden = false }) => {
   const [isActive, setIsActive] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentEmotion, setCurrentEmotion] = useState(null);
@@ -39,12 +39,17 @@ const WebcamEmotionCapture = ({ onEmotionDetected }) => {
       setStream(mediaStream);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        
+        // Aguardar o vídeo começar a reproduzir
+        videoRef.current.onplaying = () => {
+          // Aguardar 2 segundos para garantir que o stream esteja estável
+          setTimeout(() => {
+            const interval = setInterval(analyzeFrame, 3000);
+            setAnalyzeInterval(interval);
+          }, 2000);
+        };
       }
       setIsActive(true);
-      
-      // Iniciar análise automática a cada 3 segundos
-      const interval = setInterval(analyzeFrame, 3000);
-      setAnalyzeInterval(interval);
       
     } catch (err) {
       console.error('Erro ao acessar webcam:', err);
@@ -75,10 +80,25 @@ const WebcamEmotionCapture = ({ onEmotionDetected }) => {
       return;
     }
 
+    const video = videoRef.current;
+    
+    // Verificar se o vídeo está pronto
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+      return;
+    }
+
+    // Verificar se o vídeo não está pausado
+    if (video.paused || video.ended) {
+      try {
+        await video.play();
+      } catch (playError) {
+        return;
+      }
+    }
+
     try {
       setIsAnalyzing(true);
       
-      const video = videoRef.current;
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       
@@ -86,11 +106,35 @@ const WebcamEmotionCapture = ({ onEmotionDetected }) => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       
+      if (canvas.width === 0 || canvas.height === 0) {
+        return;
+      }
+      
       // Capturar frame
       context.drawImage(video, 0, 0);
       
+      // Verificar se há pixels válidos
+      const frameData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const pixelData = frameData.data;
+      let hasNonZeroPixels = false;
+      
+      for (let i = 0; i < pixelData.length; i += 4) {
+        if (pixelData[i] > 0 || pixelData[i + 1] > 0 || pixelData[i + 2] > 0) {
+          hasNonZeroPixels = true;
+          break;
+        }
+      }
+      
+      if (!hasNonZeroPixels) {
+        return;
+      }
+      
       // Converter para Base64
       const imageData = canvas.toDataURL('image/jpeg', 0.8);
+      
+      if (imageData.length < 10000) {
+        return;
+      }
       
       // Enviar para análise
       const response = await fetch('/api/emotion/analyze-realtime', {
@@ -109,18 +153,21 @@ const WebcamEmotionCapture = ({ onEmotionDetected }) => {
       
       if (result.status === 'success' && result.face_detected) {
         setCurrentEmotion(result);
-        // Notificar componente pai
         if (onEmotionDetected) {
           onEmotionDetected(result);
         }
       } else {
         // Sem face detectada
-        setCurrentEmotion({
+        const neutralResult = {
           dominant_emotion: 'neutral',
           emotions: { neutral: 1.0 },
           confidence: 0,
           face_detected: false
-        });
+        };
+        setCurrentEmotion(neutralResult);
+        if (onEmotionDetected) {
+          onEmotionDetected(neutralResult);
+        }
       }
       
     } catch (err) {
@@ -131,6 +178,13 @@ const WebcamEmotionCapture = ({ onEmotionDetected }) => {
     }
   };
 
+  // Auto-iniciar se autoStart for true
+  useEffect(() => {
+    if (autoStart && !isActive) {
+      startWebcam();
+    }
+  }, [autoStart, isActive]);
+
   // Limpeza ao desmontar componente
   useEffect(() => {
     return () => {
@@ -138,6 +192,37 @@ const WebcamEmotionCapture = ({ onEmotionDetected }) => {
     };
   }, []);
 
+  // Se hidden for true, só renderizar elementos necessários para funcionalidade
+  if (hidden) {
+    return (
+      <div style={{ 
+        position: 'fixed', 
+        top: '0px', 
+        left: '0px', 
+        width: '640px', 
+        height: '480px',
+        opacity: 0,
+        pointerEvents: 'none',
+        zIndex: -1
+      }}>
+        <video 
+          ref={videoRef} 
+          autoPlay 
+          playsInline 
+          muted 
+          style={{ width: '640px', height: '480px' }}
+        />
+        <canvas 
+          ref={canvasRef} 
+          width="640" 
+          height="480" 
+          style={{ position: 'absolute', top: '0', left: '0' }}
+        />
+      </div>
+    );
+  }
+
+  // Interface completa (comentada para uso futuro)
   return (
     <div className="bg-white rounded-lg shadow-lg p-6">
       <div className="flex items-center justify-between mb-4">

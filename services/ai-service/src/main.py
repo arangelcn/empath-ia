@@ -100,6 +100,7 @@ async def chat(message: dict):
     session_id = message.get("session_id", "default")
     conversation_history = message.get("conversation_history", None)
     session_objective = message.get("session_objective", None)
+    initial_prompt = message.get("initial_prompt", None)
     
     try:
         # Usar OpenAI se disponível, senão fallback
@@ -107,7 +108,8 @@ async def chat(message: dict):
             user_message=user_message,
             session_id=session_id,
             conversation_history=conversation_history,
-            session_objective=session_objective
+            session_objective=session_objective,
+            initial_prompt=initial_prompt
         )
         
         return {

@@ -120,6 +120,8 @@ services:
     volumes:
       - ./services/emotion-service:/app
       - ./data/shared:/shared_data
+    ports:
+      - "${EMOTION_SERVICE_PORT:-8003}:8003"
     networks:
       - empatia-network
     develop:

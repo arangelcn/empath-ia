@@ -103,12 +103,18 @@ async def create_indexes():
         await conversations.create_index("session_id", unique=True)
         await conversations.create_index("created_at")
         await conversations.create_index("updated_at")
+        # 🔒 NOVO ÍNDICE: Para suportar busca por username
+        await conversations.create_index("user_preferences.username")
         
-        # Índices para mensagens
+        # Índices para mensagens - 🔒 ATUALIZADOS PARA SEGURANÇA
         messages = get_collection("messages")
         await messages.create_index("session_id")
         await messages.create_index("created_at")
         await messages.create_index([("session_id", 1), ("created_at", 1)])
+        # 🔒 NOVOS ÍNDICES: Para validação dupla de segurança
+        await messages.create_index("username")
+        await messages.create_index([("session_id", 1), ("username", 1)])
+        await messages.create_index([("username", 1), ("created_at", 1)])
         
         # Índices para sessões terapêuticas
         therapeutic_sessions = get_therapeutic_sessions_collection()
@@ -132,7 +138,7 @@ async def create_indexes():
         await users.create_index("created_at")
         await users.create_index("last_login")
         
-        logger.info("✅ Índices MongoDB criados")
+        logger.info("✅ Índices MongoDB criados com melhorias de segurança")
         
     except Exception as e:
         logger.error(f"❌ Erro ao criar índices: {e}")

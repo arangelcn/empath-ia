@@ -130,21 +130,20 @@ async def send_message(request: ChatRequest):
     Enviar mensagem e receber resposta com persistência
     """
     try:
+        logger.info(f"🌐 GATEWAY: Recebendo mensagem para session_id={request.session_id}")
+        
         result = await chat_service.process_user_message(
             session_id=request.session_id or "default",
             user_message=request.message,
             session_objective=request.session_objective
         )
         
-        return {
-            "success": True,
-            "data": {
-                "ai_response": result
-            }
-        }
+        logger.info(f"✅ GATEWAY: Processamento concluído com sucesso para session_id={request.session_id}")
+        
+        return result
         
     except Exception as e:
-        logger.error(f"Erro ao processar mensagem: {e}")
+        logger.error(f"❌ GATEWAY: Erro ao processar mensagem: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @app.get("/api/chat/history/{session_id}")

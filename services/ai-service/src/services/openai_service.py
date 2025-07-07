@@ -60,33 +60,8 @@ class OpenAIService:
         """
         Criar prompt do sistema para o psicólogo Rogers
         """
-        return """Você é o Dr. Rogers, um psicólogo virtual especializado em terapia humanista.
-        
-SEU PAPEL:
-- Oferecer apoio emocional e orientação terapêutica
-- Usar técnicas de escuta ativa e empatia
-- Focar no bem-estar mental do usuário
-- Manter um tom acolhedor e profissional
-
-DIRETRIZES:
-1. SEMPRE responda em português brasileiro
-2. Seja empático e acolhedor
-3. Faça perguntas que estimulem reflexão
-4. Evite dar conselhos médicos específicos
-5. Se detectar crise, oriente buscar ajuda profissional
-6. Mantenha respostas concisas (máximo 3 parágrafos)
-
-ESTRUTURA DE RESPOSTA:
-- Reconheça o sentimento expresso
-- Demonstre empatia
-- Faça uma pergunta reflexiva
-- Ofereça apoio
-
-EXEMPLO:
-Usuário: "Estou muito triste hoje"
-Você: "Entendo que você está passando por um momento difícil. É muito corajoso reconhecer e compartilhar esses sentimentos. Pode me contar mais sobre o que está causando essa tristeza? Estou aqui para te ouvir e apoiar."
-
-Lembre-se: você é um psicólogo virtual, não substitui terapia profissional em casos graves."""
+        return """DIRETRIZES:
+1. SEMPRE responda em português brasileiro"""
     
     def _create_conversation_context(self, session_id: str, user_message: str, conversation_history: Optional[List[Dict]] = None, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None) -> List[Dict]:
         """
@@ -95,17 +70,31 @@ Lembre-se: você é um psicólogo virtual, não substitui terapia profissional e
         # Criar prompt do sistema baseado no objetivo da sessão
         system_prompt = self._create_system_prompt()
         
+        # 🔍 Log inicial
+        logger.info(f"🎯 Criando contexto para sessão {session_id}")
+        
         # Se há initial_prompt fornecido diretamente, usá-lo (tem prioridade)
         if initial_prompt:
+            logger.info(f"📋 INITIAL_PROMPT encontrado para sessão {session_id}")
+            logger.info(f"📝 Conteúdo do initial_prompt: {initial_prompt[:200]}{'...' if len(initial_prompt) > 200 else ''}")
+            
             enhanced_prompt = f"""
 INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
 {initial_prompt}
-
-{system_prompt}
 """
             system_prompt = enhanced_prompt
+            logger.info(f"✅ Prompt do sistema ENHANCED com initial_prompt para sessão {session_id}")
+            
         # Se há objetivo da sessão, incorporá-lo no prompt do sistema
         elif session_objective:
+            logger.info(f"🎯 SESSION_OBJECTIVE encontrado para sessão {session_id}")
+            logger.info(f"📋 Título: {session_objective.get('title', 'N/A')}")
+            logger.info(f"📋 Subtítulo: {session_objective.get('subtitle', 'N/A')}")
+            logger.info(f"📋 Objetivo: {session_objective.get('objective', 'N/A')[:100]}{'...' if len(session_objective.get('objective', '')) > 100 else ''}")
+            
+            if session_objective.get('initial_prompt'):
+                logger.info(f"📝 Conteúdo do initial_prompt do objective: {session_objective.get('initial_prompt')[:200]}{'...' if len(session_objective.get('initial_prompt', '')) > 200 else ''}")
+            
             objective_text = f"""
 OBJETIVO DESTA SESSÃO:
 Título: {session_objective.get('title', 'Sessão Terapêutica')}
@@ -118,6 +107,13 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
 {system_prompt}
 """
             system_prompt = objective_text
+            logger.info(f"✅ Prompt do sistema ENHANCED com session_objective para sessão {session_id}")
+            
+        else:
+            logger.info(f"📄 Usando prompt do sistema PADRÃO para sessão {session_id}")
+        
+        # 🔍 Log do prompt do sistema completo (truncado para não poluir logs)
+        logger.info(f"🤖 PROMPT DO SISTEMA (primeiros 300 caracteres): {system_prompt[:300]}{'...' if len(system_prompt) > 300 else ''}")
         
         messages = [
             {"role": "system", "content": system_prompt}
@@ -125,20 +121,32 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         
         # Processar histórico com otimizações
         if conversation_history:
+            logger.info(f"📚 Processando histórico: {len(conversation_history)} mensagens originais")
             optimized_history = self._optimize_conversation_history(conversation_history)
+            logger.info(f"📚 Após otimização: {len(optimized_history)} mensagens")
             
             for msg in optimized_history:
                 role = "user" if msg.get("type") == "user" else "assistant"
                 content = msg.get("content", "")
                 if content.strip():
                     messages.append({"role": role, "content": content})
+        else:
+            logger.info(f"📄 Nenhum histórico fornecido para sessão {session_id}")
         
         # Adicionar mensagem atual
+        logger.info(f"💬 Mensagem do usuário: {user_message[:100]}{'...' if len(user_message) > 100 else ''}")
         messages.append({"role": "user", "content": user_message})
         
         # Log do tamanho do contexto
         total_tokens = self._estimate_tokens(messages)
-        logger.info(f"📊 Contexto: {len(messages)} mensagens, ~{total_tokens} tokens")
+        logger.info(f"📊 Contexto FINAL: {len(messages)} mensagens, ~{total_tokens} tokens")
+        
+        # 🔍 Log resumo das mensagens que serão enviadas para OpenAI
+        logger.info(f"📤 RESUMO ENVIADO PARA OPENAI:")
+        for i, msg in enumerate(messages):
+            role = msg["role"]
+            content_preview = msg["content"][:80] + "..." if len(msg["content"]) > 80 else msg["content"]
+            logger.info(f"  [{i+1}] {role.upper()}: {content_preview}")
         
         return messages
     
@@ -209,23 +217,36 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             session_id: ID da sessão
             conversation_history: Histórico da conversa (opcional)
             session_objective: Objetivo da sessão terapêutica (opcional)
+            initial_prompt: Prompt inicial específico (opcional)
             
         Returns:
             Dict com resposta e metadados
         """
         try:
+            # 🚀 Log inicial da função
+            logger.info(f"🚀 INICIANDO GERAÇÃO DE RESPOSTA TERAPÊUTICA")
+            logger.info(f"🎯 Session ID: {session_id}")
+            logger.info(f"💬 Mensagem do usuário: {user_message[:150]}{'...' if len(user_message) > 150 else ''}")
+            logger.info(f"📚 Histórico fornecido: {'Sim' if conversation_history else 'Não'} ({len(conversation_history) if conversation_history else 0} mensagens)")
+            logger.info(f"🎯 Session Objective fornecido: {'Sim' if session_objective else 'Não'}")
+            logger.info(f"📋 Initial Prompt fornecido: {'Sim' if initial_prompt else 'Não'}")
+            
             # Verificar disponibilidade
             if not self.is_available():
                 logger.warning("⚠️ OpenAI não disponível - usando fallback")
                 return self._fallback_response(user_message)
             
+            logger.info(f"✅ OpenAI disponível - gerando resposta com modelo {self.model}")
+            
             # Criar contexto da conversa
             messages = self._create_conversation_context(session_id, user_message, conversation_history, session_objective, initial_prompt)
             
             # Fazer chamada para OpenAI
+            logger.info(f"📡 Enviando requisição para OpenAI com {len(messages)} mensagens")
             response = await self._call_openai(messages)
             
             if response:
+                logger.info(f"✅ Resposta recebida da OpenAI: {response[:100]}{'...' if len(response) > 100 else ''}")
                 return {
                     "response": response,
                     "model": self.model,
@@ -251,6 +272,18 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             return None
             
         try:
+            # 🔍 Log detalhado da chamada OpenAI
+            logger.info(f"🤖 CHAMADA PARA API OPENAI:")
+            logger.info(f"   Modelo: {self.model}")
+            logger.info(f"   Max Tokens: {self.max_tokens}")
+            logger.info(f"   Temperatura: {self.temperature}")
+            logger.info(f"   Número de mensagens: {len(messages)}")
+            
+            # Log do sistema prompt (mais detalhado se necessário)
+            if messages and len(messages) > 0 and messages[0]["role"] == "system":
+                system_content = messages[0]["content"]
+                logger.info(f"🎯 SYSTEM PROMPT (primeiros 500 chars): {system_content[:500]}{'...' if len(system_content) > 500 else ''}")
+            
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -260,12 +293,17 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             )
             
             if response.choices and len(response.choices) > 0:
-                return response.choices[0].message.content.strip()
+                ai_response = response.choices[0].message.content.strip()
+                logger.info(f"✅ SUCESSO na chamada OpenAI")
+                logger.info(f"📊 Tokens usados: prompt={getattr(response.usage, 'prompt_tokens', 'N/A')}, completion={getattr(response.usage, 'completion_tokens', 'N/A')}, total={getattr(response.usage, 'total_tokens', 'N/A')}")
+                logger.info(f"🤖 Resposta da IA (primeiros 200 chars): {ai_response[:200]}{'...' if len(ai_response) > 200 else ''}")
+                return ai_response
             else:
                 logger.warning("⚠️ OpenAI retornou resposta vazia")
                 return None
                 
         except Exception as e:
+            logger.error(f"❌ ERRO na chamada OpenAI: {e}")
             if openai and hasattr(openai, 'RateLimitError') and isinstance(e, openai.RateLimitError):
                 logger.error("❌ Rate limit da OpenAI atingido")
             elif openai and hasattr(openai, 'APIError') and isinstance(e, openai.APIError):

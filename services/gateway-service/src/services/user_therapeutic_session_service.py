@@ -202,7 +202,7 @@ class UserTherapeuticSessionService:
             logger.error(f"❌ Erro ao iniciar sessão {session_id} para usuário {username}: {e}")
             raise
     
-    async def complete_session(self, username: str, session_id: str, progress: int = 100) -> bool:
+    async def complete_session(self, username: str, session_id: str, progress: int = 100, status: str = "completed") -> bool:
         """Marcar uma sessão como concluída para o usuário"""
         try:
             result = await self.user_sessions_collection.update_one(
@@ -212,7 +212,7 @@ class UserTherapeuticSessionService:
                 },
                 {
                     "$set": {
-                        "status": "completed",
+                        "status": status,
                         "progress": progress,
                         "completed_at": datetime.utcnow(),
                         "updated_at": datetime.utcnow()
@@ -221,14 +221,14 @@ class UserTherapeuticSessionService:
             )
             
             if result.modified_count > 0:
-                logger.info(f"✅ Sessão {session_id} concluída para usuário {username}")
+                logger.info(f"✅ Sessão {session_id} marcada como '{status}' para usuário {username}")
                 return True
             else:
                 logger.warning(f"⚠️ Sessão {session_id} não encontrada para usuário {username}")
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Erro ao concluir sessão {session_id} para usuário {username}: {e}")
+            logger.error(f"❌ Erro ao marcar sessão {session_id} como '{status}' para usuário {username}: {e}")
             raise
     
     async def update_session_progress(self, username: str, session_id: str, progress: int) -> bool:

@@ -21,17 +21,7 @@ interface SessionObjective {
   initial_prompt: string;
 }
 
-const fetchEmotion = async () => {
-  try {
-    const response = await fetch('/api/emotion/latest');
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (error) {
-    console.warn('Erro ao buscar emoção:', error);
-  }
-  return { emotion: 'Serena' };
-};
+// Função removida - usando WebcamEmotionCapture para análise em tempo real
 
 const MessageBubble = ({ message, isTyping = false }) => {
   const isUser = message.type === 'user';
@@ -77,10 +67,11 @@ const ChatScreen = ({ username }) => {
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  const [currentEmotion, setCurrentEmotion] = useState('Serena');
+  const [currentEmotion, setCurrentEmotion] = useState(null);
   const [sessionObjective, setSessionObjective] = useState<SessionObjective | null>(null);
   const [showObjective, setShowObjective] = useState(true);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
   // Carregar objetivo da sessão e histórico de mensagens quando o componente for montado
   useEffect(() => {
@@ -91,14 +82,26 @@ const ChatScreen = ({ username }) => {
         // Carregar objetivo da sessão
         if (currentSessionId) {
           try {
-            const sessionResponse = await getTherapeuticSession(currentSessionId);
+            // ✅ CORREÇÃO: Extrair o session_id original (remover prefix do username)
+            // currentSessionId formato: "teste_01_session-1"
+            // Precisamos de: "session-1" para buscar na coleção de templates
+            const originalSessionId = currentSessionId.includes('_') 
+              ? currentSessionId.split('_').slice(1).join('_')  // Remove primeiro elemento (username)
+              : currentSessionId; // Fallback se não tiver underscore
+              
+            console.log('🔍 Buscando sessão - currentSessionId:', currentSessionId, 'originalSessionId:', originalSessionId);
+            
+            const sessionResponse = await getTherapeuticSession(originalSessionId);
             if (sessionResponse.success && sessionResponse.data) {
+              console.log('✅ Session Objective carregado:', sessionResponse.data);
               setSessionObjective({
                 title: sessionResponse.data.title,
                 subtitle: sessionResponse.data.subtitle,
                 objective: sessionResponse.data.objective,
                 initial_prompt: sessionResponse.data.initial_prompt
               });
+            } else {
+              console.warn('⚠️ Session não encontrada para ID:', originalSessionId);
             }
           } catch (error) {
             console.warn('Erro ao carregar objetivo da sessão:', error);
@@ -119,19 +122,16 @@ const ChatScreen = ({ username }) => {
           
           setMessages(historyMessages);
         } else {
-          // Se não há histórico, mostrar mensagem de boas-vindas
-          const welcomeMessage = `Olá, ${username}! Como posso te ajudar hoje? Estou aqui para te escutar e apoiar em sua jornada de autoconhecimento.`;
-          
-          setMessages([
-            { id: `initial-${Date.now()}`, type: 'ai', content: welcomeMessage }
-          ]);
+          // ✅ CORREÇÃO: Não criar mensagem inicial - deixar que a IA use o prompt da sessão
+          // Quando não há histórico, simplesmente deixar a lista de mensagens vazia
+          // A primeira mensagem será gerada quando o usuário enviar algo, usando o initial_prompt da sessão
+          setMessages([]);
         }
       } catch (error) {
         console.error('Erro ao carregar dados da sessão:', error);
-        // Em caso de erro, mostrar mensagem de boas-vindas
-        setMessages([
-          { id: `initial-${Date.now()}`, type: 'ai', content: `Olá, ${username}! Como posso te ajudar hoje? Estou aqui para te escutar e apoiar em sua jornada de autoconhecimento.` }
-        ]);
+        // ✅ CORREÇÃO: Em caso de erro, também não mostrar mensagem padrão
+        // Deixar vazio para que o prompt da sessão seja usado
+        setMessages([]);
       } finally {
         setIsLoadingHistory(false);
       }
@@ -142,21 +142,20 @@ const ChatScreen = ({ username }) => {
     }
   }, [currentSessionId, username]);
 
-  useEffect(() => {
-    const intervalId = setInterval(async () => {
-      try {
-        const response = await fetchEmotion();
-        setCurrentEmotion(response.emotion);
-      } catch (error) {
-        setCurrentEmotion('Serena');
-      }
-    }, 5000);
-    return () => clearInterval(intervalId);
-  }, []);
+  // useEffect removido - emoção agora é atualizada via WebcamEmotionCapture
   
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Focar no input quando o componente carregar
+  useEffect(() => {
+    if (!isLoadingHistory && inputRef.current) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 300);
+    }
+  }, [isLoadingHistory]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
@@ -172,9 +171,25 @@ const ChatScreen = ({ username }) => {
     setIsLoading(true);
 
     try {
-      // Passar o objetivo apenas se for a primeira mensagem da sessão
-      const isFirstMessage = messages.length === 0 || (messages.length === 1 && messages[0].type === 'ai');
-      const objectiveToSend = isFirstMessage ? sessionObjective : null;
+      // ✅ CORREÇÃO: Para session-1 (cadastro), não passar sessionObjective 
+      // Para outras sessões, passar apenas se for a primeira mensagem
+      const isFirstMessage = messages.length === 0;
+      
+      // Extrair o session_id original para verificar se é session-1
+      const originalSessionId = currentSessionId.includes('_') 
+        ? currentSessionId.split('_').slice(1).join('_')
+        : currentSessionId;
+      
+      // session-1 é a sessão de cadastro, não deve receber título/objetivo
+      const isRegistrationSession = originalSessionId === 'session-1';
+      
+      let objectiveToSend = null;
+      if (isFirstMessage && !isRegistrationSession) {
+        // Apenas para sessões que NÃO são de cadastro
+        objectiveToSend = sessionObjective;
+      }
+      
+      console.log(`🔍 Session Info: originalSessionId=${originalSessionId}, isRegistrationSession=${isRegistrationSession}, isFirstMessage=${isFirstMessage}, willSendObjective=${objectiveToSend !== null}`);
       
       const response = await sendMessage(currentInput, currentSessionId, objectiveToSend);
       if (response.success) {
@@ -186,6 +201,23 @@ const ChatScreen = ({ username }) => {
           audioUrl: ai_response.audioUrl,
         };
         setMessages(prev => [...prev, aiMessage]);
+        
+        // ✅ NOVO: Verificar se o cadastro foi finalizado
+        if (response.data.registration_completed && response.data.redirect_to_home) {
+          // Mostrar mensagem de sucesso por alguns segundos
+          if (response.data.completion_message) {
+            console.log('🎉 Cadastro finalizado:', response.data.completion_message);
+          }
+          
+          // Redirecionar para home após 3 segundos
+          setTimeout(() => {
+            navigate('/home', { 
+              state: { 
+                message: 'Cadastro finalizado com sucesso! Agora você pode acessar todas as sessões terapêuticas.' 
+              } 
+            });
+          }, 3000);
+        }
       }
     } catch (error) {
       const errorMessage = {
@@ -196,6 +228,17 @@ const ChatScreen = ({ username }) => {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      
+      // Manter foco no input após enviar mensagem
+      // Usar setTimeout para garantir que o DOM seja atualizado antes de focar
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          // Garantir que o cursor fique no final do texto (se houver)
+          const textLength = inputRef.current.value.length;
+          inputRef.current.setSelectionRange(textLength, textLength);
+        }
+      }, 100);
     }
   };
   
@@ -209,7 +252,8 @@ const ChatScreen = ({ username }) => {
   // Handler para receber emoção da webcam
   const handleWebcamEmotion = (result) => {
     if (result && result.dominant_emotion) {
-      setCurrentEmotion(result.dominant_emotion);
+      // Passar o objeto completo para o EmotionBadge
+      setCurrentEmotion(result);
     }
   };
 
@@ -247,10 +291,12 @@ const ChatScreen = ({ username }) => {
         </div>
       </div>
 
-      {/* WebcamEmotionCapture invisível, mas ativo */}
-      <div className="hidden">
-        <WebcamEmotionCapture onEmotionDetected={handleWebcamEmotion} />
-      </div>
+      {/* WebcamEmotionCapture invisível - análise automática em background */}
+      <WebcamEmotionCapture 
+        onEmotionDetected={handleWebcamEmotion} 
+        autoStart={true} 
+        hidden={true} 
+      />
 
       {/* Objetivo da Sessão */}
       {sessionObjective && showObjective && (
@@ -310,6 +356,7 @@ const ChatScreen = ({ username }) => {
           onSubmit={e => { e.preventDefault(); handleSendMessage(); }}
         >
           <textarea
+            ref={inputRef}
             className="flex-1 resize-none bg-transparent outline-none text-sm text-text-primary dark:text-text-primary-dark placeholder-gray-400 py-2"
             rows={1}
             placeholder="Digite sua mensagem..."
