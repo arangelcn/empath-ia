@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, CameraOff, Activity, AlertCircle, Loader2 } from 'lucide-react';
 
-const WebcamEmotionCapture = ({ onEmotionDetected, autoStart = false, hidden = false }) => {
+const WebcamEmotionCapture = ({ onEmotionDetected, autoStart = false, hidden = false, username = null, sessionId = null }) => {
   const [isActive, setIsActive] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentEmotion, setCurrentEmotion] = useState(null);
@@ -137,12 +137,18 @@ const WebcamEmotionCapture = ({ onEmotionDetected, autoStart = false, hidden = f
       }
       
       // Enviar para análise
+      const requestBody = { 
+        image: imageData,
+        username: username,
+        session_id: sessionId
+      };
+      
       const response = await fetch('/api/emotion/analyze-realtime', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ image: imageData })
+        body: JSON.stringify(requestBody)
       });
       
       if (!response.ok) {

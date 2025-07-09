@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+import httpx
 from ..models.database import get_collection
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,14 @@ class ChatService:
             # Atualizar contador de mensagens
             await self._update_message_count(session_id)
             
+            # Verificar se a mensagem indica fim de conversa
+            conversation_ended = self.detect_conversation_end(user_message)
+            if conversation_ended:
+                logger.info(f"🔚 Fim de conversa detectado para sessão: {session_id}")
+                # Gerar contexto em background (não bloquear resposta)
+                import asyncio
+                asyncio.create_task(self.finalize_session_context(session_id, manual_termination=False))
+            
             return {
                 "success": True,
                 "data": {
@@ -170,7 +179,8 @@ class ChatService:
                         "audioUrl": ai_response_data.get("audio_url"),
                         "provider": ai_response_data.get("provider", "unknown"),
                         "model": ai_response_data.get("model", "unknown")
-                    }
+                    },
+                    "conversation_ended": conversation_ended
                 }
             }
             
@@ -284,48 +294,169 @@ class ChatService:
             raise
     
     async def _get_ai_response(self, user_message: str, session_id: str, selected_voice: str, voice_enabled: bool = True, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """Obter resposta da IA (versão simplificada sem httpx)"""
+        """Obter resposta da IA usando AI Service com contexto completo"""
         try:
-            # Para agora, retornar uma resposta padrão já que httpx não está disponível
-            # TODO: Implementar chamada HTTP adequada quando httpx estiver disponível
+            logger.info(f"🤖 Chamando AI Service para sessão: {session_id}")
             
-            logger.info(f"🤖 Gerando resposta para: {user_message[:50]}...")
+            # ✅ NOVO: Obter contexto da conversa atual
+            conversation_history = await self._get_conversation_context(session_id)
             
-            # Resposta padrão empática baseada na abordagem Rogers
-            default_responses = [
-                "Entendo como você está se sentindo. Pode me contar mais sobre isso?",
-                "Isso parece ser muito importante para você. Como isso te afeta?",
-                "Percebo que há algo significativo no que você está compartilhando. Gostaria de explorar isso mais?",
-                "Suas palavras me mostram muito sobre seus sentimentos. O que mais vem à sua mente sobre isso?",
-                "Compreendo que isso é parte da sua experiência. Como você se sente em relação a isso agora?",
-                "Obrigada por compartilhar isso comigo. Que sentimentos isso desperta em você?",
-                "Vejo que isso tem um significado especial para você. Pode me ajudar a entender melhor?",
-                "Suas reflexões são muito valiosas. O que você pensa sobre essa situação?",
-                "Sinto que há algo profundo no que você está expressando. Como isso se conecta com você?",
-                "Agradeço sua abertura em compartilhar isso. O que isso representa para você?"
-            ]
+            # ✅ NOVO: Buscar contexto da sessão anterior (se existir)
+            previous_session_context = await self._get_previous_session_context(session_id)
             
-            # Escolher resposta baseada no hash da mensagem para consistência
-            import hashlib
-            hash_obj = hashlib.md5(user_message.encode())
-            response_index = int(hash_obj.hexdigest(), 16) % len(default_responses)
-            ai_response_text = default_responses[response_index]
-            
-            return {
-                "content": ai_response_text,
-                "audio_url": None,  # Não geramos áudio por enquanto
-                "provider": "internal",
-                "model": "empathic_fallback"
+            # Preparar dados para o AI Service
+            ai_request = {
+                "message": user_message,
+                "session_id": session_id,
+                "conversation_history": conversation_history,
+                "session_objective": session_objective,
+                "initial_prompt": initial_prompt,
+                "previous_session_context": previous_session_context  # ✅ NOVO: Contexto da sessão anterior
             }
             
+            logger.info(f"📤 Enviando para AI Service - mensagem: {user_message[:50]}..., histórico: {len(conversation_history)} msgs, contexto anterior: {'sim' if previous_session_context else 'não'}")
+            
+            # Chamar AI Service
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.ai_service_url}/chat",
+                    json=ai_request,
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                if response.status_code == 200:
+                    ai_data = response.json()
+                    ai_content = ai_data.get("response", "Desculpe, não consegui processar sua mensagem.")
+                    
+                    logger.info(f"✅ Resposta recebida do AI Service: {ai_content[:100]}...")
+                    
+                    # Gerar áudio se habilitado
+                    audio_url = None
+                    if voice_enabled and selected_voice:
+                        audio_url = await self._generate_audio_if_available(ai_content, session_id, selected_voice)
+                    
+                    return {
+                        "content": ai_content,
+                        "audio_url": audio_url,
+                        "provider": ai_data.get("provider", "openai"),
+                        "model": ai_data.get("model", "gpt-3.5-turbo")
+                    }
+                else:
+                    logger.error(f"❌ AI Service retornou erro {response.status_code}: {response.text}")
+                    return self._get_fallback_response(user_message)
+                    
+        except httpx.ConnectError:
+            logger.error(f"❌ Não foi possível conectar ao AI Service: {self.ai_service_url}")
+            return self._get_fallback_response(user_message)
         except Exception as e:
-            logger.error(f"❌ Erro ao gerar resposta da IA: {e}")
-            return {
-                "content": "Desculpe, estou aqui para te escutar. Pode me contar como você está se sentindo?",
-                "audio_url": None,
-                "provider": "fallback",
-                "model": "fallback"
-            }
+            logger.error(f"❌ Erro ao chamar AI Service: {e}")
+            return self._get_fallback_response(user_message)
+
+    async def _get_previous_session_context(self, current_session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Buscar contexto da sessão anterior para enviar ao AI Service
+        """
+        try:
+            # Extrair username e número da sessão atual
+            username = self._extract_username_from_session_id(current_session_id)
+            if not username:
+                return None
+                
+            current_session_number = self._extract_session_number(current_session_id)
+            if current_session_number <= 1:
+                logger.info(f"🔍 Session-{current_session_number}: não há sessão anterior")
+                return None
+            
+            # Buscar sessão anterior (session-X -> session-(X-1))
+            previous_session_number = current_session_number - 1
+            previous_session_id = f"{username}_session-{previous_session_number}"
+            
+            logger.info(f"🔍 Buscando contexto da sessão anterior: {previous_session_id}")
+            
+            # Buscar contexto salvo da sessão anterior
+            conversations = get_collection("conversations")
+            previous_conversation = await conversations.find_one({"session_id": previous_session_id})
+            
+            if previous_conversation and previous_conversation.get("session_context"):
+                context = previous_conversation["session_context"]
+                logger.info(f"✅ Contexto encontrado da sessão anterior: {len(str(context))} chars")
+                
+                # Retornar apenas as informações mais relevantes para o AI Service
+                return {
+                    "session_id": previous_session_id,
+                    "summary": context.get("summary", ""),
+                    "main_themes": context.get("main_themes", []),
+                    "key_insights": context.get("key_insights", []),
+                    "emotional_state": context.get("emotional_state", {}),
+                    "future_sessions": context.get("future_sessions", {}),
+                    "user_progress": context.get("user_progress", {})
+                }
+            else:
+                logger.warning(f"⚠️ Contexto não encontrado para sessão anterior: {previous_session_id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao buscar contexto da sessão anterior: {e}")
+            return None
+
+    async def _generate_audio_if_available(self, text: str, session_id: str, voice: str) -> Optional[str]:
+        """
+        Gerar áudio via Voice Service se disponível
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Usar endpoint do Voice Service via Gateway
+                response = await client.post(
+                    f"http://localhost:8000/api/voice/speak",
+                    json={
+                        "text": text,
+                        "voice": voice,
+                        "speed": 1.0
+                    },
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success") and data.get("audio_url"):
+                        logger.info(f"🔊 Áudio gerado: {data['audio_url']}")
+                        return data["audio_url"]
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Falha ao gerar áudio: {e}")
+        
+        return None
+
+    def _get_fallback_response(self, user_message: str) -> Dict[str, Any]:
+        """
+        Resposta fallback quando AI Service não está disponível
+        """
+        # Resposta padrão empática baseada na abordagem Rogers
+        default_responses = [
+            "Entendo como você está se sentindo. Pode me contar mais sobre isso?",
+            "Isso parece ser muito importante para você. Como isso te afeta?",
+            "Percebo que há algo significativo no que você está compartilhando. Gostaria de explorar isso mais?",
+            "Suas palavras me mostram muito sobre seus sentimentos. O que mais vem à sua mente sobre isso?",
+            "Compreendo que isso é parte da sua experiência. Como você se sente em relação a isso agora?",
+            "Obrigada por compartilhar isso comigo. Que sentimentos isso desperta em você?",
+            "Vejo que isso tem um significado especial para você. Pode me ajudar a entender melhor?",
+            "Suas reflexões são muito valiosas. O que você pensa sobre essa situação?",
+            "Sinto que há algo profundo no que você está expressando. Como isso se conecta com você?",
+            "Agradeço sua abertura em compartilhar isso. O que isso representa para você?"
+        ]
+        
+        # Escolher resposta baseada no hash da mensagem para consistência
+        import hashlib
+        hash_obj = hashlib.md5(user_message.encode())
+        response_index = int(hash_obj.hexdigest(), 16) % len(default_responses)
+        ai_response_text = default_responses[response_index]
+        
+        return {
+            "content": ai_response_text,
+            "audio_url": None,
+            "provider": "fallback",
+            "model": "empathic_fallback"
+        }
     
     async def _get_conversation_context(self, session_id: str) -> List[Dict[str, Any]]:
         """Obter contexto da conversa para enviar ao AI Service"""
@@ -394,7 +525,7 @@ class ChatService:
                 except Exception as ex:
                     logger.warning(f"⚠️ Erro ao extrair username do session_id: {session_id} - {ex}")
             
-            # Buscar na coleção user_therapeutic_sessions primeiro (sessão específica do usuário)
+            # ✅ NOVO: Buscar APENAS na coleção user_therapeutic_sessions (personalizada por usuário)
             if username:
                 user_sessions = get_collection("user_therapeutic_sessions")
                 user_session = await user_sessions.find_one({
@@ -408,15 +539,8 @@ class ChatService:
                 else:
                     logger.warning(f"⚠️ User session não encontrada: username={username}, session_id={original_session_id}")
             
-            # Se não encontrar na sessão do usuário, buscar na coleção therapeutic_sessions (template)
-            sessions = get_collection("therapeutic_sessions")
-            session = await sessions.find_one({"session_id": original_session_id})
-            
-            if session and session.get("initial_prompt"):
-                logger.info(f"✅ Initial prompt encontrado no template: {original_session_id}")
-                return session["initial_prompt"]
-            else:
-                logger.warning(f"⚠️ Template session não encontrada: {original_session_id}")
+            # ✅ REMOVIDO: Não buscar mais na coleção therapeutic_sessions (templates)
+            # Agora tudo é personalizado por usuário
             
             logger.warning(f"⚠️ Nenhum initial_prompt encontrado para session_id: {session_id}")
             return None
@@ -424,39 +548,6 @@ class ChatService:
         except Exception as e:
             logger.error(f"❌ Erro ao buscar initial_prompt para sessão {session_id}: {e}")
             return None
-    
-    # async def _generate_audio(self, text: str, session_id: str, voice: str) -> Optional[str]:
-    #     """Gerar áudio via Voice Service - COMENTADO TEMPORARIAMENTE"""
-    #     try:
-    #         async with httpx.AsyncClient(timeout=60.0) as client:
-    #             response = await client.post(
-    #                 f"{self.voice_service_url}/api/v1/synthesize",
-    #                 json={
-    #                     "text": text,
-    #                     "voice": voice,
-    #                     "speed": 1.0,
-    #                     "pitch": 0.0
-    #             }
-    #             )
-    #             
-    #             if response.status_code == 200:
-    #                 data = response.json()
-    #                 audio_url = data.get("audio_url")
-    #                 if audio_url:
-    #                     # Extrair o nome do arquivo da URL completa
-    #                     audio_filename = audio_url.split("/")[-1]
-    #                     # Retornar URL para acessar o áudio via gateway
-    #                     return f"/api/voice/audio/{audio_filename}"
-    #                 else:
-    #                     logger.warning("⚠️ Voice Service não retornou URL do áudio")
-    #                     return None
-    #             else:
-    #                 logger.warning(f"⚠️ Voice Service retornou {response.status_code}: {response.text}")
-    #                 return None
-    #                 
-    #     except Exception as e:
-    #         logger.error(f"❌ Erro ao gerar áudio: {e}")
-    #         return None
     
     async def _update_message_count(self, session_id: str):
         """Atualizar contador de mensagens da conversa"""
@@ -468,6 +559,969 @@ class ChatService:
             )
         except Exception as e:
             logger.error(f"❌ Erro ao atualizar contador: {e}")
+
+    # ===== SISTEMA DE CONTEXTO DE SESSÃO =====
+    
+    async def finalize_session_context(self, session_id: str, manual_termination: bool = False) -> Dict[str, Any]:
+        """
+        Finalizar sessão e gerar contexto/resumo da conversa
+        """
+        try:
+            logger.info(f"🎯 FINALIZANDO CONTEXTO DA SESSÃO: {session_id}")
+            
+            # Verificar se a sessão existe
+            conversation = await self.get_conversation_by_session_id(session_id)
+            if not conversation:
+                logger.warning(f"⚠️ Conversa não encontrada para contexto: {session_id}")
+                return {"success": False, "error": "Conversa não encontrada"}
+            
+            # Verificar se já foi finalizada
+            if conversation.get("session_context"):
+                logger.info(f"✅ Sessão já possui contexto: {session_id}")
+                return {
+                    "success": True, 
+                    "already_finalized": True,
+                    "context": conversation["session_context"]
+                }
+            
+            # Obter histórico completo da conversa
+            history_data = await self.get_conversation_history(session_id)
+            messages = history_data.get("history", [])
+            
+            # ✅ CORREÇÃO: Para session-1 (cadastro), aceitar qualquer quantidade de mensagens
+            # pois pode ser finalizada antes de completar todo o questionário
+            original_session_id = session_id.split('_')[-1] if '_' in session_id else session_id
+            is_registration_session = original_session_id == "session-1"
+            
+            min_messages_required = 1 if is_registration_session else 2
+            
+            if len(messages) < min_messages_required:
+                logger.warning(f"⚠️ Conversa muito curta para gerar contexto: {session_id} ({len(messages)} mensagens)")
+                return {"success": False, "error": "Conversa muito curta"}
+            
+            # Gerar contexto usando IA
+            context_data = await self._generate_session_context(session_id, messages, manual_termination)
+            
+            # Salvar contexto na conversa
+            if context_data:
+                conversations = get_collection("conversations")
+                update_result = await conversations.update_one(
+                    {"session_id": session_id},
+                    {
+                        "$set": {
+                            "session_context": context_data,
+                            "context_generated_at": datetime.utcnow(),
+                            "session_finalized": True,
+                            "manual_termination": manual_termination,
+                            "updated_at": datetime.utcnow()
+                        }
+                    }
+                )
+                
+                if update_result.modified_count > 0:
+                    logger.info(f"✅ Contexto salvo para sessão: {session_id}")
+                    
+                    # ✅ NOVO: Criar próxima sessão automaticamente
+                    next_session_result = await self._create_next_session_automatically(session_id, context_data)
+                    
+                    return {
+                        "success": True,
+                        "context": context_data,
+                        "manual_termination": manual_termination,
+                        "next_session": next_session_result
+                    }
+                else:
+                    logger.error(f"❌ Falha ao salvar contexto: {session_id}")
+                    return {"success": False, "error": "Falha ao salvar contexto"}
+            else:
+                logger.error(f"❌ Falha ao gerar contexto: {session_id}")
+                return {"success": False, "error": "Falha ao gerar contexto"}
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao finalizar contexto da sessão {session_id}: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _create_next_session_automatically(self, current_session_id: str, session_context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Criar APENAS a próxima sessão automaticamente usando AI Service (1 a 1)
+        """
+        try:
+            logger.info(f"🚀 CRIANDO PRÓXIMA SESSÃO AUTOMATICAMENTE para {current_session_id}")
+            
+            # Extrair username do session_id
+            username = self._extract_username_from_session_id(current_session_id)
+            if not username:
+                logger.error(f"❌ Não foi possível extrair username de {current_session_id}")
+                return {"success": False, "error": "Username não encontrado"}
+            
+            # Extrair número da sessão atual
+            current_session_number = self._extract_session_number(current_session_id)
+            next_session_number = current_session_number + 1
+            next_session_id = f"session-{next_session_number}"
+            
+            logger.info(f"📋 Criando session-{next_session_number} após session-{current_session_number}")
+            
+            # Verificar se a próxima sessão já existe
+            from .user_therapeutic_session_service import UserTherapeuticSessionService
+            user_session_service = UserTherapeuticSessionService()
+            
+            existing_session = await user_session_service.get_user_session(username, next_session_id)
+            if existing_session:
+                logger.info(f"ℹ️ Session-{next_session_number} já existe para {username}")
+                
+                # Desbloquear se estiver bloqueada
+                if existing_session.get("status") == "locked":
+                    unlock_success = await user_session_service.unlock_session(username, next_session_id)
+                    if unlock_success:
+                        logger.info(f"🔓 Session-{next_session_number} desbloqueada para {username}")
+                
+                return {
+                    "success": True,
+                    "created": False,
+                    "session_id": next_session_id,
+                    "title": existing_session.get("title", f"Sessão {next_session_number}"),
+                    "message": "Sessão já existe e foi desbloqueada"
+                }
+            
+            # Buscar perfil do usuário
+            user_profile = await self._get_user_profile(username)
+            
+            # Gerar próxima sessão usando AI Service
+            next_session = await self._call_ai_service_for_next_session(user_profile, session_context, current_session_id)
+            
+            if next_session:
+                # Garantir que o session_id seja sequencial
+                next_session["session_id"] = next_session_id
+                
+                # Criar sessão no banco
+                creation_result = await self._create_user_session_in_db(username, next_session)
+                
+                if creation_result:
+                    logger.info(f"✅ Session-{next_session_number} criada automaticamente para {username}")
+                    return {
+                        "success": True,
+                        "created": True,
+                        "session_id": next_session_id,
+                        "title": next_session.get("title", f"Sessão {next_session_number}"),
+                        "generation_method": next_session.get("generation_method", "ai_service")
+                    }
+                else:
+                    logger.error(f"❌ Falha ao criar session-{next_session_number} no banco")
+                    return {"success": False, "error": "Falha ao criar sessão no banco"}
+            else:
+                logger.warning(f"⚠️ Falha ao gerar session-{next_session_number} via AI Service")
+                return {"success": False, "error": "Falha ao gerar próxima sessão"}
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao criar próxima sessão automaticamente: {e}")
+            return {"success": False, "error": str(e)}
+
+    def _extract_username_from_session_id(self, session_id: str) -> Optional[str]:
+        """
+        Extrair username do session_id formato: username_session-X
+        """
+        try:
+            if "_" in session_id:
+                # Formato: "teste_01_session-1" -> "teste_01"
+                parts = session_id.split("_")
+                if len(parts) >= 2:
+                    # Remover a última parte que é o session-X
+                    username_parts = parts[:-1]
+                    return "_".join(username_parts)
+            return None
+        except Exception:
+            return None
+
+    async def _get_user_profile(self, username: str) -> Dict[str, Any]:
+        """
+        Buscar perfil completo do usuário
+        """
+        try:
+            users = get_collection("users")
+            user = await users.find_one({"username": username})
+            
+            if user and user.get("user_profile"):
+                return user["user_profile"]
+            else:
+                logger.warning(f"⚠️ Perfil do usuário não encontrado: {username}")
+                return {
+                    "personal_info": {},
+                    "social_info": {},
+                    "therapeutic_info": {},
+                    "profile_summary": f"Usuário {username} - perfil básico"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao buscar perfil do usuário {username}: {e}")
+            return {}
+
+    async def _call_ai_service_for_next_session(self, user_profile: Dict[str, Any], session_context: Dict[str, Any], current_session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Chamar AI Service para gerar próxima sessão
+        """
+        try:
+            # TODO: Implementar chamada HTTP real quando httpx estiver disponível
+            logger.info(f"🤖 Chamando AI Service para próxima sessão de {current_session_id}")
+            
+            # Simular resposta do AI Service por enquanto
+            # Em produção, fazer chamada HTTP para: POST /generate-next-session
+            
+            # Simular dados baseados no contexto
+            session_number = self._extract_session_number(current_session_id)
+            next_session_number = session_number + 1
+            next_session_id = f"session-{next_session_number}"
+            
+            # ✅ MELHORADO: Usar dados específicos do usuário para personalização
+            # Extrair username para personalização
+            username = self._extract_username_from_session_id(current_session_id)
+            
+            # Extrair temas da sessão anterior
+            main_themes = session_context.get("main_themes", ["desenvolvimento pessoal"])
+            
+            # Extrair dados do perfil do usuário se disponível
+            user_objectives = []
+            user_age_category = "adulto"
+            user_motivation = ""
+            
+            if user_profile and user_profile.get("therapeutic_info"):
+                therapeutic_info = user_profile["therapeutic_info"]
+                user_objectives = therapeutic_info.get("objetivos_identificados", [])
+                motivation_data = therapeutic_info.get("motivacao_terapia", {})
+                if isinstance(motivation_data, dict):
+                    user_motivation = motivation_data.get("content", "")
+                
+            if user_profile and user_profile.get("personal_info"):
+                personal_info = user_profile["personal_info"]
+                age_data = personal_info.get("idade", {})
+                if isinstance(age_data, dict):
+                    user_age_category = age_data.get("categoria", "adulto")
+            
+            # Combinar temas da sessão anterior com objetivos do usuário
+            combined_themes = list(set(main_themes + user_objectives[:2]))
+            
+            # Gerar título e descrição personalizados
+            if next_session_number == 2:
+                session_title = f"Sessão {next_session_number}: Aprofundando nosso conhecimento"
+                session_subtitle = "Construindo sobre nossa primeira conversa"
+            else:
+                session_title = f"Sessão {next_session_number}: Continuando sua jornada"
+                session_subtitle = "Aprofundando temas importantes para você"
+            
+            # Gerar objetivo personalizado
+            if combined_themes:
+                objective = f"Explorar e aprofundar os temas: {', '.join(combined_themes[:2])}"
+            else:
+                objective = "Continuar o processo de autoconhecimento e desenvolvimento pessoal"
+            
+            # Gerar prompt inicial personalizado
+            if main_themes and next_session_number == 2:
+                initial_prompt = f"Olá! Como você está se sentindo desde nossa primeira conversa? Na nossa sessão anterior, conversamos sobre {', '.join(main_themes[:2])}. Gostaria de continuar explorando esses temas ou há algo específico que te trouxe aqui hoje?"
+            elif main_themes:
+                initial_prompt = f"Olá! Como você está se sentindo desde nossa última conversa? Vamos continuar explorando os temas que identificamos: {', '.join(main_themes[:2])}?"
+            else:
+                initial_prompt = f"Olá! Como você está se sentindo hoje? O que gostaria de explorar em nossa sessão {next_session_number}?"
+            
+            # Criar sessão personalizada baseada no contexto e perfil do usuário
+            next_session = {
+                "session_id": next_session_id,
+                "title": session_title,
+                "subtitle": session_subtitle,
+                "objective": objective,
+                "initial_prompt": initial_prompt,
+                "focus_areas": combined_themes[:3] if combined_themes else ["autoconhecimento", "bem-estar", "crescimento pessoal"],
+                "therapeutic_approach": "Abordagem centrada na pessoa (Carl Rogers)",
+                "expected_outcomes": [
+                    "Maior clareza sobre os temas identificados",
+                    "Desenvolvimento de insights pessoais",
+                    "Fortalecimento do processo terapêutico"
+                ],
+                "session_type": "continuação",
+                "estimated_duration": "45-60 minutos",
+                "preparation_notes": "Revisar contexto da sessão anterior e temas identificados",
+                "connection_to_previous": "Continuação dos temas e insights da sessão anterior",
+                "personalization_factors": ["histórico do usuário", "temas identificados", "progresso terapêutico"],
+                "generated_at": datetime.utcnow().isoformat(),
+                "based_on_session": current_session_id,
+                "generation_method": "simulated_ai_service",
+                "personalized": True,
+                "is_active": True
+            }
+            
+            # ✅ CORREÇÃO: Retornar diretamente o objeto da sessão
+            return next_session
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao chamar AI Service para próxima sessão: {e}")
+            return None
+
+    def _extract_session_number(self, session_id: str) -> int:
+        """
+        Extrair número da sessão do session_id
+        """
+        try:
+            import re
+            match = re.search(r'session-(\d+)', session_id)
+            if match:
+                return int(match.group(1))
+            else:
+                return 1  # Padrão para sessão 1
+        except Exception:
+            return 1
+
+    async def _create_user_session_in_db(self, username: str, session_data: Dict[str, Any]) -> bool:
+        """
+        Criar sessão do usuário no banco de dados
+        """
+        try:
+            from .user_therapeutic_session_service import UserTherapeuticSessionService
+            user_session_service = UserTherapeuticSessionService()
+            
+            # Extrair session_id com validação
+            session_id = session_data.get("session_id")
+            if not session_id:
+                logger.error("❌ session_id não encontrado nos dados da sessão")
+                return False
+            
+            # Criar entrada na coleção user_therapeutic_sessions
+            user_sessions = get_collection("user_therapeutic_sessions")
+            
+            session_document = {
+                "username": username,
+                "session_id": session_id,
+                "title": session_data.get("title", "Sessão Terapêutica"),
+                "subtitle": session_data.get("subtitle", ""),
+                "objective": session_data.get("objective", ""),
+                "initial_prompt": session_data.get("initial_prompt", ""),
+                "focus_areas": session_data.get("focus_areas", []),
+                "therapeutic_approach": session_data.get("therapeutic_approach", ""),
+                "expected_outcomes": session_data.get("expected_outcomes", []),
+                "session_type": session_data.get("session_type", "individual"),
+                "estimated_duration": session_data.get("estimated_duration", "45-60 minutos"),
+                "preparation_notes": session_data.get("preparation_notes", ""),
+                "connection_to_previous": session_data.get("connection_to_previous", ""),
+                "personalization_factors": session_data.get("personalization_factors", []),
+                "generated_at": session_data.get("generated_at"),
+                "based_on_session": session_data.get("based_on_session"),
+                "generation_method": session_data.get("generation_method", "ai_service"),
+                "personalized": session_data.get("personalized", True),
+                "is_active": session_data.get("is_active", True),
+                "status": "locked",
+                "progress": 0,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+            
+            # Inserir documento
+            result = await user_sessions.insert_one(session_document)
+            
+            if result.inserted_id:
+                logger.info(f"✅ Sessão criada no banco: {session_id} para {username}")
+                
+                # Desbloquear automaticamente a nova sessão
+                unlock_success = await user_session_service.unlock_session(username, session_id)
+                if unlock_success:
+                    logger.info(f"🔓 Nova sessão desbloqueada automaticamente: {session_id}")
+                else:
+                    logger.warning(f"⚠️ Falha ao desbloquear sessão: {session_id}")
+                
+                return True
+            else:
+                logger.error(f"❌ Falha ao inserir sessão no banco: {session_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao criar sessão no banco: {e}")
+            return False
+    
+    async def _generate_session_context(self, session_id: str, messages: List[Dict[str, Any]], manual_termination: bool = False) -> Optional[Dict[str, Any]]:
+        """
+        Gerar contexto da sessão usando IA para resumir a conversa
+        """
+        try:
+            logger.info(f"🤖 Gerando contexto com IA para sessão: {session_id}")
+            
+            # Preparar conversa para análise
+            conversation_text = self._format_conversation_for_analysis(messages)
+            
+            # Criar prompt específico para gerar contexto
+            context_prompt = self._create_context_generation_prompt(session_id, conversation_text, manual_termination)
+            
+            # Fazer chamada para AI Service
+            ai_response = await self._call_ai_service_for_context(context_prompt, session_id)
+            
+            if ai_response and ai_response.get("success"):
+                # Processar resposta da IA
+                context_data = self._parse_ai_context_response(ai_response.get("response", ""))
+                
+                # Adicionar metadados
+                context_data.update({
+                    "session_id": session_id,
+                    "total_messages": len(messages),
+                    "generated_at": datetime.utcnow().isoformat(),
+                    "generation_method": "ai_service",
+                    "manual_termination": manual_termination,
+                    "conversation_duration_estimate": self._estimate_conversation_duration(messages)
+                })
+                
+                logger.info(f"✅ Contexto gerado com sucesso para sessão: {session_id}")
+                return context_data
+            else:
+                logger.warning(f"⚠️ IA não disponível, usando análise básica para sessão: {session_id}")
+                return await self._generate_basic_context(session_id, messages, manual_termination)
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar contexto: {e}")
+            return await self._generate_basic_context(session_id, messages, manual_termination)
+    
+    def _format_conversation_for_analysis(self, messages: List[Dict[str, Any]]) -> str:
+        """
+        Formatar conversa para análise pela IA
+        """
+        conversation_lines = []
+        
+        for i, msg in enumerate(messages):
+            role = "Usuário" if msg["type"] == "user" else "Terapeuta"
+            content = msg["content"]
+            conversation_lines.append(f"{role}: {content}")
+        
+        return "\n\n".join(conversation_lines)
+    
+    def _create_context_generation_prompt(self, session_id: str, conversation_text: str, manual_termination: bool = False) -> str:
+        """
+        Criar prompt específico para gerar contexto da sessão
+        """
+        termination_context = "manualmente pelo usuário" if manual_termination else "automaticamente (palavras de despedida detectadas)"
+        
+        prompt = f"""
+ANÁLISE DE SESSÃO TERAPÊUTICA
+
+Você é um assistente especializado em análise de sessões terapêuticas. Analise a conversa abaixo e gere um contexto/resumo estruturado.
+
+SESSÃO ID: {session_id}
+TÉRMINO: {termination_context}
+
+CONVERSA:
+{conversation_text}
+
+INSTRUÇÕES:
+1. Analise a conversa completa do ponto de vista terapêutico
+2. Identifique os temas principais abordados
+3. Extraia insights sobre o estado emocional do usuário
+4. Identifique padrões de comportamento ou pensamento
+5. Destaque momentos importantes da conversa
+6. Sugira pontos para futuras sessões
+
+RESPONDA EM FORMATO JSON com as seguintes chaves:
+{{
+  "summary": "Resumo geral da sessão em 2-3 frases",
+  "main_themes": ["tema1", "tema2", "tema3"],
+  "emotional_state": {{
+    "initial": "Estado emocional inicial",
+    "final": "Estado emocional final",
+    "progression": "Como evoluiu durante a sessão"
+  }},
+  "key_insights": ["insight1", "insight2", "insight3"],
+  "important_moments": [
+    {{
+      "moment": "Descrição do momento",
+      "significance": "Por que foi importante"
+    }}
+  ],
+  "user_progress": {{
+    "strengths_shown": ["força1", "força2"],
+    "challenges_identified": ["desafio1", "desafio2"],
+    "growth_areas": ["área1", "área2"]
+  }},
+  "therapeutic_notes": {{
+    "techniques_used": ["técnica1", "técnica2"],
+    "user_response": "Como o usuário respondeu à terapia",
+    "engagement_level": "Alto/Médio/Baixo"
+  }},
+  "future_sessions": {{
+    "suggested_topics": ["tópico1", "tópico2"],
+    "areas_to_explore": ["área1", "área2"],
+    "therapeutic_goals": ["objetivo1", "objetivo2"]
+  }}
+}}
+
+RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
+"""
+        return prompt
+    
+    async def _call_ai_service_for_context(self, prompt: str, session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Chamar AI Service para gerar contexto da sessão
+        """
+        try:
+            logger.info(f"🤖 Chamando AI Service para gerar contexto da sessão: {session_id}")
+            
+            # Preparar dados para o AI Service
+            ai_request = {
+                "message": prompt,
+                "session_id": session_id,
+                "conversation_history": [],
+                "session_objective": None,
+                "initial_prompt": None,
+                "context_generation": True  # Flag para indicar que é geração de contexto
+            }
+            
+            # Chamar AI Service
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.ai_service_url}/chat",
+                    json=ai_request,
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                if response.status_code == 200:
+                    ai_data = response.json()
+                    ai_response = ai_data.get("response", "")
+                    
+                    logger.info(f"✅ Contexto gerado pelo AI Service para {session_id}")
+                    
+                    return {
+                        "success": True,
+                        "response": ai_response
+                    }
+                else:
+                    logger.error(f"❌ AI Service retornou erro {response.status_code}: {response.text}")
+                    return None
+                    
+        except httpx.ConnectError:
+            logger.warning(f"⚠️ AI Service não disponível, usando análise básica para {session_id}")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Erro ao chamar AI Service para contexto: {e}")
+            return None
+    
+    def _parse_ai_context_response(self, ai_response: str) -> Dict[str, Any]:
+        """
+        Parsear resposta da IA e extrair contexto estruturado
+        """
+        try:
+            import json
+            
+            # Limpar possíveis caracteres extras
+            clean_response = ai_response.strip()
+            
+            # Tentar extrair JSON se houver texto extra
+            start_idx = clean_response.find('{')
+            end_idx = clean_response.rfind('}') + 1
+            
+            if start_idx >= 0 and end_idx > start_idx:
+                json_str = clean_response[start_idx:end_idx]
+                context_data = json.loads(json_str)
+                
+                logger.info(f"✅ Contexto parseado com sucesso da IA")
+                return context_data
+            else:
+                logger.warning(f"⚠️ Não foi possível extrair JSON da resposta da IA")
+                return {}
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Erro ao parsear JSON da IA: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"❌ Erro ao processar resposta da IA: {e}")
+            return {}
+    
+    async def _generate_basic_context(self, session_id: str, messages: List[Dict[str, Any]], manual_termination: bool = False) -> Dict[str, Any]:
+        """
+        Gerar contexto básico analisando o conteúdo real da conversa
+        """
+        try:
+            logger.info(f"📄 Gerando contexto básico para sessão: {session_id}")
+            
+            user_messages = [msg for msg in messages if msg["type"] == "user"]
+            ai_messages = [msg for msg in messages if msg["type"] == "ai"]
+            
+            # ✅ NOVO: Verificar se é sessão de cadastro para análise específica
+            original_session_id = session_id.split('_')[-1] if '_' in session_id else session_id
+            is_registration_session = original_session_id == "session-1"
+            
+            if is_registration_session:
+                logger.info(f"🔍 ANÁLISE DE CADASTRO: Gerando contexto para session-1")
+                return await self._generate_registration_context(session_id, user_messages, ai_messages, manual_termination)
+            else:
+                logger.info(f"🔍 ANÁLISE NORMAL: Gerando contexto para {original_session_id}")
+                return self._generate_regular_context(session_id, user_messages, ai_messages, manual_termination)
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar contexto básico: {e}")
+            return {
+                "summary": "Sessão terapêutica realizada",
+                "main_themes": ["conversa terapêutica"],
+                "generation_method": "minimal_fallback",
+                "error": str(e)
+            }
+
+    async def _generate_registration_context(self, session_id: str, user_messages: List[Dict[str, Any]], ai_messages: List[Dict[str, Any]], manual_termination: bool = False) -> Dict[str, Any]:
+        """
+        Gerar contexto específico para sessão de cadastro (session-1) usando AI Service
+        """
+        try:
+            logger.info(f"📋 ANÁLISE CADASTRO: Processando {len(user_messages)} respostas do usuário")
+            
+            # Formatar mensagens para o AI Service
+            conversation_text = self._format_conversation_for_analysis(user_messages + ai_messages)
+            
+            # Criar prompt específico para session-1 (cadastro)
+            context_prompt = f"""
+ANÁLISE DE SESSÃO DE CADASTRO TERAPÊUTICO
+
+Analise a conversa de cadastro abaixo e gere um contexto estruturado. Esta é uma sessão de coleta de dados pessoais para personalizar o atendimento terapêutico.
+
+SESSÃO: {session_id}
+TIPO: Cadastro inicial (session-1)
+RESPOSTAS DO USUÁRIO: {len(user_messages)} respostas
+
+CONVERSA:
+{conversation_text}
+
+INSTRUÇÕES:
+1. Analise as respostas do usuário às perguntas de cadastro
+2. Identifique os temas principais mencionados pelo usuário
+3. Extraia insights sobre motivação, objetivos e situação pessoal
+4. Identifique áreas de interesse para futuras sessões
+5. Gere sugestões para próximas sessões baseadas no perfil
+
+RESPONDA EM FORMATO JSON com as seguintes chaves:
+{{
+  "summary": "Resumo do processo de cadastro e perfil do usuário",
+  "main_themes": ["tema1", "tema2", "tema3"],
+  "emotional_state": {{
+    "initial": "Estado emocional no início do cadastro",
+    "final": "Estado emocional ao final do cadastro",
+    "progression": "Como evoluiu durante o cadastro"
+  }},
+  "key_insights": ["insight1", "insight2", "insight3"],
+  "important_moments": [
+    {{
+      "moment": "Descrição do momento importante",
+      "significance": "Por que foi importante"
+    }}
+  ],
+  "user_progress": {{
+    "strengths_shown": ["força1", "força2"],
+    "challenges_identified": ["desafio1", "desafio2"],
+    "growth_areas": ["área1", "área2"]
+  }},
+  "therapeutic_notes": {{
+    "techniques_used": ["técnica1", "técnica2"],
+    "user_response": "Como o usuário respondeu",
+    "engagement_level": "Alto/Médio/Baixo"
+  }},
+  "future_sessions": {{
+    "suggested_topics": ["tópico1", "tópico2"],
+    "areas_to_explore": ["área1", "área2"],
+    "therapeutic_goals": ["objetivo1", "objetivo2"]
+  }}
+}}
+
+RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
+"""
+            
+            # Tentar usar AI Service primeiro
+            ai_response = await self._call_ai_service_for_context(context_prompt, session_id)
+            
+            if ai_response and ai_response.get("success"):
+                # Processar resposta da IA
+                context_data = self._parse_ai_context_response(ai_response.get("response", ""))
+                
+                if context_data:
+                    # Adicionar metadados específicos do cadastro
+                    context_data.update({
+                        "session_id": session_id,
+                        "session_type": "registration",
+                        "total_messages": len(user_messages + ai_messages),
+                        "user_responses": len(user_messages),
+                        "generated_at": datetime.utcnow().isoformat(),
+                        "generation_method": "ai_service_registration",
+                        "manual_termination": manual_termination
+                    })
+                    
+                    logger.info(f"✅ Contexto de cadastro gerado via AI Service para {session_id}")
+                    return context_data
+            
+            # Fallback para análise básica
+            logger.warning(f"⚠️ AI Service não disponível, usando análise básica para cadastro {session_id}")
+            return self._generate_fallback_registration_context(session_id, user_messages, ai_messages)
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar contexto de cadastro: {e}")
+            return self._generate_fallback_registration_context(session_id, user_messages, ai_messages)
+
+    def _generate_regular_context(self, session_id: str, user_messages: List[Dict[str, Any]], ai_messages: List[Dict[str, Any]], manual_termination: bool = False) -> Dict[str, Any]:
+        """
+        Gerar contexto para sessões regulares (não de cadastro)
+        """
+        # Análise básica de sentimentos
+        emotion_analysis = self._analyze_basic_emotions(user_messages)
+        
+        # Identificar temas básicos
+        themes = self._identify_basic_themes(user_messages)
+        
+        return {
+            "summary": f"Sessão com {len(user_messages + ai_messages)} mensagens trocadas. Usuário demonstrou engajamento no processo terapêutico.",
+            "main_themes": themes,
+            "emotional_state": {
+                "initial": "Disponível para o diálogo",
+                "final": emotion_analysis.get("dominant_emotion", "neutro"),
+                "progression": "Processo terapêutico em andamento"
+            },
+            "key_insights": [
+                f"Conversa envolveu {len(user_messages)} mensagens do usuário",
+                f"Duração estimada: {self._estimate_conversation_duration(user_messages + ai_messages)} minutos",
+                "Engajamento demonstrado pelo usuário"
+            ],
+            "important_moments": [
+                {
+                    "moment": "Início da conversa terapêutica",
+                    "significance": "Estabelecimento do vínculo terapêutico"
+                }
+            ],
+            "user_progress": {
+                "strengths_shown": ["participação ativa", "abertura ao diálogo"],
+                "challenges_identified": ["necessidade de continuidade"],
+                "growth_areas": themes[:3] if themes else ["autoconhecimento", "expressão emocional"]
+            },
+            "therapeutic_notes": {
+                "techniques_used": ["escuta ativa", "abordagem rogeriana"],
+                "user_response": "Engajado",
+                "engagement_level": "Médio"
+            },
+            "future_sessions": {
+                "suggested_topics": themes[:2] if themes else ["continuidade do processo terapêutico"],
+                "areas_to_explore": ["aprofundamento emocional"],
+                "therapeutic_goals": ["manutenção do vínculo terapêutico"]
+            },
+            "generation_method": "basic_analysis"
+        }
+    
+    def _analyze_basic_emotions(self, user_messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Análise básica de emoções baseada em palavras-chave
+        """
+        emotion_keywords = {
+            "tristeza": ["triste", "deprimido", "mal", "péssimo", "horrível", "chateado"],
+            "ansiedade": ["ansioso", "preocupado", "nervoso", "estressado", "medo"],
+            "raiva": ["irritado", "bravo", "furioso", "raiva", "odio"],
+            "alegria": ["feliz", "contente", "bem", "ótimo", "bom", "alegre"],
+            "gratidão": ["obrigado", "obrigada", "grato", "agradecido"]
+        }
+        
+        emotion_scores = {emotion: 0 for emotion in emotion_keywords}
+        total_words = 0
+        
+        for msg in user_messages:
+            content = msg["content"].lower()
+            words = content.split()
+            total_words += len(words)
+            
+            for emotion, keywords in emotion_keywords.items():
+                for keyword in keywords:
+                    if keyword in content:
+                        emotion_scores[emotion] += 1
+        
+        # Encontrar emoção dominante
+        if any(emotion_scores.values()):
+            dominant_emotion = max(emotion_scores.keys(), key=lambda x: emotion_scores[x])
+        else:
+            dominant_emotion = "neutro"
+        
+        return {
+            "dominant_emotion": dominant_emotion,
+            "emotion_scores": emotion_scores,
+            "total_words": total_words
+        }
+    
+    def _identify_basic_themes(self, user_messages: List[Dict[str, Any]]) -> List[str]:
+        """
+        Identificar temas básicos da conversa
+        """
+        theme_keywords = {
+            "trabalho": ["trabalho", "emprego", "carreira", "profissão", "chefe", "colega"],
+            "família": ["família", "pai", "mãe", "irmão", "irmã", "filho", "filha", "marido", "esposa"],
+            "relacionamentos": ["namorado", "namorada", "amigo", "amiga", "relacionamento", "amor"],
+            "saúde": ["saúde", "médico", "hospital", "doença", "dor", "sintoma"],
+            "estudos": ["escola", "faculdade", "universidade", "estudo", "prova", "curso"],
+            "autoestima": ["autoestima", "confiança", "insegurança", "valor", "autoconceito"],
+            "futuro": ["futuro", "planos", "objetivos", "metas", "sonhos", "ambição"]
+        }
+        
+        identified_themes = []
+        
+        for msg in user_messages:
+            content = msg["content"].lower()
+            
+            for theme, keywords in theme_keywords.items():
+                if any(keyword in content for keyword in keywords):
+                    if theme not in identified_themes:
+                        identified_themes.append(theme)
+        
+        return identified_themes[:5]  # Máximo 5 temas
+    
+    def _generate_fallback_registration_context(self, session_id: str, user_messages: List[Dict[str, Any]], ai_messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Gerar contexto fallback para sessão de cadastro quando AI Service não está disponível
+        """
+        try:
+            logger.info(f"📄 Gerando contexto fallback para cadastro: {session_id}")
+            
+            # Análise simples das respostas do usuário
+            all_user_text = " ".join([msg["content"] for msg in user_messages]).lower()
+            
+            # Identificar temas básicos baseados em palavras-chave
+            themes = []
+            theme_keywords = {
+                "trabalho": ["trabalho", "emprego", "carreira", "profissão"],
+                "família": ["família", "pai", "mãe", "irmão", "filhos"],
+                "relacionamentos": ["relacionamento", "namorado", "casado", "solteiro"],
+                "saúde": ["saúde", "ansiedade", "depressão", "stress"],
+                "estudos": ["estudo", "faculdade", "escola", "formação"],
+                "autoestima": ["autoestima", "confiança", "insegurança"],
+                "desenvolvimento": ["crescimento", "desenvolvimento", "mudança"]
+            }
+            
+            for theme, keywords in theme_keywords.items():
+                if any(keyword in all_user_text for keyword in keywords):
+                    themes.append(theme)
+            
+            if not themes:
+                themes = ["desenvolvimento pessoal", "autoconhecimento"]
+            
+            return {
+                "summary": f"Cadastro realizado com {len(user_messages)} respostas do usuário. Processo de conhecimento inicial concluído.",
+                "main_themes": themes[:3],
+                "emotional_state": {
+                    "initial": "Receptivo ao processo de cadastro",
+                    "final": "Engajado e colaborativo",
+                    "progression": "Abertura progressiva durante o cadastro"
+                },
+                "key_insights": [
+                    f"Usuário forneceu {len(user_messages)} respostas ao questionário",
+                    "Demonstrou disposição para compartilhar informações pessoais",
+                    "Processo de cadastro concluído com sucesso"
+                ],
+                "important_moments": [
+                    {
+                        "moment": "Início do processo de cadastro",
+                        "significance": "Primeiro contato com o sistema terapêutico"
+                    },
+                    {
+                        "moment": "Finalização do cadastro",
+                        "significance": "Conclusão do processo de conhecimento inicial"
+                    }
+                ],
+                "user_progress": {
+                    "strengths_shown": ["abertura", "colaboração", "disposição para mudança"],
+                    "challenges_identified": ["necessidade de apoio terapêutico"],
+                    "growth_areas": themes[:3] if themes else ["desenvolvimento pessoal"]
+                },
+                "therapeutic_notes": {
+                    "techniques_used": ["coleta de dados estruturada", "questionário guiado"],
+                    "user_response": "Colaborativo e aberto",
+                    "engagement_level": "Alto"
+                },
+                "future_sessions": {
+                    "suggested_topics": themes[:3] if themes else ["autoconhecimento"],
+                    "areas_to_explore": ["questões pessoais identificadas"],
+                    "therapeutic_goals": ["bem-estar geral", "desenvolvimento pessoal"]
+                },
+                "session_id": session_id,
+                "session_type": "registration",
+                "total_messages": len(user_messages + ai_messages),
+                "user_responses": len(user_messages),
+                "generated_at": datetime.utcnow().isoformat(),
+                "generation_method": "fallback_registration",
+                "manual_termination": False
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar contexto fallback de cadastro: {e}")
+            return {
+                "summary": "Sessão de cadastro realizada",
+                "main_themes": ["cadastro", "autoconhecimento"],
+                "session_type": "registration",
+                "generation_method": "minimal_fallback",
+                "error": str(e)
+            }
+    
+    def _estimate_conversation_duration(self, messages: List[Dict[str, Any]]) -> int:
+        """
+        Estimar duração da conversa em minutos
+        """
+        if len(messages) < 2:
+            return 1
+        
+        try:
+            first_message = messages[0]
+            last_message = messages[-1]
+            
+            start_time = first_message.get("created_at")
+            end_time = last_message.get("created_at")
+            
+            if start_time and end_time:
+                duration = end_time - start_time
+                return max(1, int(duration.total_seconds() / 60))
+            else:
+                # Estimar baseado no número de mensagens (2 minutos por intercâmbio)
+                return max(1, len(messages) // 2 * 2)
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao calcular duração: {e}")
+            return len(messages)  # Fallback simples
+    
+    def detect_conversation_end(self, message: str) -> bool:
+        """
+        Detectar se a mensagem indica fim de conversa
+        """
+        message_lower = message.lower().strip()
+        
+        # Palavras/frases que indicam despedida
+        farewell_patterns = [
+            "tchau", "adeus", "até logo", "até mais", "até breve",
+            "bye", "goodbye", "see you", "até a próxima",
+            "obrigado pela conversa", "obrigada pela conversa",
+            "foi bom conversar", "preciso ir", "tenho que ir",
+            "vou desligar", "vou sair", "até outra hora",
+            "muito obrigado", "muito obrigada", "valeu pela ajuda",
+            "foi ótimo", "me ajudou muito", "estou melhor agora"
+        ]
+        
+        # Verificar padrões de despedida
+        for pattern in farewell_patterns:
+            if pattern in message_lower:
+                return True
+        
+        # Verificar padrões de finalização
+        finalization_patterns = [
+            "acabou", "terminou", "é isso", "só isso mesmo",
+            "não tenho mais nada", "acho que é só",
+            "por hoje é só", "é tudo por hoje"
+        ]
+        
+        for pattern in finalization_patterns:
+            if pattern in message_lower:
+                return True
+        
+        return False
+    
+    async def get_session_context(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Obter contexto salvo de uma sessão
+        """
+        try:
+            conversation = await self.get_conversation_by_session_id(session_id)
+            
+            if conversation and conversation.get("session_context"):
+                return conversation["session_context"]
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao obter contexto da sessão {session_id}: {e}")
+            return None
     
     async def list_recent_conversations(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
@@ -504,13 +1558,11 @@ class ChatService:
             conversation = await conversations.find_one({"session_id": session_id})
             
             if conversation:
-                return {
-                    "session_id": conversation["session_id"],
-                    "created_at": conversation["created_at"],
-                    "updated_at": conversation["updated_at"],
-                    "message_count": conversation.get("message_count", 0),
-                    "user_preferences": conversation.get("user_preferences", {})
-                }
+                # ✅ CORREÇÃO: Retornar todos os campos da conversa, não apenas alguns selecionados
+                # Converter ObjectId para string se necessário
+                if "_id" in conversation:
+                    conversation["_id"] = str(conversation["_id"])
+                return conversation
             return None
             
         except Exception as e:
@@ -607,48 +1659,17 @@ class ChatService:
                 }
             ]
             
-            # Se é a primeira mensagem (step 0), fazer a primeira pergunta
-            if current_step == 0 and not conversation.get("messages"):
-                ai_response = registration_questions[0]["question"]
-                
-                # Salvar mensagem do usuário e resposta
-                user_message_id = await self._save_message(session_id, "user", user_message)
-                ai_message_id = await self._save_message(session_id, "ai", ai_response)
-                
-                # Atualizar step
-                await conversations.update_one(
-                    {"session_id": session_id},
-                    {"$set": {"registration_step": 1}}
-                )
-                
-                logger.info(f"✅ CADASTRO: Primeira pergunta enviada para {username}")
-                
-                # ✅ CORREÇÃO: Retornar no mesmo formato que process_user_message
-                return {
-                    "success": True,
-                    "data": {
-                        "user_message": {
-                            "id": user_message_id,
-                            "content": user_message
-                        },
-                        "ai_response": {
-                            "id": ai_message_id,
-                            "content": ai_response,
-                            "audioUrl": None,
-                            "provider": "registration_system",
-                            "model": "cadastro_v1"
-                        }
-                    }
-                }
+            # ✅ CORRIGIDO: A primeira mensagem já foi enviada via /api/chat/initial-message
+            # Agora processar resposta do usuário (seja step 0 para idade ou steps subsequentes)
             
             # Processar resposta do usuário e fazer próxima pergunta
-            if current_step > 0 and current_step <= len(registration_questions):
+            if current_step >= 0 and current_step < len(registration_questions):
                 # Salvar resposta do usuário
                 user_message_id = await self._save_message(session_id, "user", user_message)
                 
-                # Armazenar a resposta no campo correspondente
-                if current_step <= len(registration_questions):
-                    field = registration_questions[current_step - 1]["field"]
+                # ✅ CORRIGIDO: Armazenar a resposta no campo correspondente
+                if current_step < len(registration_questions):
+                    field = registration_questions[current_step]["field"]
                     registration_data[field] = user_message.strip()
                     
                     # Atualizar dados no banco
@@ -660,12 +1681,47 @@ class ChatService:
                     logger.info(f"📝 CADASTRO: Campo '{field}' salvo para {username}")
                 
                 # Verificar se há próxima pergunta
-                if current_step < len(registration_questions):
-                    ai_response = registration_questions[current_step]["question"]
+                next_step_index = current_step + 1
+                if next_step_index < len(registration_questions):
+                    ai_response = registration_questions[next_step_index]["question"]
                     next_step = current_step + 1
-                    logger.info(f"❓ CADASTRO: Pergunta {current_step + 1} para {username}")
+                    logger.info(f"❓ CADASTRO: Pergunta {next_step_index + 1} para {username}")
+                    
+                    # Salvar resposta da IA para próxima pergunta
+                    ai_message_id = await self._save_message(session_id, "ai", ai_response)
+                    
+                    # Atualizar step
+                    await conversations.update_one(
+                        {"session_id": session_id},
+                        {"$set": {"registration_step": next_step}}
+                    )
+                    
+                    # Resposta normal para próxima pergunta
+                    response_data = {
+                        "success": True,
+                        "data": {
+                            "user_message": {
+                                "id": user_message_id,
+                                "content": user_message
+                            },
+                            "ai_response": {
+                                "id": ai_message_id,
+                                "content": ai_response,
+                                "audioUrl": None,
+                                "provider": "registration_system",
+                                "model": "cadastro_v1"
+                            }
+                        }
+                    }
+                    
+                    logger.info(f"📝 CADASTRO: Pergunta {next_step_index + 1} de {len(registration_questions)} para {username}")
+                    return response_data
+                
                 else:
-                    # Finalizar cadastro
+                    # ✅ FINALIZAR CADASTRO - Ordem correta das operações
+                    logger.info(f"🎯 INICIANDO FINALIZAÇÃO DO CADASTRO para {username}")
+                    
+                    # 1. Preparar mensagem de finalização
                     ai_response = f"""Perfeito! Muito obrigada por compartilhar todas essas informações comigo, {username}! 
 
 Agora eu te conheço melhor e posso oferecer um apoio mais personalizado. Suas informações estão seguras e serão usadas apenas para tornar nossas conversas mais significativas.
@@ -674,83 +1730,86 @@ Seu cadastro foi finalizado com sucesso! 🎉
 
 Você agora pode acessar as outras sessões terapêuticas na sua jornada de autoconhecimento. Cada sessão foi cuidadosamente desenvolvida para te apoiar em diferentes aspectos da sua vida."""
                     
-                    next_step = current_step + 1
+                    # 2. Salvar resposta da IA PRIMEIRO
+                    ai_message_id = await self._save_message(session_id, "ai", ai_response)
+                    logger.info(f"✅ CADASTRO: Mensagem de finalização salva para {username}")
                     
-                    # Marcar cadastro como completo
+                    # 3. Marcar cadastro como completo
                     await conversations.update_one(
                         {"session_id": session_id},
-                        {"$set": {"is_registration_complete": True}}
+                        {"$set": {
+                            "is_registration_complete": True,
+                            "registration_step": current_step + 1,
+                            "completed_at": datetime.utcnow()
+                        }}
                     )
+                    logger.info(f"✅ CADASTRO: Marcado como completo para {username}")
                     
-                    # Criar perfil do usuário na coleção users
+                    # 4. Criar perfil do usuário
                     await self._save_user_profile(username, registration_data)
+                    logger.info(f"✅ CADASTRO: Perfil do usuário salvo para {username}")
                     
-                    # ✅ NOVO: Criar sessões terapêuticas para o usuário se não existirem
+                    # 5. Marcar session-1 como completed
                     try:
                         from .user_therapeutic_session_service import UserTherapeuticSessionService
                         user_session_service = UserTherapeuticSessionService()
                         
-                        # Verificar se o usuário já tem sessões
-                        existing_sessions = await user_session_service.get_user_sessions(username)
-                        
-                        if not existing_sessions:
-                            # Criar todas as sessões terapêuticas para o usuário
-                            clone_result = await user_session_service.clone_sessions_for_user(username)
-                            logger.info(f"🔄 Sessões criadas para usuário {username}: {clone_result}")
-                        
-                        # Agora marcar session-1 como completed
                         completion_success = await user_session_service.complete_session(username, "session-1", 100, status="completed")
                         if completion_success:
-                            logger.info(f"✅ Session-1 marcada como COMPLETED para {username}")
-                            
-                            # Desbloquear próxima sessão automaticamente
-                            unlock_success = await user_session_service.unlock_session(username, "session-2")
-                            if unlock_success:
-                                logger.info(f"🔓 Session-2 desbloqueada para {username}")
+                            logger.info(f"✅ CADASTRO: Session-1 marcada como COMPLETED para {username}")
                         else:
-                            logger.warning(f"⚠️ Falha ao marcar session-1 como completed para {username}")
+                            logger.warning(f"⚠️ CADASTRO: Falha ao marcar session-1 como completed para {username}")
                             
                     except Exception as session_error:
-                        logger.error(f"❌ Erro ao finalizar session-1: {session_error}")
+                        logger.error(f"❌ CADASTRO: Erro ao finalizar session-1: {session_error}")
                     
-                    logger.info(f"🎉 CADASTRO: Finalizado para {username}")
-                
-                # Salvar resposta da IA
-                ai_message_id = await self._save_message(session_id, "ai", ai_response)
-                
-                # Atualizar step
-                await conversations.update_one(
-                    {"session_id": session_id},
-                    {"$set": {"registration_step": next_step}}
-                )
-                
-                # ✅ NOVO: Se o cadastro foi finalizado, adicionar flags específicos
-                response_data = {
-                    "success": True,
-                    "data": {
-                        "user_message": {
-                            "id": user_message_id,
-                            "content": user_message
-                        },
-                        "ai_response": {
-                            "id": ai_message_id,
-                            "content": ai_response,
-                            "audioUrl": None,
-                            "provider": "registration_system",
-                            "model": "cadastro_v1"
+                    # 6. Finalizar contexto da sessão e criar próxima sessão automaticamente
+                    finalize_success = False
+                    try:
+                        logger.info(f"🚀 CADASTRO: Finalizando contexto da session-1 para criar próxima sessão automaticamente")
+                        finalize_result = await self.finalize_session_context(session_id, manual_termination=True)
+                        
+                        if finalize_result.get("success"):
+                            finalize_success = True
+                            next_session_info = finalize_result.get("next_session", {})
+                            if next_session_info.get("success"):
+                                logger.info(f"✅ CADASTRO: Próxima sessão criada automaticamente após session-1: {next_session_info.get('session_id')}")
+                            else:
+                                logger.warning(f"⚠️ CADASTRO: Próxima sessão não foi criada: {next_session_info}")
+                        else:
+                            logger.warning(f"⚠️ CADASTRO: Falha ao finalizar contexto da session-1: {finalize_result}")
+                            
+                    except Exception as finalize_error:
+                        logger.error(f"❌ CADASTRO: Erro ao finalizar contexto da session-1: {finalize_error}")
+                    
+                    # 7. Preparar resposta com flags de finalização
+                    response_data = {
+                        "success": True,
+                        "data": {
+                            "user_message": {
+                                "id": user_message_id,
+                                "content": user_message
+                            },
+                            "ai_response": {
+                                "id": ai_message_id,
+                                "content": ai_response,
+                                "audioUrl": None,
+                                "provider": "registration_system",
+                                "model": "cadastro_v1"
+                            },
+                            # ✅ CORREÇÃO: Flags de finalização definidos imediatamente
+                            "registration_completed": True,
+                            "session_finished": True,
+                            "session_status": "completed",
+                            "redirect_to_home": True,
+                            "completion_message": "Cadastro finalizado com sucesso! Esta sessão está agora concluída. Você pode revisar a conversa, mas não pode enviar mais mensagens.",
+                            "finalize_success": finalize_success,
+                            "auto_redirect_delay": 3000  # 3 segundos
                         }
                     }
-                }
-                
-                # Se o cadastro foi finalizado, adicionar flags específicos
-                if current_step == len(registration_questions):
-                    response_data["data"]["registration_completed"] = True
-                    response_data["data"]["session_finished"] = True
-                    response_data["data"]["session_status"] = "completed"
-                    response_data["data"]["redirect_to_home"] = True
-                    response_data["data"]["completion_message"] = "Cadastro finalizado com sucesso! Esta sessão está agora concluída. Você pode revisar a conversa, mas não pode enviar mais mensagens."
-                
-                return response_data
+                    
+                    logger.info(f"🎉 CADASTRO: Finalizado com sucesso para {username} - Flags de finalização definidos")
+                    return response_data
             
             # Se o cadastro já foi completado, usar mensagem padrão
             ai_response = f"Olá novamente, {username}! Como posso te ajudar hoje?"

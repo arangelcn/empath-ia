@@ -9,11 +9,12 @@ from pydantic import BaseModel
 import logging
 
 # Importar modelos e serviços
-from .models.database import init_mongodb, close_mongodb
+from .models.database import init_mongodb, close_mongodb, get_collection
 from .services.chat_service import ChatService
 from .services.user_service import UserService
 from .services.therapeutic_session_service import TherapeuticSessionService
 from .services.user_therapeutic_session_service import UserTherapeuticSessionService
+from .services.user_emotion_service import UserEmotionService
 from .api.admin import router as admin_router
 
 # Configurar logging
@@ -69,6 +70,7 @@ chat_service = ChatService()
 user_service = UserService()
 therapeutic_session_service = TherapeuticSessionService()
 user_therapeutic_session_service = UserTherapeuticSessionService()
+user_emotion_service = UserEmotionService()
 
 # Incluir rotas de administração
 app.include_router(admin_router)
@@ -363,6 +365,100 @@ async def get_user_session(username: str, session_id: str):
         logger.error(f"Erro ao obter sessão {session_id} do usuário {username}: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
+@app.get("/api/user/{username}/sessions/{session_id}/sequence")
+async def get_user_session_sequence(username: str):
+    """Obter sequência ordenada de sessões do usuário (incluindo sessões dinâmicas)"""
+    try:
+        sessions = await user_therapeutic_session_service.get_user_session_sequence(username)
+        
+        return {
+            "success": True,
+            "data": {
+                "username": username,
+                "sessions": sessions,
+                "total": len(sessions),
+                "sequence_info": {
+                    "dynamic_sessions": len([s for s in sessions if s.get("personalized", False)]),
+                    "template_sessions": len([s for s in sessions if not s.get("personalized", False)]),
+                    "completed_sessions": len([s for s in sessions if s.get("status") == "completed"]),
+                    "available_sessions": len([s for s in sessions if s.get("status") == "unlocked"])
+                }
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter sequência de sessões do usuário {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.post("/api/user/{username}/sessions/create-dynamic")
+async def create_dynamic_session_manually(username: str, request: Request):
+    """Criar sessão dinâmica manualmente (para testes)"""
+    try:
+        data = await request.json()
+        
+        # Verificar se pode criar nova sessão
+        can_create = await user_therapeutic_session_service.can_create_next_session(username)
+        if not can_create:
+            return {
+                "success": False,
+                "error": "Usuário possui sessões pendentes. Complete as sessões existentes primeiro."
+            }
+        
+        # Criar sessão dinâmica
+        success = await user_therapeutic_session_service.create_dynamic_session(username, data)
+        
+        if success:
+            return {
+                "success": True,
+                "message": "Sessão dinâmica criada com sucesso",
+                "session_id": data.get("session_id")
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Falha ao criar sessão dinâmica"
+            }
+            
+    except Exception as e:
+        logger.error(f"Erro ao criar sessão dinâmica para {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.get("/api/user/{username}/sessions/info")
+async def get_user_sessions_info(username: str):
+    """Obter informações detalhadas sobre as sessões do usuário"""
+    try:
+        sessions = await user_therapeutic_session_service.get_user_sessions(username)
+        latest_completed = await user_therapeutic_session_service.get_latest_completed_session(username)
+        can_create_next = await user_therapeutic_session_service.can_create_next_session(username)
+        
+        return {
+            "success": True,
+            "data": {
+                "username": username,
+                "total_sessions": len(sessions),
+                "latest_completed_session": latest_completed,
+                "can_create_next_session": can_create_next,
+                "session_statistics": {
+                    "locked": len([s for s in sessions if s.get("status") == "locked"]),
+                    "unlocked": len([s for s in sessions if s.get("status") == "unlocked"]),
+                    "in_progress": len([s for s in sessions if s.get("status") == "in_progress"]),
+                    "completed": len([s for s in sessions if s.get("status") == "completed"]),
+                    "dynamic_sessions": len([s for s in sessions if s.get("personalized", False)]),
+                    "template_sessions": len([s for s in sessions if not s.get("personalized", False)])
+                },
+                "dynamic_session_behavior": {
+                    "description": "Sistema dinâmico: ao finalizar uma sessão, uma nova sessão personalizada é criada automaticamente baseada no contexto da sessão anterior",
+                    "sequence": "session-1 (cadastro) -> session-2 (personalizada) -> session-3 (personalizada) -> ...",
+                    "ai_generation": "Cada nova sessão é gerada pelo AI Service com base no perfil do usuário e contexto da sessão anterior",
+                    "auto_unlock": "Novas sessões são automaticamente desbloqueadas após criação"
+                }
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter informações das sessões do usuário {username}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
 @app.post("/api/user/{username}/sessions/{session_id}/unlock")
 async def unlock_user_session(username: str, session_id: str):
     """Desbloquear uma sessão para o usuário"""
@@ -513,7 +609,7 @@ async def update_user_preferences(username: str, preferences: Dict[str, Any]):
 
 @app.post("/api/user/{username}/login")
 async def user_login(username: str):
-    """Registrar login do usuário e clonar sessões terapêuticas"""
+    """Registrar login do usuário e criar session-1 automaticamente"""
     try:
         success = await user_service.update_last_login(username)
         
@@ -522,23 +618,23 @@ async def user_login(username: str):
             await user_service.create_user(username=username)
             await user_service.update_last_login(username)
         
-        # Clonar sessões terapêuticas para o usuário
-        clone_result = await user_therapeutic_session_service.clone_sessions_for_user(username)
+        # ✅ NOVO: Criar apenas session-1 automaticamente
+        session_1_result = await user_therapeutic_session_service.create_session_1_for_user(username)
         
-        # Desbloquear a primeira sessão se não houver nenhuma desbloqueada
+        # ✅ NOVO: Desbloquear session-1 se for necessário
         unlock_result = await user_therapeutic_session_service.unlock_first_session(username)
         
         return {
             "success": True,
             "message": "Login registrado com sucesso",
-            "sessions_cloned": clone_result["cloned_count"],
-            "total_templates": clone_result["total_templates"],
-            "first_session_unlocked": unlock_result
+            "session_1_creation": session_1_result,
+            "unlock_result": unlock_result,
+            "system_info": "Sistema de criação gradual (1 a 1) ativado - próximas sessões são criadas automaticamente"
         }
         
     except Exception as e:
-        logger.error(f"Erro ao registrar login: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"❌ Erro no login do usuário {username}: {e}")
+        return {"success": False, "error": str(e)}
 
 @app.get("/api/user/{username}/stats")
 async def get_user_stats(username: str):
@@ -686,8 +782,12 @@ async def emotion_analyze_video(file: UploadFile = File(...)):
 
 @app.post("/api/emotion/analyze-realtime")
 async def emotion_analyze_realtime(request: Request):
-    """Proxy para análise emocional em tempo real (Base64)"""
+    """Proxy para análise emocional em tempo real (Base64) com salvamento assíncrono"""
     body = await request.json()
+    
+    # Extrair informações do usuário da request
+    username = body.get("username")
+    session_id = body.get("session_id") 
     
     async with httpx.AsyncClient() as client:
         try:
@@ -696,7 +796,27 @@ async def emotion_analyze_realtime(request: Request):
                 json=body,
                 timeout=30
             )
-            return response.json()
+            
+            emotion_result = response.json()
+            
+            # Salvar emoção detectada de forma assíncrona (não bloqueia resposta)
+            if emotion_result.get("status") == "success" and username and session_id:
+                emotion_data = {
+                    "username": username,
+                    "session_id": session_id,
+                    "dominant_emotion": emotion_result.get("dominant_emotion"),
+                    "emotions": emotion_result.get("emotions", {}),
+                    "confidence": emotion_result.get("confidence", 0),
+                    "face_detected": emotion_result.get("face_detected", False)
+                }
+                
+                # Salvar em background sem aguardar
+                await user_emotion_service.save_emotion_async(emotion_data)
+                
+                logger.info(f"🎭 Emoção detectada e agendada para salvamento: {username} - {emotion_result.get('dominant_emotion')}")
+            
+            return emotion_result
+            
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Serviço Emotion indisponível: {str(e)}")
 
@@ -805,6 +925,211 @@ async def voice_audio(filename: str):
             raise HTTPException(status_code=503, detail=f"Serviço Voice indisponível: {str(e)}")
 
 # Configurações do gateway
+# ===== ENDPOINTS PARA CONSULTAR EMOÇÕES =====
+
+@app.get("/api/emotions/{username}")
+async def get_user_emotions(username: str, session_id: Optional[str] = None, 
+                           limit: int = 100, hours_back: int = 24):
+    """Obter emoções de um usuário"""
+    try:
+        emotions = await user_emotion_service.get_user_emotions(
+            username=username,
+            session_id=session_id,
+            limit=limit,
+            hours_back=hours_back
+        )
+        
+        return {
+            "success": True,
+            "data": {
+                "username": username,
+                "session_id": session_id,
+                "emotions": emotions,
+                "total": len(emotions),
+                "hours_back": hours_back
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar emoções: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/emotions/{username}/summary")
+async def get_user_emotion_summary(username: str, session_id: Optional[str] = None, 
+                                  hours_back: int = 24):
+    """Obter resumo das emoções de um usuário"""
+    try:
+        summary = await user_emotion_service.get_emotion_summary(
+            username=username,
+            session_id=session_id,
+            hours_back=hours_back
+        )
+        
+        return {
+            "success": True,
+            "data": {
+                "username": username,
+                "session_id": session_id,
+                **summary
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao calcular resumo de emoções: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/emotions/{username}/timeline")
+async def get_user_emotion_timeline(username: str, session_id: Optional[str] = None, 
+                                   hours_back: int = 24, interval_minutes: int = 5):
+    """Obter timeline de emoções de um usuário"""
+    try:
+        timeline = await user_emotion_service.get_emotion_timeline(
+            username=username,
+            session_id=session_id,
+            hours_back=hours_back,
+            interval_minutes=interval_minutes
+        )
+        
+        return {
+            "success": True,
+            "data": {
+                "username": username,
+                "session_id": session_id,
+                "timeline": timeline,
+                "hours_back": hours_back,
+                "interval_minutes": interval_minutes
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao gerar timeline de emoções: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ===== ENDPOINTS DE CONTEXTO DE SESSÃO =====
+
+@app.post("/api/chat/finalize/{session_id}")
+async def finalize_session(session_id: str):
+    """
+    Finalizar sessão manualmente e gerar contexto
+    """
+    try:
+        # ✅ NOVA LÓGICA: Finalizar sessão completa (contexto + status completed)
+        result = await chat_service.finalize_session_context(session_id, manual_termination=True)
+        
+        # ✅ NOVO: Extrair username e session_id original para marcar como completed
+        # session_id formato: "username_session-N"
+        if "_session-" in session_id:
+            # Encontrar a última ocorrência de "_session-" para extrair corretamente
+            session_separator_index = session_id.rfind("_session-")
+            if session_separator_index != -1:
+                username = session_id[:session_separator_index]
+                original_session_id = session_id[session_separator_index + 1:]  # session-1, session-2, etc.
+                
+                logger.info(f"🏁 Finalizando sessão: username={username}, session_id={original_session_id}")
+                
+                try:
+                    # Marcar sessão como completed no banco
+                    completion_result = await user_therapeutic_session_service.complete_session(
+                        username=username,
+                        session_id=original_session_id,
+                        progress=100,
+                        status="completed"
+                    )
+                    
+                    if completion_result:
+                        logger.info(f"✅ Sessão {original_session_id} marcada como completed para {username}")
+                        result["session_completed"] = True
+                        result["completion_message"] = f"Sessão {original_session_id} finalizada com sucesso!"
+                    else:
+                        logger.warning(f"⚠️ Não foi possível marcar sessão {original_session_id} como completed")
+                        result["session_completed"] = False
+                        
+                except Exception as e:
+                    logger.error(f"❌ Erro ao marcar sessão como completed: {e}")
+                    result["session_completed"] = False
+                    result["completion_error"] = str(e)
+            else:
+                logger.warning(f"⚠️ Formato de session_id inválido: {session_id}")
+        else:
+            logger.warning(f"⚠️ Session_id sem padrão '_session-': {session_id}")
+        
+        return {
+            "success": result.get("success", False),
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao finalizar sessão {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/chat/context/{session_id}")
+async def get_session_context(session_id: str):
+    """
+    Obter contexto salvo de uma sessão
+    """
+    try:
+        context = await chat_service.get_session_context(session_id)
+        
+        if context:
+            return {
+                "success": True,
+                "data": {
+                    "session_id": session_id,
+                    "context": context
+                }
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Contexto não encontrado para esta sessão")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao obter contexto da sessão {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/chat/conversations-with-context")
+async def list_conversations_with_context(limit: int = 10):
+    """
+    Listar conversas que possuem contexto gerado
+    """
+    try:
+        from .models.database import get_collection
+        conversations = get_collection("conversations")
+        
+        # Buscar conversas que têm contexto
+        cursor = conversations.find(
+            {"session_context": {"$exists": True}},
+            sort=[("context_generated_at", -1)],
+            limit=limit
+        )
+        
+        result = []
+        async for conv in cursor:
+            context = conv.get("session_context", {})
+            result.append({
+                "session_id": conv["session_id"],
+                "username": conv.get("username"),
+                "created_at": conv["created_at"].isoformat(),
+                "context_generated_at": conv.get("context_generated_at", conv["updated_at"]).isoformat(),
+                "manual_termination": conv.get("manual_termination", False),
+                "summary": context.get("summary", ""),
+                "main_themes": context.get("main_themes", []),
+                "emotional_state": context.get("emotional_state", {}),
+                "message_count": conv.get("message_count", 0)
+            })
+        
+        return {
+            "success": True,
+            "data": {
+                "conversations": result,
+                "total": len(result)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao listar conversas com contexto: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/config")
 async def get_config():
     """Retorna configurações do gateway"""
@@ -823,8 +1148,235 @@ async def get_config():
         "gateway_port": os.getenv("GATEWAY_PORT", "8000"),
         "debug": os.getenv("DEBUG", "false").lower() == "true",
         "version": "2.0.0",
-        "features": ["mongodb", "chat_persistence", "session_management"]
+        "features": ["mongodb", "chat_persistence", "session_management", "emotion_tracking", "session_context"]
     }
+
+@app.get("/api/chat/initial-message/{session_id}")
+async def get_initial_message(session_id: str):
+    """
+    Obter mensagem inicial para uma sessão (sem esperar input do usuário)
+    """
+    try:
+        logger.info(f"🎯 Gerando mensagem inicial para sessão: {session_id}")
+        
+        # Extrair session_id original e username
+        username = session_id.split('_')[0] if '_' in session_id else None
+        original_session_id = session_id.split('_')[-1] if '_' in session_id else session_id
+        
+        if not username:
+            return {
+                "success": False,
+                "error": "Username não encontrado no session_id"
+            }
+        
+        # Verificar se já tem mensagens (não é primeira entrada)
+        history = await chat_service.get_conversation_history(session_id)
+        
+        if history.get("history") and len(history["history"]) > 0:
+            return {
+                "success": False,
+                "error": "Sessão já possui mensagens, não precisa de mensagem inicial"
+            }
+        
+        # Gerar mensagem inicial específica para cada tipo de sessão
+        if original_session_id == "session-1":
+            # Sessão 1: Mensagem de boas-vindas e primeira pergunta
+            initial_message = f"""Olá, {username}! 
+
+Eu sou sua assistente terapêutica. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. 
+
+Primeiro, me conta: qual é a sua idade?"""
+            
+        else:
+            # Sessões 2+: Mensagem baseada no contexto da sessão anterior OU perfil do usuário
+            try:
+                # ✅ CORREÇÃO: Extrair número da sessão de forma mais robusta
+                session_number_str = original_session_id.split('-')[1] if '-' in original_session_id else "1"
+                current_session_number = int(session_number_str)
+                previous_session_number = current_session_number - 1
+                previous_session_id = f"{username}_session-{previous_session_number}"
+                
+                logger.info(f"🔍 DEBUG SESSÃO 2+: current={original_session_id}, previous={previous_session_id}, username={username}")
+                
+                # ✅ NOVO: Buscar perfil do usuário PRIMEIRO para personalização
+                users_collection = get_collection("users")
+                user_profile = await users_collection.find_one({"username": username})
+                
+                # Buscar contexto da sessão anterior
+                previous_context = await chat_service.get_session_context(previous_session_id)
+                
+                logger.info(f"🔍 DEBUG: previous_context encontrado? {previous_context is not None}, user_profile encontrado? {user_profile is not None}")
+                
+                # ✅ MELHORADO: Usar contexto da sessão anterior + dados do perfil do usuário
+                if previous_context:
+                    # Extrair temas principais da sessão anterior
+                    main_themes = previous_context.get("main_themes", [])
+                    emotional_state = previous_context.get("emotional_state", {})
+                    key_insights = previous_context.get("key_insights", [])
+                    
+                    logger.info(f"🔍 DEBUG CONTEXTO ANTERIOR - Temas: {main_themes}, Estado emocional: {emotional_state}")
+                    
+                    # Gerar mensagem personalizada baseada no contexto anterior
+                    if main_themes:
+                        themes_text = ", ".join(main_themes[:2])  # Pegar os 2 principais temas
+                        initial_message = f"""Olá, {username}! É bom te ver novamente.
+
+Como você está se sentindo desde nossa última conversa? 
+
+Na nossa sessão anterior, conversamos sobre {themes_text}. Gostaria de continuar explorando esses temas ou há algo específico que te trouxe aqui hoje?"""
+                    else:
+                        initial_message = f"""Olá, {username}! É bom te ver novamente.
+
+Como você está se sentindo desde nossa última conversa? O que te trouxe aqui hoje?"""
+                        
+                    logger.info(f"✅ Mensagem baseada em contexto anterior gerada para {username} sessão {current_session_number}")
+                    
+                elif user_profile and user_profile.get("user_profile"):
+                    # ✅ NOVO: Usar dados do perfil do usuário para personalização
+                    profile = user_profile["user_profile"]
+                    personal_info = profile.get("personal_info", {})
+                    therapeutic_info = profile.get("therapeutic_info", {})
+                    
+                    # Extrair informações relevantes para personalização
+                    age_info = personal_info.get("idade", {})
+                    objectives = therapeutic_info.get("objetivos_identificados", [])
+                    motivation = therapeutic_info.get("motivacao_terapia", {})
+                    
+                    logger.info(f"🔍 DEBUG PERFIL - Objetivos: {objectives}, Motivação: {motivation}")
+                    
+                    # Criar mensagem personalizada baseada no perfil
+                    if current_session_number == 2:
+                        if objectives:
+                            objectives_text = ", ".join(objectives[:2])
+                            initial_message = f"""Olá, {username}! É bom te ver novamente.
+
+Agora que nos conhecemos melhor, esta é nossa segunda sessão terapêutica. 
+
+Lembro que você mencionou interesse em trabalhar com {objectives_text}. Como você está se sentindo desde nossa conversa anterior? Gostaria de explorar esses temas ou há algo específico que te trouxe aqui hoje?"""
+                        else:
+                            initial_message = f"""Olá, {username}! É bom te ver novamente.
+
+Agora que nos conhecemos melhor, esta é nossa segunda sessão terapêutica. 
+
+Como você está se sentindo desde nossa conversa anterior? Há algo específico que gostaria de explorar hoje, ou prefere que conversemos sobre como você tem se sentido recentemente?"""
+                    else:
+                        initial_message = f"""Olá, {username}! É bom te ver novamente.
+
+Esta é nossa sessão {current_session_number}. Como você está se sentindo desde nossa última conversa? 
+
+O que te trouxe aqui hoje? Há algo específico que gostaria de conversar comigo?"""
+                    
+                    logger.info(f"✅ Mensagem personalizada baseada no perfil gerada para {username} sessão {current_session_number}")
+                    
+                else:
+                    # ✅ MELHORADO: Fallback mais inteligente baseado no número da sessão E username
+                    import hashlib
+                    
+                    # Gerar variação baseada no username para mensagens diferentes por usuário
+                    username_hash = int(hashlib.md5(username.encode()).hexdigest(), 16) % 3
+                    
+                    session_2_variations = [
+                        f"""Olá, {username}! É bom te ver novamente.
+
+Agora que nos conhecemos melhor, esta é nossa segunda sessão terapêutica. 
+
+Como você está se sentindo desde nossa conversa anterior? Há algo específico que gostaria de explorar hoje?""",
+                        
+                        f"""Oi, {username}! Que bom que você voltou.
+
+Esta é nossa segunda sessão juntas. Como você tem estado desde que conversamos?
+
+O que você gostaria de compartilhar comigo hoje? Há algo que tem estado em sua mente?""",
+                        
+                        f"""Olá, {username}! É um prazer te ver novamente.
+
+Agora que já nos conhecemos um pouco, como você está se sentindo hoje?
+
+Há alguma reflexão da nossa primeira conversa que gostaria de continuar explorando, ou algo novo que te trouxe aqui?"""
+                    ]
+                    
+                    other_session_variations = [
+                        f"""Olá, {username}! É bom te ver novamente.
+
+Esta é nossa sessão {current_session_number}. Como você está se sentindo hoje?
+
+O que te trouxe aqui? Há algo específico que gostaria de conversar comigo?""",
+                        
+                        f"""Oi, {username}! Que bom que você voltou.
+
+Como você tem estado desde nossa última conversa? 
+
+O que você gostaria de compartilhar comigo hoje nesta sessão {current_session_number}?""",
+                        
+                        f"""Olá, {username}! É um prazer te ver novamente.
+
+Como você está se sentindo hoje? Há algo em particular que gostaria de explorar em nossa sessão {current_session_number}?"""
+                    ]
+                    
+                    if current_session_number == 2:
+                        initial_message = session_2_variations[username_hash]
+                    else:
+                        initial_message = other_session_variations[username_hash]
+                    
+                    logger.warning(f"⚠️ Contexto e perfil não encontrados para {username}. Usando fallback variado para sessão {current_session_number} (variação {username_hash})")
+                    
+            except Exception as session_error:
+                logger.error(f"❌ Erro ao processar sessão 2+ para {username}: {session_error}")
+                
+                # Fallback em caso de erro (ainda personalizado)
+                initial_message = f"""Olá, {username}! É bom te ver novamente.
+
+Como você está se sentindo hoje? O que gostaria de conversar comigo?"""
+        
+        # Salvar mensagem inicial no histórico
+        await chat_service.start_or_get_conversation(session_id)
+        message_id = await chat_service._save_message(session_id, "ai", initial_message)
+        
+        # ✅ DEBUG: Verificar se mensagem foi salva
+        logger.info(f"🔍 DEBUG: Mensagem inicial salva com ID: {message_id}")
+        
+        # ✅ DEBUG: Verificar se consegue recuperar o histórico
+        debug_history = await chat_service.get_conversation_history(session_id)
+        logger.info(f"🔍 DEBUG: Histórico após salvar - {len(debug_history.get('history', []))} mensagens")
+        
+        if debug_history.get('history'):
+            for i, msg in enumerate(debug_history['history']):
+                logger.info(f"🔍 DEBUG: Mensagem {i+1}: type={msg['type']}, content={msg['content'][:50]}...")
+        
+        # Gerar áudio se necessário
+        audio_url = None
+        try:
+            # Buscar preferências do usuário para áudio
+            users_collection = get_collection("users")
+            user = await users_collection.find_one({"username": username})
+            
+            if user and user.get("preferences", {}).get("voice_enabled", True):
+                selected_voice = user.get("preferences", {}).get("selected_voice", "pt-BR-Neural2-A")
+                audio_url = await chat_service._generate_audio_if_available(initial_message, session_id, selected_voice)
+        except Exception as audio_error:
+            logger.warning(f"⚠️ Erro ao gerar áudio para mensagem inicial: {audio_error}")
+        
+        return {
+            "success": True,
+            "data": {
+                "message": {
+                    "id": message_id,
+                    "type": "ai",
+                    "content": initial_message,
+                    "audioUrl": audio_url,
+                    "timestamp": datetime.utcnow().isoformat()
+                },
+                "session_id": session_id,
+                "is_initial_message": True
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao gerar mensagem inicial: {e}")
+        return {
+            "success": False,
+            "error": f"Erro ao gerar mensagem inicial: {str(e)}"
+        }
 
 if __name__ == "__main__":
     import uvicorn

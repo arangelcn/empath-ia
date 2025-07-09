@@ -367,4 +367,412 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 "max_context_tokens": self.max_context_tokens,
                 "enable_compression": self.enable_context_compression
             }
-        } 
+        }
+
+    async def generate_session_context(self, conversation_text: str, emotions_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Gerar contexto estruturado da sessão incluindo resumo e análise
+        """
+        try:
+            # Processar dados de emoções
+            emotion_summary = self._process_emotions_data(emotions_data)
+            
+            # Criar prompt para análise de contexto
+            context_prompt = f"""
+            Você é um especialista em análise de conversas terapêuticas. Analise a conversa abaixo e forneça um contexto estruturado no formato JSON.
+
+            CONVERSA:
+            {conversation_text}
+
+            DADOS EMOCIONAIS:
+            {emotion_summary}
+
+            Por favor, retorne um JSON com:
+            {{
+                "summary": "Resumo conciso da conversa (max 200 palavras)",
+                "main_themes": ["tema1", "tema2", "tema3"],
+                "emotional_state": {{
+                    "dominant_emotion": "emoção_dominante",
+                    "emotional_journey": "descrição da jornada emocional",
+                    "stability": "estável|instável|em_transição"
+                }},
+                "key_insights": ["insight1", "insight2", "insight3"],
+                "therapeutic_progress": {{
+                    "engagement_level": "alto|médio|baixo",
+                    "communication_style": "descrição do estilo de comunicação",
+                    "areas_of_focus": ["área1", "área2"]
+                }},
+                "next_session_recommendations": ["recomendação1", "recomendação2"],
+                "risk_indicators": ["indicador1", "indicador2"] ou [],
+                "session_quality": "excelente|boa|regular|precisa_atenção"
+            }}
+
+            IMPORTANTE: Retorne apenas o JSON, sem texto adicional.
+            """
+            
+            # Gerar contexto com OpenAI
+            if self.is_available():
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": "Você é um especialista em análise de conversas terapêuticas. Sempre responda em JSON válido."},
+                        {"role": "user", "content": context_prompt}
+                    ],
+                    max_tokens=1000,
+                    temperature=0.3
+                )
+                
+                result = response.choices[0].message.content
+                
+                # Tentar parsear JSON
+                try:
+                    context_data = json.loads(result)
+                    
+                    # Validar estrutura mínima
+                    required_fields = ["summary", "main_themes", "emotional_state", "key_insights"]
+                    for field in required_fields:
+                        if field not in context_data:
+                            context_data[field] = self._get_default_value(field)
+                    
+                    return context_data
+                    
+                except json.JSONDecodeError:
+                    # Se não conseguir parsear, criar estrutura básica
+                    return self._create_fallback_context(result, emotion_summary)
+                    
+            else:
+                # Fallback quando OpenAI não está disponível
+                return self._create_fallback_context(conversation_text, emotion_summary)
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar contexto da sessão: {e}")
+            # Retornar contexto básico em caso de erro
+            return self._create_fallback_context("Erro ao processar conversa", {})
+
+    def _process_emotions_data(self, emotions_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Processar dados de emoções para análise"""
+        if not emotions_data:
+            return {"dominant_emotion": "neutro", "count": 0, "distribution": {}}
+        
+        # Agregar emoções
+        emotion_counts = {}
+        total_detections = len(emotions_data)
+        
+        for emotion in emotions_data:
+            dominant = emotion.get("dominant_emotion", "neutro")
+            emotion_counts[dominant] = emotion_counts.get(dominant, 0) + 1
+        
+        # Encontrar emoção dominante
+        dominant_emotion = max(emotion_counts, key=emotion_counts.get) if emotion_counts else "neutro"
+        
+        return {
+            "dominant_emotion": dominant_emotion,
+            "count": total_detections,
+            "distribution": emotion_counts
+        }
+    
+    def _get_default_value(self, field: str) -> Any:
+        """Obter valor padrão para campos obrigatórios"""
+        defaults = {
+            "summary": "Resumo não disponível",
+            "main_themes": ["Tema geral"],
+            "emotional_state": {
+                "dominant_emotion": "neutro",
+                "emotional_journey": "Não analisado",
+                "stability": "desconhecido"
+            },
+            "key_insights": ["Análise não disponível"]
+        }
+        return defaults.get(field, "")
+    
+    def _create_fallback_context(self, conversation_text: str, emotion_summary: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Criar contexto de fallback quando a IA não está disponível
+        """
+        return {
+            "summary": f"Sessão terapêutica com conversa de aproximadamente {len(conversation_text.split())} palavras",
+            "main_themes": ["conversa terapêutica", "apoio emocional"],
+            "emotional_state": {
+                "dominant_emotion": emotion_summary.get("dominant_emotion", "neutro"),
+                "journey": "Processo terapêutico em andamento",
+                "stability": "Estável"
+            },
+            "key_insights": [
+                "Usuário engajado no processo terapêutico",
+                "Demonstra abertura para o diálogo",
+                "Busca apoio emocional"
+            ],
+            "therapeutic_progress": {
+                "engagement_level": "Médio",
+                "progress_indicators": ["participação ativa"],
+                "areas_of_growth": ["expressão emocional"]
+            },
+            "next_session_recommendations": [
+                "Continuar processo terapêutico",
+                "Aprofundar temas identificados"
+            ],
+            "risk_indicators": [],
+            "session_quality_rating": 7,
+            "generation_method": "fallback"
+        }
+
+    async def generate_next_session(self, user_profile: Dict[str, Any], session_context: Dict[str, Any], current_session_id: str) -> Dict[str, Any]:
+        """
+        Gerar próxima sessão terapêutica personalizada baseada no contexto do usuário
+        """
+        try:
+            logger.info(f"🎯 Gerando próxima sessão baseada no contexto de {current_session_id}")
+            
+            # Criar prompt para gerar a próxima sessão
+            session_prompt = self._create_next_session_prompt(user_profile, session_context, current_session_id)
+            
+            # Tentar gerar com OpenAI
+            if self.is_available():
+                try:
+                    messages = [
+                        {"role": "system", "content": "Você é um especialista em terapia que cria sessões terapêuticas personalizadas baseadas no contexto do usuário."},
+                        {"role": "user", "content": session_prompt}
+                    ]
+                    
+                    ai_response = await self._call_openai(messages)
+                    
+                    if ai_response:
+                        # Parsear resposta JSON
+                        import json
+                        try:
+                            # Extrair JSON da resposta
+                            start_idx = ai_response.find('{')
+                            end_idx = ai_response.rfind('}') + 1
+                            
+                            if start_idx >= 0 and end_idx > start_idx:
+                                json_str = ai_response[start_idx:end_idx]
+                                next_session_data = json.loads(json_str)
+                                
+                                # Adicionar metadados
+                                next_session_data.update({
+                                    "generated_at": datetime.now().isoformat(),
+                                    "based_on_session": current_session_id,
+                                    "generation_method": "openai",
+                                    "personalized": True
+                                })
+                                
+                                logger.info(f"✅ Próxima sessão gerada com OpenAI para {current_session_id}")
+                                return next_session_data
+                                
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"⚠️ Erro ao parsear resposta JSON do OpenAI: {e}")
+                            
+                except Exception as e:
+                    logger.warning(f"⚠️ Erro ao chamar OpenAI para próxima sessão: {e}")
+            
+            # Fallback: criar sessão baseada em template
+            logger.info(f"🔄 Usando fallback para gerar próxima sessão de {current_session_id}")
+            return self._create_fallback_next_session(user_profile, session_context, current_session_id)
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar próxima sessão: {e}")
+            return self._create_fallback_next_session(user_profile, session_context, current_session_id)
+
+    def _create_next_session_prompt(self, user_profile: Dict[str, Any], session_context: Dict[str, Any], current_session_id: str) -> str:
+        """
+        Criar prompt para gerar a próxima sessão terapêutica
+        """
+        # Extrair número da sessão atual
+        session_number = self._extract_session_number(current_session_id)
+        next_session_number = session_number + 1
+        next_session_id = f"session-{next_session_number}"
+        
+        # Extrair informações relevantes do perfil do usuário
+        user_summary = self._extract_user_summary(user_profile)
+        
+        # Extrair informações relevantes do contexto da sessão
+        session_summary = self._extract_session_summary(session_context)
+        
+        prompt = f"""
+GERAÇÃO DE SESSÃO TERAPÊUTICA PERSONALIZADA
+
+Você é um terapeuta experiente criando a próxima sessão terapêutica personalizada para um usuário.
+
+SESSÃO ATUAL: {current_session_id}
+PRÓXIMA SESSÃO: {next_session_id}
+
+PERFIL DO USUÁRIO:
+{user_summary}
+
+CONTEXTO DA SESSÃO ANTERIOR:
+{session_summary}
+
+INSTRUÇÕES:
+1. Crie uma sessão terapêutica personalizada baseada no perfil do usuário e contexto da sessão anterior
+2. Considere os temas principais identificados na sessão anterior
+3. Leve em conta o estado emocional e progresso do usuário
+4. Defina objetivos específicos para a próxima sessão
+5. Crie um prompt inicial que seja acolhedor e direcionado
+
+RESPONDA EM FORMATO JSON com as seguintes chaves:
+{{
+  "session_id": "{next_session_id}",
+  "title": "Título da sessão (máximo 60 caracteres)",
+  "subtitle": "Subtítulo explicativo (máximo 100 caracteres)",
+  "objective": "Objetivo principal da sessão (máximo 200 caracteres)",
+  "initial_prompt": "Prompt inicial personalizado para iniciar a sessão (máximo 500 caracteres)",
+  "focus_areas": ["área1", "área2", "área3"],
+  "therapeutic_approach": "Abordagem terapêutica recomendada",
+  "expected_outcomes": ["resultado1", "resultado2", "resultado3"],
+  "session_type": "individual|continuação|aprofundamento",
+  "estimated_duration": "45-60 minutos",
+  "preparation_notes": "Notas de preparação para o terapeuta",
+  "connection_to_previous": "Como esta sessão se conecta com a anterior",
+  "personalization_factors": ["fator1", "fator2", "fator3"]
+}}
+
+RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
+"""
+        return prompt
+
+    def _extract_session_number(self, session_id: str) -> int:
+        """
+        Extrair número da sessão do session_id
+        """
+        try:
+            import re
+            match = re.search(r'session-(\d+)', session_id)
+            if match:
+                return int(match.group(1))
+            else:
+                return 1  # Padrão para sessão 1
+        except Exception:
+            return 1
+
+    def _extract_user_summary(self, user_profile: Dict[str, Any]) -> str:
+        """
+        Extrair resumo do perfil do usuário
+        """
+        try:
+            summary_parts = []
+            
+            # Informações pessoais
+            personal_info = user_profile.get("personal_info", {})
+            if personal_info.get("idade", {}).get("valor"):
+                summary_parts.append(f"Idade: {personal_info['idade']['valor']} anos")
+            if personal_info.get("genero", {}).get("categoria"):
+                summary_parts.append(f"Gênero: {personal_info['genero']['categoria']}")
+            if personal_info.get("localizacao", {}).get("formatted"):
+                summary_parts.append(f"Localização: {personal_info['localizacao']['formatted']}")
+            
+            # Informações sociais
+            social_info = user_profile.get("social_info", {})
+            if social_info.get("ocupacao", {}).get("content"):
+                summary_parts.append(f"Ocupação: {social_info['ocupacao']['content'][:100]}")
+            
+            # Informações terapêuticas
+            therapeutic_info = user_profile.get("therapeutic_info", {})
+            if therapeutic_info.get("motivacao_terapia", {}).get("content"):
+                summary_parts.append(f"Motivação: {therapeutic_info['motivacao_terapia']['content'][:150]}")
+            
+            # Objetivos identificados
+            objectives = therapeutic_info.get("objetivos_identificados", [])
+            if objectives:
+                summary_parts.append(f"Objetivos: {', '.join(objectives[:3])}")
+            
+            return "\n".join(summary_parts) if summary_parts else "Informações limitadas do usuário"
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao extrair resumo do usuário: {e}")
+            return "Perfil do usuário indisponível"
+
+    def _extract_session_summary(self, session_context: Dict[str, Any]) -> str:
+        """
+        Extrair resumo do contexto da sessão
+        """
+        try:
+            summary_parts = []
+            
+            # Resumo geral
+            if session_context.get("summary"):
+                summary_parts.append(f"Resumo: {session_context['summary']}")
+            
+            # Temas principais
+            main_themes = session_context.get("main_themes", [])
+            if main_themes:
+                summary_parts.append(f"Temas principais: {', '.join(main_themes)}")
+            
+            # Estado emocional
+            emotional_state = session_context.get("emotional_state", {})
+            if emotional_state.get("dominant_emotion"):
+                summary_parts.append(f"Estado emocional: {emotional_state.get('progression', 'N/A')}")
+            
+            # Insights chave
+            key_insights = session_context.get("key_insights", [])
+            if key_insights:
+                summary_parts.append(f"Insights: {'; '.join(key_insights[:3])}")
+            
+            # Recomendações para próxima sessão
+            recommendations = session_context.get("next_session_recommendations", [])
+            if recommendations:
+                summary_parts.append(f"Recomendações: {'; '.join(recommendations[:3])}")
+            
+            return "\n".join(summary_parts) if summary_parts else "Contexto da sessão indisponível"
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao extrair resumo da sessão: {e}")
+            return "Contexto da sessão indisponível"
+
+    def _create_fallback_next_session(self, user_profile: Dict[str, Any], session_context: Dict[str, Any], current_session_id: str) -> Dict[str, Any]:
+        """
+        Criar próxima sessão usando fallback quando OpenAI não está disponível
+        """
+        try:
+            session_number = self._extract_session_number(current_session_id)
+            next_session_number = session_number + 1
+            next_session_id = f"session-{next_session_number}"
+            
+            # Extrair temas da sessão anterior
+            main_themes = session_context.get("main_themes", ["desenvolvimento pessoal"])
+            
+            # Criar sessão baseada em template
+            return {
+                "session_id": next_session_id,
+                "title": f"Sessão {next_session_number}: Continuando sua jornada",
+                "subtitle": "Aprofundando temas identificados na sessão anterior",
+                "objective": f"Explorar e aprofundar os temas: {', '.join(main_themes[:2])}",
+                "initial_prompt": f"Olá! Como você está se sentindo desde nossa última conversa? Gostaria de continuar explorando os temas que identificamos: {', '.join(main_themes[:2])}.",
+                "focus_areas": main_themes[:3] if main_themes else ["autoconhecimento", "bem-estar", "crescimento pessoal"],
+                "therapeutic_approach": "Abordagem centrada na pessoa (Carl Rogers)",
+                "expected_outcomes": [
+                    "Maior clareza sobre os temas identificados",
+                    "Desenvolvimento de insights pessoais",
+                    "Fortalecimento do processo terapêutico"
+                ],
+                "session_type": "continuação",
+                "estimated_duration": "45-60 minutos",
+                "preparation_notes": "Revisar contexto da sessão anterior e temas identificados",
+                "connection_to_previous": "Continuação dos temas e insights da sessão anterior",
+                "personalization_factors": ["histórico do usuário", "temas identificados", "progresso terapêutico"],
+                "generated_at": datetime.now().isoformat(),
+                "based_on_session": current_session_id,
+                "generation_method": "fallback_template",
+                "personalized": True
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao criar fallback da próxima sessão: {e}")
+            return {
+                "session_id": f"session-{self._extract_session_number(current_session_id) + 1}",
+                "title": "Próxima sessão terapêutica",
+                "subtitle": "Continuando o processo terapêutico",
+                "objective": "Dar continuidade ao processo de autoconhecimento",
+                "initial_prompt": "Olá! Como você está hoje? Vamos continuar nossa conversa terapêutica.",
+                "focus_areas": ["autoconhecimento", "bem-estar emocional"],
+                "therapeutic_approach": "Abordagem centrada na pessoa",
+                "expected_outcomes": ["Continuidade do processo terapêutico"],
+                "session_type": "continuação",
+                "estimated_duration": "45-60 minutos",
+                "preparation_notes": "Sessão de continuidade",
+                "connection_to_previous": "Continuação do processo terapêutico",
+                "personalization_factors": ["processo terapêutico"],
+                "generated_at": datetime.now().isoformat(),
+                "based_on_session": current_session_id,
+                "generation_method": "minimal_fallback",
+                "personalized": False
+            }

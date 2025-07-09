@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional, List
 import logging
 from ..models.database import get_user_therapeutic_sessions_collection, get_therapeutic_sessions_collection
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -29,84 +30,87 @@ class UserTherapeuticSessionService:
             self._template_sessions_collection = get_therapeutic_sessions_collection()
         return self._template_sessions_collection
     
-    async def clone_sessions_for_user(self, username: str) -> Dict[str, Any]:
-        """Clonar todas as sessões terapêuticas ativas para um usuário"""
+    async def create_session_1_for_user(self, username: str) -> Dict[str, Any]:
+        """Criar automaticamente a session-1 (cadastro) para um usuário"""
         try:
-            # Buscar todas as sessões templates ativas
-            template_sessions = await self.template_sessions_collection.find(
-                {"is_active": True}
-            ).to_list(length=100)
+            # Verificar se a session-1 já existe para o usuário
+            existing_session = await self.user_sessions_collection.find_one({
+                "username": username,
+                "session_id": "session-1"
+            })
             
-            if not template_sessions:
-                logger.warning(f"⚠️ Nenhuma sessão template encontrada para clonar para usuário: {username}")
+            if existing_session:
+                logger.info(f"ℹ️ Session-1 já existe para usuário {username}")
                 return {
                     "success": True,
-                    "message": "Nenhuma sessão template disponível",
-                    "cloned_count": 0
+                    "created": False,
+                    "already_exists": True,
+                    "message": "Session-1 já existe para este usuário"
                 }
             
-            # Verificar quais sessões já existem para o usuário
-            existing_sessions = await self.user_sessions_collection.find(
-                {"username": username}
-            ).to_list(length=100)
-            
-            existing_session_ids = {session["session_id"] for session in existing_sessions}
-            
-            # Clonar apenas sessões que não existem
-            cloned_count = 0
-            first_session = True  # Flag para identificar a primeira sessão
-            
-            for template_session in template_sessions:
-                session_id = template_session["session_id"]
-                
-                if session_id not in existing_session_ids:
-                    # Determinar o status da sessão
-                    # A primeira sessão será desbloqueada automaticamente
-                    session_status = "unlocked" if first_session else "locked"
-                    
-                    # Criar sessão do usuário baseada no template
-                    user_session = {
-                        "username": username,
-                        "session_id": session_id,
-                        "template_session_id": session_id,  # Referência ao template
-                        "title": template_session["title"],
-                        "subtitle": template_session.get("subtitle", ""),
-                        "description": template_session.get("description", ""),
-                        "objective": template_session.get("objective", ""),  # Incluir objetivo
-                        "initial_prompt": template_session.get("initial_prompt", ""),  # Incluir prompt inicial
-                        "category": template_session.get("category", "general"),
-                        "difficulty": template_session.get("difficulty", "beginner"),
-                        "estimated_duration": template_session.get("estimated_duration", 30),
-                        "status": session_status,  # Primeira sessão desbloqueada
-                        "progress": 0,  # Progresso inicial
-                        "completed_at": None,
-                        "started_at": None,
-                        "created_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow(),
-                        "is_active": True
-                    }
-                    
-                    await self.user_sessions_collection.insert_one(user_session)
-                    cloned_count += 1
-                    
-                    if first_session:
-                        logger.info(f"✅ Primeira sessão desbloqueada para {username}: {session_id}")
-                        first_session = False
-                    else:
-                        logger.info(f"✅ Sessão clonada para {username}: {session_id}")
-            
-            logger.info(f"✅ {cloned_count} sessões clonadas para usuário: {username}")
-            
-            return {
-                "success": True,
-                "message": f"{cloned_count} sessões clonadas com sucesso",
-                "cloned_count": cloned_count,
-                "total_templates": len(template_sessions)
+            # Criar session-1 automaticamente
+            session_1_data = {
+                "username": username,
+                "session_id": "session-1",
+                "template_session_id": "session-1",
+                "title": "Cadastro e Apresentação",
+                "subtitle": "Vamos nos conhecer melhor",
+                "description": "Sessão inicial para coleta de informações pessoais e estabelecimento do vínculo terapêutico",
+                "objective": "Coletar informações pessoais do usuário e estabelecer o primeiro contato terapêutico",
+                "initial_prompt": "Olá! Eu sou sua assistente terapêutica. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. Primeiro, me conta: qual é a sua idade?",
+                "category": "onboarding",
+                "difficulty": "beginner",
+                "estimated_duration": 30,
+                "status": "unlocked",  # Automaticamente desbloqueada
+                "progress": 0,
+                "completed_at": None,
+                "started_at": None,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow(),
+                "is_active": True,
+                "is_registration_session": True,  # Flag especial para identificar sessão de cadastro
+                "personalized": False  # Esta é a sessão base, não personalizada
             }
             
+            # Inserir session-1 no banco
+            result = await self.user_sessions_collection.insert_one(session_1_data)
+            
+            if result.inserted_id:
+                logger.info(f"✅ Session-1 criada automaticamente para usuário {username}")
+                return {
+                    "success": True,
+                    "created": True,
+                    "already_exists": False,
+                    "message": "Session-1 criada com sucesso",
+                    "session_id": "session-1"
+                }
+            else:
+                logger.error(f"❌ Falha ao criar session-1 para usuário {username}")
+                return {
+                    "success": False,
+                    "created": False,
+                    "already_exists": False,
+                    "message": "Erro ao criar session-1"
+                }
+                
         except Exception as e:
-            logger.error(f"❌ Erro ao clonar sessões para usuário {username}: {e}")
+            logger.error(f"❌ Erro ao criar session-1 para usuário {username}: {e}")
             raise
+
+    async def clone_sessions_for_user(self, username: str) -> Dict[str, Any]:
+        """
+        DESABILITADO: Não cria mais todas as sessões de uma vez.
+        Agora as sessões são criadas uma por vez conforme necessário.
+        """
+        logger.info(f"⚠️ clone_sessions_for_user chamado para {username} - FUNCIONALIDADE DESABILITADA")
+        logger.info(f"ℹ️ Sessões agora são criadas uma por vez após completar a anterior")
+        
+        return {
+            "success": True,
+            "message": "Sistema de criação gradual (1 a 1) ativado",
+            "cloned_count": 0,
+            "note": "Sessões são criadas automaticamente uma por vez quando necessário"
+        }
     
     async def get_user_sessions(self, username: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Obter sessões de um usuário com filtro opcional por status"""
@@ -300,15 +304,16 @@ class UserTherapeuticSessionService:
             })
             
             if unlocked_sessions == 0:
-                # Buscar a primeira sessão do usuário (ordenada por data de criação)
-                first_session = await self.user_sessions_collection.find_one(
-                    {"username": username},
-                    sort=[("created_at", 1)]
-                )
+                # Priorizar session-1 se existir e estiver bloqueada
+                session_1 = await self.user_sessions_collection.find_one({
+                    "username": username,
+                    "session_id": "session-1",
+                    "status": "locked"
+                })
                 
-                if first_session:
+                if session_1:
                     result = await self.user_sessions_collection.update_one(
-                        {"_id": first_session["_id"]},
+                        {"_id": session_1["_id"]},
                         {
                             "$set": {
                                 "status": "unlocked",
@@ -318,14 +323,38 @@ class UserTherapeuticSessionService:
                     )
                     
                     if result.modified_count > 0:
-                        logger.info(f"✅ Primeira sessão desbloqueada para usuário existente {username}: {first_session['session_id']}")
+                        logger.info(f"✅ Session-1 desbloqueada para usuário {username}")
                         return True
                     else:
-                        logger.warning(f"⚠️ Não foi possível desbloquear primeira sessão para {username}")
+                        logger.warning(f"⚠️ Não foi possível desbloquear session-1 para {username}")
                         return False
                 else:
-                    logger.warning(f"⚠️ Nenhuma sessão encontrada para usuário {username}")
-                    return False
+                    # Se session-1 não existir ou já estiver desbloqueada, buscar a primeira sessão disponível
+                    first_session = await self.user_sessions_collection.find_one(
+                        {"username": username, "status": "locked"},
+                        sort=[("created_at", 1)]
+                    )
+                    
+                    if first_session:
+                        result = await self.user_sessions_collection.update_one(
+                            {"_id": first_session["_id"]},
+                            {
+                                "$set": {
+                                    "status": "unlocked",
+                                    "updated_at": datetime.utcnow()
+                                }
+                            }
+                        )
+                        
+                        if result.modified_count > 0:
+                            logger.info(f"✅ Primeira sessão desbloqueada para usuário {username}: {first_session['session_id']}")
+                            return True
+                        else:
+                            logger.warning(f"⚠️ Não foi possível desbloquear primeira sessão para {username}")
+                            return False
+                    else:
+                        logger.warning(f"⚠️ Nenhuma sessão bloqueada encontrada para usuário {username}")
+                        return False
             else:
                 logger.info(f"ℹ️ Usuário {username} já tem sessões desbloqueadas")
                 return True
@@ -349,3 +378,188 @@ class UserTherapeuticSessionService:
         except Exception as e:
             logger.error(f"❌ Erro ao resetar sessões do usuário {username}: {e}")
             raise 
+
+    async def get_next_session_number(self, username: str) -> int:
+        """
+        Obter o próximo número de sessão para o usuário
+        """
+        try:
+            # Buscar todas as sessões do usuário
+            cursor = self.user_sessions_collection.find(
+                {"username": username},
+                {"session_id": 1}
+            )
+            
+            session_numbers = []
+            async for session in cursor:
+                session_id = session.get("session_id", "")
+                # Extrair número da sessão (ex: "session-1" -> 1)
+                match = re.search(r'session-(\d+)', session_id)
+                if match:
+                    session_numbers.append(int(match.group(1)))
+            
+            # Retornar o próximo número disponível
+            if session_numbers:
+                return max(session_numbers) + 1
+            else:
+                return 1  # Primeira sessão
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao obter próximo número de sessão: {e}")
+            return 1
+
+    async def create_dynamic_session(self, username: str, session_data: Dict[str, Any]) -> bool:
+        """
+        Criar sessão dinâmica baseada nos dados fornecidos
+        """
+        try:
+            # Garantir que o session_id esteja presente
+            session_id = session_data.get("session_id")
+            if not session_id:
+                # Gerar session_id automaticamente
+                next_number = await self.get_next_session_number(username)
+                session_id = f"session-{next_number}"
+                session_data["session_id"] = session_id
+            
+            # Preparar documento para inserção
+            session_document = {
+                "username": username,
+                "session_id": session_id,
+                "title": session_data.get("title", "Sessão Terapêutica"),
+                "subtitle": session_data.get("subtitle", ""),
+                "objective": session_data.get("objective", ""),
+                "initial_prompt": session_data.get("initial_prompt", ""),
+                "focus_areas": session_data.get("focus_areas", []),
+                "therapeutic_approach": session_data.get("therapeutic_approach", "Abordagem centrada na pessoa"),
+                "expected_outcomes": session_data.get("expected_outcomes", []),
+                "session_type": session_data.get("session_type", "individual"),
+                "estimated_duration": session_data.get("estimated_duration", "45-60 minutos"),
+                "preparation_notes": session_data.get("preparation_notes", ""),
+                "connection_to_previous": session_data.get("connection_to_previous", ""),
+                "personalization_factors": session_data.get("personalization_factors", []),
+                "generated_at": session_data.get("generated_at"),
+                "based_on_session": session_data.get("based_on_session"),
+                "generation_method": session_data.get("generation_method", "ai_service"),
+                "personalized": session_data.get("personalized", True),
+                "is_active": session_data.get("is_active", True),
+                "status": "locked",
+                "progress": 0,
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
+            
+            # Inserir documento
+            result = await self.user_sessions_collection.insert_one(session_document)
+            
+            if result.inserted_id:
+                logger.info(f"✅ Sessão dinâmica criada: {session_id} para {username}")
+                return True
+            else:
+                logger.error(f"❌ Falha ao criar sessão dinâmica: {session_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao criar sessão dinâmica: {e}")
+            return False
+
+    async def get_user_session_sequence(self, username: str) -> List[Dict[str, Any]]:
+        """
+        Obter sequência ordenada de sessões do usuário
+        """
+        try:
+            cursor = self.user_sessions_collection.find(
+                {"username": username},
+                sort=[("created_at", 1)]
+            )
+            
+            sessions = []
+            async for session in cursor:
+                sessions.append({
+                    "session_id": session["session_id"],
+                    "title": session["title"],
+                    "subtitle": session.get("subtitle", ""),
+                    "status": session.get("status", "locked"),
+                    "progress": session.get("progress", 0),
+                    "created_at": session["created_at"],
+                    "generation_method": session.get("generation_method", "template"),
+                    "personalized": session.get("personalized", False),
+                    "based_on_session": session.get("based_on_session"),
+                    "connection_to_previous": session.get("connection_to_previous", "")
+                })
+            
+            return sessions
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao obter sequência de sessões: {e}")
+            return []
+
+    async def get_latest_completed_session(self, username: str) -> Optional[Dict[str, Any]]:
+        """
+        Obter a última sessão completada do usuário
+        """
+        try:
+            cursor = self.user_sessions_collection.find(
+                {"username": username, "status": "completed"},
+                sort=[("updated_at", -1)],
+                limit=1
+            )
+            
+            async for session in cursor:
+                return {
+                    "session_id": session["session_id"],
+                    "title": session["title"],
+                    "completed_at": session["updated_at"],
+                    "progress": session.get("progress", 0)
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao obter última sessão completada: {e}")
+            return None
+
+    async def can_create_next_session(self, username: str) -> bool:
+        """
+        Verificar se o usuário pode ter uma nova sessão criada
+        """
+        try:
+            # Verificar se há sessões em andamento ou não iniciadas
+            pending_sessions = await self.user_sessions_collection.count_documents({
+                "username": username,
+                "status": {"$in": ["locked", "unlocked", "in_progress"]}
+            })
+            
+            # Só permite criar nova sessão se não houver sessões pendentes
+            return pending_sessions == 0
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao verificar se pode criar nova sessão: {e}")
+            return False
+
+    async def auto_unlock_next_session(self, username: str) -> bool:
+        """
+        Desbloquear automaticamente a próxima sessão na sequência
+        """
+        try:
+            # Buscar próxima sessão bloqueada
+            next_session = await self.user_sessions_collection.find_one(
+                {"username": username, "status": "locked"},
+                sort=[("created_at", 1)]
+            )
+            
+            if next_session:
+                session_id = next_session["session_id"]
+                success = await self.unlock_session(username, session_id)
+                if success:
+                    logger.info(f"🔓 Próxima sessão desbloqueada automaticamente: {session_id}")
+                    return True
+                else:
+                    logger.warning(f"⚠️ Falha ao desbloquear próxima sessão: {session_id}")
+                    return False
+            else:
+                logger.info(f"ℹ️ Nenhuma sessão bloqueada encontrada para {username}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Erro ao desbloquear próxima sessão: {e}")
+            return False 

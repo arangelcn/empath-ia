@@ -11,6 +11,7 @@ from ..models.database import get_collection, get_therapeutic_sessions_collectio
 from ..services.chat_service import ChatService
 from ..services.user_service import UserService
 from ..services.therapeutic_session_service import TherapeuticSessionService
+from ..services.user_emotion_service import UserEmotionService
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api/admin", tags=["Admin"])
 chat_service = ChatService()
 user_service = UserService()
 therapeutic_session_service = TherapeuticSessionService()
+user_emotion_service = UserEmotionService()
 
 # Modelos Pydantic para sessões terapêuticas
 class TherapeuticSessionCreate(BaseModel):
@@ -56,8 +58,11 @@ async def get_dashboard_stats():
             "updated_at": {"$gte": last_24h}
         })
         
-        # Dados mockados para emoções (até implementar análise real)
-        emotions_analyzed = total_messages * 0.8  # Assumindo 80% das mensagens analisadas
+        # Estatísticas reais de emoções
+        user_emotions_collection = get_collection("user_emotions")
+        emotions_analyzed = await user_emotions_collection.count_documents({
+            "timestamp": {"$gte": last_24h}
+        })
         
         return {
             "success": True,
@@ -233,6 +238,71 @@ async def get_emotions_analysis(
         
     except Exception as e:
         logger.error(f"Erro ao analisar emoções: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/emotions/realtime-stats")
+async def get_realtime_emotion_stats():
+    """
+    Obter estatísticas em tempo real das emoções detectadas
+    """
+    try:
+        user_emotions_collection = get_collection("user_emotions")
+        
+        # Últimas 24 horas
+        last_24h = datetime.utcnow() - timedelta(hours=24)
+        
+        # Total de detecções
+        total_detections = await user_emotions_collection.count_documents({
+            "timestamp": {"$gte": last_24h}
+        })
+        
+        # Emoções por tipo (agregação)
+        pipeline = [
+            {"$match": {"timestamp": {"$gte": last_24h}}},
+            {"$group": {
+                "_id": "$dominant_emotion",
+                "count": {"$sum": 1},
+                "avg_confidence": {"$avg": "$confidence"}
+            }},
+            {"$sort": {"count": -1}}
+        ]
+        
+        emotion_stats = []
+        async for result in user_emotions_collection.aggregate(pipeline):
+            emotion_stats.append({
+                "emotion": result["_id"],
+                "count": result["count"],
+                "avg_confidence": round(result["avg_confidence"], 2),
+                "percentage": round((result["count"] / total_detections) * 100, 2) if total_detections > 0 else 0
+            })
+        
+        # Usuários únicos com detecção
+        unique_users = len(await user_emotions_collection.distinct("username", {
+            "timestamp": {"$gte": last_24h}
+        }))
+        
+        # Taxa de detecção facial
+        face_detections = await user_emotions_collection.count_documents({
+            "timestamp": {"$gte": last_24h},
+            "face_detected": True
+        })
+        
+        face_detection_rate = round((face_detections / total_detections) * 100, 2) if total_detections > 0 else 0
+        
+        return {
+            "success": True,
+            "data": {
+                "total_detections": total_detections,
+                "unique_users": unique_users,
+                "face_detection_rate": face_detection_rate,
+                "emotion_distribution": emotion_stats,
+                "period": "last_24h",
+                "last_updated": datetime.utcnow().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter estatísticas de emoções: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/activity/realtime")

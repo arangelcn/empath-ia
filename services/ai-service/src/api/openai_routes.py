@@ -94,4 +94,59 @@ async def test_openai_connection():
             "status": "error",
             "error": str(e),
             "openai_available": openai_service.is_available()
-        } 
+        }
+
+@router.post("/generate-session-context")
+async def generate_session_context(request: dict):
+    """
+    Gerar contexto de uma sessão terapêutica baseado na conversa
+    """
+    try:
+        conversation_text = request.get("conversation_text", "")
+        emotions_data = request.get("emotions_data", [])
+        
+        if not conversation_text:
+            raise HTTPException(status_code=400, detail="conversation_text é obrigatório")
+        
+        # Usar o serviço OpenAI para gerar contexto
+        openai_service = OpenAIService()
+        context = await openai_service.generate_session_context(conversation_text, emotions_data)
+        
+        return {
+            "success": True,
+            "context": context
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao gerar contexto da sessão: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@router.post("/generate-next-session")
+async def generate_next_session(request: dict):
+    """
+    Gerar próxima sessão terapêutica personalizada baseada no contexto do usuário
+    """
+    try:
+        user_profile = request.get("user_profile", {})
+        session_context = request.get("session_context", {})
+        current_session_id = request.get("current_session_id", "")
+        
+        if not session_context:
+            raise HTTPException(status_code=400, detail="session_context é obrigatório")
+        
+        # Usar o serviço OpenAI para gerar próxima sessão
+        openai_service = OpenAIService()
+        next_session = await openai_service.generate_next_session(
+            user_profile=user_profile,
+            session_context=session_context,
+            current_session_id=current_session_id
+        )
+        
+        return {
+            "success": True,
+            "next_session": next_session
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao gerar próxima sessão: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")

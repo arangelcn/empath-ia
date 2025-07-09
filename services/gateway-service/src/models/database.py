@@ -95,6 +95,12 @@ def get_user_therapeutic_sessions_collection():
         raise RuntimeError("MongoDB não foi inicializado")
     return database["user_therapeutic_sessions"]
 
+def get_user_emotions_collection():
+    """Obter coleção de emoções dos usuários"""
+    if database is None:
+        raise RuntimeError("MongoDB não foi inicializado")
+    return database["user_emotions"]
+
 async def create_indexes():
     """Criar índices necessários para performance"""
     try:
@@ -138,7 +144,16 @@ async def create_indexes():
         await users.create_index("created_at")
         await users.create_index("last_login")
         
-        logger.info("✅ Índices MongoDB criados com melhorias de segurança")
+        # Índices para emoções dos usuários
+        user_emotions = get_user_emotions_collection()
+        await user_emotions.create_index([("username", 1), ("timestamp", -1)])
+        await user_emotions.create_index([("username", 1), ("session_id", 1)])
+        await user_emotions.create_index("timestamp")
+        await user_emotions.create_index("dominant_emotion")
+        await user_emotions.create_index("face_detected")
+        await user_emotions.create_index([("username", 1), ("session_id", 1), ("timestamp", -1)])
+        
+        logger.info("✅ Índices MongoDB criados com melhorias de segurança e suporte a emoções")
         
     except Exception as e:
         logger.error(f"❌ Erro ao criar índices: {e}")

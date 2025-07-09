@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Heart, LogOut, Send, Target } from 'lucide-react';
-import { sendMessage, getChatHistory, getTherapeuticSession } from '../../services/api.js';
+import { sendMessage, getChatHistory, getTherapeuticSession, getInitialMessage } from '../../services/api.js';
 import Button from '../Common/Button.jsx';
 import Loading from '../Common/Loading.jsx';
 import EmotionBadge from './EmotionBadge.jsx';
 import WebcamEmotionCapture from '../EmotionAnalysis/WebcamEmotionCapture.jsx';
+import { useAudioPlayer } from '../../hooks/useAudioPlayer.js';
 
 interface Message {
   id: string;
@@ -55,6 +56,7 @@ const ChatScreen = ({ username }) => {
   const { sessionId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { playAudio } = useAudioPlayer();
   
   // Usar sessionId da URL
   const currentSessionId = sessionId;
@@ -70,6 +72,11 @@ const ChatScreen = ({ username }) => {
   const [currentEmotion, setCurrentEmotion] = useState(null);
   const [sessionObjective, setSessionObjective] = useState<SessionObjective | null>(null);
   const [showObjective, setShowObjective] = useState(true);
+  const [showFinalizeButton, setShowFinalizeButton] = useState(false);
+  const [isConversationEnded, setIsConversationEnded] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const [sessionContext, setSessionContext] = useState(null);
+  const [showSessionSummary, setShowSessionSummary] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -122,15 +129,79 @@ const ChatScreen = ({ username }) => {
           
           setMessages(historyMessages);
         } else {
-          // ✅ CORREÇÃO: Não criar mensagem inicial - deixar que a IA use o prompt da sessão
-          // Quando não há histórico, simplesmente deixar a lista de mensagens vazia
-          // A primeira mensagem será gerada quando o usuário enviar algo, usando o initial_prompt da sessão
-          setMessages([]);
+          // ✅ NOVO: Se não há histórico, tentar gerar mensagem inicial automática
+          console.log('🤖 Sessão sem histórico, gerando mensagem inicial automática...');
+          
+          try {
+            const initialMessageResponse = await getInitialMessage(currentSessionId);
+            console.log('🔍 DEBUG - Resposta inicial:', initialMessageResponse);
+            
+            if (initialMessageResponse.success && initialMessageResponse.data) {
+              // ✅ CORREÇÃO: Aguardar um pouco para garantir que o backend salvou a mensagem
+              console.log('⏳ Aguardando backend finalizar salvamento...');
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              // ✅ CORREÇÃO: Recarregar histórico DIRETAMENTE após gerar mensagem inicial
+              console.log('🔄 Recarregando histórico após mensagem inicial...');
+              const updatedHistory = await getChatHistory(currentSessionId);
+              console.log('🔍 DEBUG - Histórico atualizado:', updatedHistory);
+              
+              if (updatedHistory.success && updatedHistory.data.history && updatedHistory.data.history.length > 0) {
+                const historyMessages: Message[] = updatedHistory.data.history.map((msg: any) => ({
+                  id: msg.id,
+                  type: msg.type === 'user' ? 'user' : 'ai',
+                  content: msg.content,
+                  audioUrl: msg.audio_url || undefined,
+                }));
+                
+                setMessages(historyMessages);
+                console.log('✅ Histórico carregado com sucesso após mensagem inicial:', historyMessages.length, 'mensagens');
+                
+                // ✅ NOVO: Reproduzir áudio se disponível para a mensagem inicial
+                const initialMessage = historyMessages.find(msg => msg.type === 'ai');
+                if (initialMessage && initialMessage.audioUrl) {
+                  // Aguardar um pouco antes de reproduzir
+                  setTimeout(() => {
+                    console.log('🔊 Reproduzindo áudio da mensagem inicial...');
+                    playAudio(initialMessage.audioUrl);
+                  }, 500);
+                }
+              } else {
+                // ✅ FALLBACK: Se histórico ainda não foi atualizado, usar dados da resposta inicial
+                console.warn('⚠️ Histórico ainda não atualizado, usando dados da resposta inicial');
+                
+                if (initialMessageResponse.data.message) {
+                  const fallbackMessage: Message = {
+                    id: initialMessageResponse.data.message.id,
+                    type: 'ai',
+                    content: initialMessageResponse.data.message.content,
+                    audioUrl: initialMessageResponse.data.message.audioUrl || undefined,
+                  };
+                  
+                  setMessages([fallbackMessage]);
+                  console.log('🔄 Usando mensagem inicial como fallback');
+                  
+                  // Reproduzir áudio se disponível
+                  if (fallbackMessage.audioUrl) {
+                    setTimeout(() => {
+                      playAudio(fallbackMessage.audioUrl);
+                    }, 500);
+                  }
+                } else {
+                  setMessages([]);
+                }
+              }
+            } else {
+              console.warn('⚠️ Falha ao gerar mensagem inicial:', initialMessageResponse.error || 'Resposta inválida');
+              setMessages([]);
+            }
+          } catch (error) {
+            console.error('❌ Erro ao gerar mensagem inicial:', error);
+            setMessages([]);
+          }
         }
       } catch (error) {
         console.error('Erro ao carregar dados da sessão:', error);
-        // ✅ CORREÇÃO: Em caso de erro, também não mostrar mensagem padrão
-        // Deixar vazio para que o prompt da sessão seja usado
         setMessages([]);
       } finally {
         setIsLoadingHistory(false);
@@ -204,18 +275,47 @@ const ChatScreen = ({ username }) => {
         
         // ✅ NOVO: Verificar se o cadastro foi finalizado
         if (response.data.registration_completed && response.data.redirect_to_home) {
-          // Mostrar mensagem de sucesso por alguns segundos
+          console.log('🎉 CADASTRO FINALIZADO - Processando redirecionamento...');
+          
+          // Mostrar mensagem de sucesso
           if (response.data.completion_message) {
-            console.log('🎉 Cadastro finalizado:', response.data.completion_message);
+            console.log('📋 Mensagem de finalização:', response.data.completion_message);
           }
           
-          // Redirecionar para home após 3 segundos
+          // Usar tempo de redirecionamento definido pelo backend (padrão 3 segundos)
+          const redirectDelay = response.data.auto_redirect_delay || 3000;
+          console.log(`⏳ Redirecionamento automático em ${redirectDelay}ms`);
+          
+          // Redirecionar para home após tempo especificado
           setTimeout(() => {
+            console.log('🏠 Redirecionando para home...');
             navigate('/home', { 
               state: { 
-                message: 'Cadastro finalizado com sucesso! Agora você pode acessar todas as sessões terapêuticas.' 
+                message: 'Cadastro finalizado com sucesso! Agora você pode acessar todas as sessões terapêuticas.',
+                fromRegistration: true,
+                finalize_success: response.data.finalize_success
               } 
             });
+          }, redirectDelay);
+        }
+        
+        // ✅ NOVO: Verificar se a conversa foi finalizada automaticamente
+        if (response.data.conversation_ended) {
+          console.log('🔚 Conversa finalizada automaticamente');
+          setIsConversationEnded(true);
+          setShowFinalizeButton(false);
+          
+          // Aguardar um pouco antes de mostrar o resumo
+          setTimeout(() => {
+            finalizeSession();
+          }, 2000);
+        }
+        
+        // Detectar fim de conversa baseado na mensagem do usuário
+        if (checkConversationEnd(currentInput)) {
+          console.log('🔚 Fim de conversa detectado pela mensagem do usuário');
+          setTimeout(() => {
+            finalizeSession();
           }, 3000);
         }
       }
@@ -257,6 +357,165 @@ const ChatScreen = ({ username }) => {
     }
   };
 
+  // Lógica para detectar fim de conversa
+  useEffect(() => {
+    if (messages.length >= 6) { // Mostrar botão após 6 mensagens
+      setShowFinalizeButton(true);
+    }
+  }, [messages.length]);
+
+  // Função para finalizar sessão
+  const finalizeSession = async () => {
+    if (isFinalizing) return;
+    
+    setIsFinalizing(true);
+    
+    try {
+      const response = await fetch(`/api/chat/finalize/${currentSessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setIsConversationEnded(true);
+        setSessionContext(result.data.context);
+        setShowSessionSummary(true);
+        setShowFinalizeButton(false);
+      } else {
+        console.error('Erro ao finalizar sessão:', result);
+      }
+    } catch (error) {
+      console.error('Erro na finalização da sessão:', error);
+    } finally {
+      setIsFinalizing(false);
+    }
+  };
+
+  // Verificar se mensagem indica fim de conversa
+  const checkConversationEnd = (message) => {
+    const endings = ['tchau', 'bye', 'adeus', 'até logo', 'até mais', 'obrigado', 'obrigada', 'valeu'];
+    const messageLower = message.toLowerCase();
+    return endings.some(ending => messageLower.includes(ending));
+  };
+
+  // Função para obter contexto da sessão
+  const getSessionContext = async () => {
+    try {
+      const response = await fetch(`/api/chat/context/${currentSessionId}`);
+      const result = await response.json();
+      
+      if (result.success) {
+        setSessionContext(result.data.context);
+      }
+    } catch (error) {
+      console.error('Erro ao obter contexto da sessão:', error);
+    }
+  };
+
+  // Modal de resumo da sessão
+  const SessionSummaryModal = () => {
+    if (!showSessionSummary || !sessionContext) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white dark:bg-dark-surface rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+          <div className="p-6">
+            <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">
+              Resumo da Sessão
+            </h2>
+            
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Resumo</h3>
+                <p className="text-gray-600 dark:text-gray-400">{sessionContext.summary}</p>
+              </div>
+              
+              <div>
+                <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Temas Principais</h3>
+                <div className="flex flex-wrap gap-2">
+                  {sessionContext.main_themes?.map((theme, index) => (
+                    <span key={index} className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-full text-sm">
+                      {theme}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              
+              <div>
+                <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Estado Emocional</h3>
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <strong>Emoção Dominante:</strong> {sessionContext.emotional_state?.dominant_emotion}
+                  </p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <strong>Jornada:</strong> {sessionContext.emotional_state?.emotional_journey}
+                  </p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <strong>Estabilidade:</strong> {sessionContext.emotional_state?.stability}
+                  </p>
+                </div>
+              </div>
+              
+              <div>
+                <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Insights Principais</h3>
+                <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1">
+                  {sessionContext.key_insights?.map((insight, index) => (
+                    <li key={index} className="text-sm">{insight}</li>
+                  ))}
+                </ul>
+              </div>
+              
+              <div>
+                <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Recomendações</h3>
+                <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1">
+                  {sessionContext.next_session_recommendations?.map((rec, index) => (
+                    <li key={index} className="text-sm">{rec}</li>
+                  ))}
+                </ul>
+              </div>
+              
+              <div>
+                <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Qualidade da Sessão</h3>
+                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                  sessionContext.session_quality === 'excelente' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                  sessionContext.session_quality === 'boa' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                  sessionContext.session_quality === 'regular' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                  'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                }`}>
+                  {sessionContext.session_quality}
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 mt-6">
+              <Button
+                variant="secondary"
+                onClick={() => setShowSessionSummary(false)}
+              >
+                Fechar
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setShowSessionSummary(false);
+                  navigate('/home', {
+                    state: {
+                      message: 'Sessão finalizada com sucesso! Sua próxima sessão pode já estar disponível.'
+                    }
+                  });
+                }}
+              >
+                Voltar ao Início
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-background-light dark:bg-background-dark transition-colors duration-300">
       {/* Header */}
@@ -279,6 +538,17 @@ const ChatScreen = ({ username }) => {
           </div>
           <div className="flex items-center gap-3">
             <EmotionBadge emotion={currentEmotion} />
+            {showFinalizeButton && !isConversationEnded && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={finalizeSession}
+                disabled={isFinalizing}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão'}
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -295,7 +565,9 @@ const ChatScreen = ({ username }) => {
       <WebcamEmotionCapture 
         onEmotionDetected={handleWebcamEmotion} 
         autoStart={true} 
-        hidden={true} 
+        hidden={true}
+        username={username}
+        sessionId={currentSessionId}
       />
 
       {/* Objetivo da Sessão */}
@@ -376,6 +648,9 @@ const ChatScreen = ({ username }) => {
           </Button>
         </form>
       </div>
+      
+      {/* Modal de resumo da sessão */}
+      <SessionSummaryModal />
     </div>
   );
 };

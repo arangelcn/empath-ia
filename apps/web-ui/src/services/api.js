@@ -325,6 +325,27 @@ export const getUserProgress = async (username) => {
   }
 };
 
+export const getInitialMessage = async (sessionId) => {
+  try {
+    const response = await fetch(`/api/chat/initial-message/${sessionId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Erro ao buscar mensagem inicial:', error);
+    throw error;
+  }
+};
+
 // ===== APIs DE USUÁRIO ===== 
 
 export const getSessions = async () => {
