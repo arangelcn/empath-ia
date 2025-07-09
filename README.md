@@ -1,143 +1,437 @@
-# Empath.IA - Psicólogo Virtual com IA
+# Empath.IA - Plataforma de Terapia Virtual Inteligente
 
-Uma plataforma completa de terapia virtual baseada na abordagem humanística de Carl Rogers, integrando análise emocional em tempo real, síntese de voz avançada e interface conversacional intuitiva.
+Uma plataforma completa de terapia virtual baseada na abordagem humanística de Carl Rogers, com sistema de sessões personalizadas, análise emocional em tempo real, contexto entre sessões e geração automática de próximas sessões terapêuticas.
 
 ## 🎯 Visão Geral
 
-Empath.IA é uma solução inovadora que combina inteligência artificial, processamento de linguagem natural e análise emocional para criar uma experiência terapêutica virtual personalizada. O sistema oferece:
+**Empath.IA** é uma solução inovadora que combina inteligência artificial avançada, análise emocional em tempo real e continuidade terapêutica para criar uma experiência terapêutica virtual personalizada e progressiva. O sistema oferece:
 
-- **Terapia Baseada em Carl Rogers**: IA treinada na abordagem centrada na pessoa
-- **Análise Emocional em Tempo Real**: Detecção de emoções através de texto e expressões faciais
-- **Síntese de Voz Neural**: Vozes naturais em português brasileiro via Google Cloud
-- **Histórico Persistente**: Conversas mantidas entre sessões para continuidade terapêutica
-- **Interface Responsiva**: Experiência otimizada para desktop, tablet e mobile
-- **Personalização Completa**: Seleção de vozes e preferências individuais
+### 🌟 Principais Diferenciais
+
+- **🧠 Terapia Personalizada**: Sistema de sessões adaptadas ao perfil individual do usuário
+- **🔄 Continuidade Terapêutica**: Contexto mantido entre sessões para progressão natural
+- **📊 Análise Emocional**: Detecção de emoções via webcam e análise textual em tempo real
+- **🎯 Geração Automática**: Próximas sessões criadas automaticamente baseadas no progresso
+- **🔒 Isolamento Seguro**: Dados completamente isolados por usuário para privacidade
+- **🎵 Síntese de Voz Neural**: Vozes naturais em português brasileiro via Google Cloud
+- **📱 Interface Moderna**: Experiência responsiva otimizada para todos os dispositivos
 
 ## ✨ Funcionalidades Principais
 
-### ✅ Implementado
-- ✅ **Chat Terapêutico**: Conversas naturais com IA especializada em psicologia
-- ✅ **Síntese de Voz Avançada**: Google Cloud Text-to-Speech com vozes neurais
-- ✅ **Análise Emocional**: Detecção de emoções via texto e expressões faciais
-- ✅ **Persistência de Dados**: Histórico completo de conversas no MongoDB
-- ✅ **Seleção de Vozes**: Múltiplas opções de vozes em português brasileiro
-- ✅ **Onboarding Personalizado**: Coleta de preferências e configuração inicial
-- ✅ **Controles de Áudio**: Reprodução automática e manual de respostas
-- ✅ **Interface Responsiva**: Design moderno com Tailwind CSS
-- ✅ **Arquitetura de Microserviços**: Serviços especializados e escaláveis
-- ✅ **Containerização**: Deploy completo com Docker e Docker Compose
+### ✅ Sistema de Sessões Personalizadas
+- ✅ **Onboarding Estruturado**: Session-1 coleta dados demográficos e terapêuticos
+- ✅ **Perfil Padronizado**: Dados organizados em categorias (pessoal, social, terapêutico)
+- ✅ **Geração Automática**: IA cria próximas sessões baseadas no contexto e perfil
+- ✅ **Desbloqueio Sequencial**: Sessões liberadas conforme progresso do usuário
+- ✅ **Objetivos Dinâmicos**: Foco terapêutico adaptado ao desenvolvimento pessoal
 
-### 🔄 Em Desenvolvimento
-- 🔄 Avatar 3D animado com sincronização labial
-- 🔄 Análise de sentimentos avançada
-- 🔄 Relatórios de progresso terapêutico
-- 🔄 Integração com calendário para sessões
-- 🔄 Dashboard administrativo completo
+### ✅ Inteligência Artificial Avançada
+- ✅ **Contexto entre Sessões**: Continuidade terapêutica com memória de conversas anteriores
+- ✅ **Prompts Especializados**: Sistema de prompts específicos para abordagem Rogers
+- ✅ **Personalização Profunda**: Respostas adaptadas ao perfil e histórico do usuário
+- ✅ **Análise de Progresso**: Avaliação contínua do desenvolvimento terapêutico
+- ✅ **Fallback Inteligente**: Respostas empáticas quando serviços externos não estão disponíveis
+
+### ✅ Análise Emocional em Tempo Real
+- ✅ **Captura via Webcam**: Detecção de emoções faciais durante conversas
+- ✅ **Timeline Emocional**: Histórico completo das emoções por sessão
+- ✅ **Análise Textual**: Identificação de emoções através das mensagens
+- ✅ **Integração com Contexto**: Dados emocionais influenciam geração de próximas sessões
+- ✅ **Relatórios Detalhados**: Resumos e estatísticas emocionais por usuário
+
+### ✅ Persistência e Segurança
+- ✅ **Isolamento Total**: Dados completamente separados por usuário
+- ✅ **Histórico Completo**: Todas as conversas e contextos mantidos
+- ✅ **Backup Automático**: Contexto de sessões salvo para continuidade
+- ✅ **Auditoria Completa**: Logs detalhados de todas as ações
+- ✅ **Validação Dupla**: Segurança adicional com validação por username
+
+### �� Em Desenvolvimento
+- 🔄 **Análise Preditiva**: Previsão de necessidades terapêuticas
+- 🔄 **Avatar 3D Inteligente**: Animação sincronizada com análise emocional
+- 🔄 **Métricas Avançadas**: Dashboard completo de progresso terapêutico
+- 🔄 **Integração com Wearables**: Dados biométricos para personalização
+- 🔄 **Sistema de Notificações**: Lembretes e acompanhamento proativo
 
 ## 🏗️ Arquitetura do Sistema
 
-### Microserviços
+### Visão Geral da Arquitetura
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Web UI        │    │  Admin Panel    │    │  Mobile App     │
-│  (React/Vite)   │    │   (React)       │    │   (Future)      │
-└─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
-          │                      │                      │
-          └──────────────────────┼──────────────────────┘
-                                 │
-                    ┌─────────────┴───────────┐
-                    │   Gateway Service       │
-                    │   (FastAPI/Python)      │
-                    │   - Orquestração        │
-                    │   - Autenticação        │
-                    │   - Rate Limiting       │
-                    └─────────────┬───────────┘
-                                  │
-        ┌─────────────────────────┼─────────────────────────┐
-        │                         │                         │
-┌───────┴────────┐    ┌──────────┴──────────┐    ┌─────────┴────────┐
-│  AI Service    │    │  Emotion Service    │    │  Voice Service   │
-│  (FastAPI)     │    │  (FastAPI)          │    │  (FastAPI)       │
-│  - OpenAI GPT  │    │  - Análise Facial   │    │  - Google Cloud  │
-│  - Carl Rogers │    │  - Análise Textual  │    │  - TTS Neural    │
-│  - Contexto    │    │  - OpenFace         │    │  - Múltiplas     │
-│  - Memória     │    │  - Transformers     │    │    Vozes PT-BR   │
-└────────────────┘    └─────────────────────┘    └──────────────────┘
-                                  │
-                    ┌─────────────┴───────────┐
-                    │   Avatar Service        │
-                    │   (FastAPI/Python)      │
-                    │   - Animação 3D         │
-                    │   - Sincronização       │
-                    │   - Expressões          │
-                    └─────────────────────────┘
-```
-
-### Banco de Dados
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        MongoDB                              │
-├─────────────────────────────────────────────────────────────┤
-│  Collections:                                               │
-│  • conversations (sessões, preferências, histórico)        │
-│  • messages (mensagens, timestamps, emoções)               │
-│  • users (perfis, configurações, progresso)                │
-│  • emotions (análises, métricas, tendências)               │
-│  • audio_cache (arquivos de áudio, otimização)             │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "Frontend Applications"
+        WebUI[Web UI<br/>React + TypeScript]
+        AdminPanel[Admin Panel<br/>React Dashboard]
+    end
+    
+    subgraph "Gateway & Orchestration"
+        Gateway[Gateway Service<br/>FastAPI + Python<br/>- Session Management<br/>- User Isolation<br/>- Context Generation]
+    end
+    
+    subgraph "AI & Processing Services"
+        AI[AI Service<br/>OpenAI GPT-4<br/>- Therapeutic Responses<br/>- Context Between Sessions<br/>- Next Session Generation]
+        
+        Emotion[Emotion Service<br/>OpenFace + MediaPipe<br/>- Facial Analysis<br/>- Real-time Capture<br/>- Emotion Timeline]
+        
+        Voice[Voice Service<br/>Google Cloud TTS<br/>- Neural Voices<br/>- Portuguese BR<br/>- Audio Synthesis]
+        
+        Avatar[Avatar Service<br/>DID-AI Integration<br/>- 3D Animation<br/>- Lip Sync<br/>- Expressions]
+    end
+    
+    subgraph "Data Layer"
+        MongoDB[(MongoDB<br/>- User Sessions<br/>- Conversations<br/>- Emotions<br/>- User Profiles)]
+    end
+    
+    WebUI --> Gateway
+    AdminPanel --> Gateway
+    Gateway --> AI
+    Gateway --> Emotion
+    Gateway --> Voice
+    Gateway --> Avatar
+    Gateway --> MongoDB
+    
+    AI --> MongoDB
+    Emotion --> MongoDB
+    Voice --> MongoDB
 ```
 
-## 🚀 Tecnologias Utilizadas
+### Fluxo de Dados e Sessões
 
-### Frontend
-- **React 18** com Hooks e TypeScript
-- **Vite** para build e desenvolvimento rápido
-- **Tailwind CSS** para design system moderno
-- **Lucide React** para ícones consistentes
-- **Axios** para comunicação HTTP
-
-### Backend
-- **FastAPI** para APIs REST de alta performance
-- **Python 3.11+** com async/await
-- **OpenAI GPT-4** para inteligência artificial
-- **Google Cloud Text-to-Speech** para síntese de voz
-- **OpenFace** para análise de expressões faciais
-- **Transformers** para processamento de linguagem natural
-
-### Infraestrutura
-- **MongoDB** para persistência de dados
-- **Docker & Docker Compose** para containerização
-- **Nginx** para proxy reverso e load balancing
-- **Prometheus & Grafana** para monitoramento
-- **Jaeger** para tracing distribuído
-
-## 📦 Estrutura do Projeto
-
+```mermaid
+graph LR
+    subgraph "Session Flow"
+        A[User Login] --> B[Load Profile]
+        B --> C{Session-1<br/>Completed?}
+        C -->|No| D[Onboarding<br/>Session]
+        C -->|Yes| E[Load Personal<br/>Sessions]
+        
+        D --> F[Generate<br/>User Profile]
+        F --> G[Create Next<br/>Session]
+        
+        E --> H[Select<br/>Session]
+        H --> I[Load Session<br/>Context]
+        I --> J[Start<br/>Conversation]
+        
+        J --> K[Process<br/>Messages]
+        K --> L[Capture<br/>Emotions]
+        L --> M[Generate<br/>AI Response]
+        M --> N{Session<br/>Complete?}
+        
+        N -->|No| K
+        N -->|Yes| O[Finalize<br/>Context]
+        O --> P[Generate<br/>Next Session]
+        P --> Q[Unlock<br/>Next Session]
+    end
 ```
-empath-ia/
-├── apps/                          # Aplicações frontend
-│   ├── web-ui/                   # Interface principal (React)
-│   └── admin-panel/              # Painel administrativo
-├── services/                      # Microserviços backend
-│   ├── gateway-service/          # API Gateway e orquestração
-│   ├── ai-service/               # Inteligência artificial
-│   ├── emotion-service/          # Análise emocional
-│   ├── voice-service/            # Síntese de voz
-│   └── avatar-service/           # Avatar 3D (em desenvolvimento)
-├── infrastructure/               # Configurações de infraestrutura
-│   ├── docker/                   # Dockerfiles e configurações
-│   ├── kubernetes/               # Manifests K8s
-│   └── monitoring/               # Prometheus, Grafana, Jaeger
-├── data/                         # Dados e modelos
-│   ├── models/                   # Modelos de IA
-│   ├── uploads/                  # Arquivos enviados
-│   └── logs/                     # Logs do sistema
-├── docs/                         # Documentação
-│   ├── api/                      # Documentação das APIs
-│   ├── architecture/             # Diagramas e arquitetura
-│   └── deployment/               # Guias de deploy
-└── scripts/                      # Scripts de automação
+
+## 🚀 Fluxogramas dos Principais Processos
+
+### 1. Processo de Onboarding (Session-1)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant W as Web UI
+    participant G as Gateway
+    participant A as AI Service
+    participant DB as MongoDB
+    
+    U->>W: Acessa aplicação
+    W->>G: GET /api/chat/initial-message/user_session-1
+    G->>DB: Verifica se session-1 existe
+    DB-->>G: Session-1 não encontrada
+    G->>G: Gera primeira pergunta do cadastro
+    G-->>W: Primeira pergunta (idade)
+    W-->>U: Exibe primeira pergunta
+    
+    loop Questionário de Cadastro
+        U->>W: Responde pergunta
+        W->>G: POST /api/chat/send
+        G->>DB: Salva resposta do usuário
+        G->>G: Gera próxima pergunta
+        G-->>W: Próxima pergunta ou finalização
+        W-->>U: Exibe próxima pergunta
+    end
+    
+    U->>W: Completa cadastro
+    W->>G: POST /api/chat/send (última resposta)
+    G->>DB: Salva perfil estruturado
+    G->>G: Marca session-1 como completa
+    G->>A: Gera contexto da sessão
+    A-->>G: Contexto gerado
+    G->>A: Gera próxima sessão (session-2)
+    A-->>G: Session-2 personalizada
+    G->>DB: Salva session-2 e desbloqueia
+    G-->>W: Cadastro finalizado + próxima sessão
+    W-->>U: Redirecionamento para home
+```
+
+### 2. Fluxo de Sessão Terapêutica
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant W as Web UI
+    participant G as Gateway
+    participant A as AI Service
+    participant E as Emotion Service
+    participant V as Voice Service
+    participant DB as MongoDB
+    
+    U->>W: Seleciona sessão terapêutica
+    W->>G: GET /api/user/{username}/sessions/{session_id}
+    G->>DB: Busca sessão personalizada
+    DB-->>G: Dados da sessão
+    G-->>W: Informações da sessão
+    
+    W->>G: GET /api/chat/initial-message/{session_id}
+    G->>DB: Busca initial_prompt personalizado
+    G->>DB: Busca contexto da sessão anterior
+    DB-->>G: Contexto + prompt personalizado
+    G-->>W: Mensagem inicial contextualizada
+    
+    loop Conversa Terapêutica
+        U->>W: Envia mensagem
+        W->>E: Captura emoção via webcam
+        E-->>W: Emoção detectada
+        W->>G: POST /api/chat/send (mensagem + emoção)
+        
+        G->>DB: Salva mensagem e emoção
+        G->>A: Processa com contexto completo
+        Note right of A: - Mensagem atual<br/>- Histórico da sessão<br/>- Contexto sessão anterior<br/>- Perfil do usuário<br/>- Dados emocionais
+        
+        A-->>G: Resposta terapêutica personalizada
+        G->>V: Gera áudio da resposta
+        V-->>G: URL do áudio
+        G->>DB: Salva resposta com áudio
+        G-->>W: Resposta + áudio + emoção
+        W-->>U: Exibe resposta e reproduz áudio
+    end
+    
+    U->>W: Finaliza sessão
+    W->>G: POST /api/chat/finalize/{session_id}
+    G->>A: Gera contexto da sessão
+    A-->>G: Contexto estruturado
+    G->>A: Gera próxima sessão
+    A-->>G: Próxima sessão personalizada
+    G->>DB: Salva contexto e próxima sessão
+    G-->>W: Sessão finalizada + próxima desbloqueada
+    W-->>U: Retorna para home com progresso
+```
+
+### 3. Sistema de Contexto Entre Sessões
+
+```mermaid
+graph TB
+    subgraph "Previous Session Context"
+        PS[Previous Session]
+        PS --> PC[Session Context]
+        PC --> Summary[Summary]
+        PC --> Themes[Main Themes]
+        PC --> Insights[Key Insights]
+        PC --> Emotional[Emotional State]
+        PC --> Progress[User Progress]
+    end
+    
+    subgraph "User Profile"
+        UP[User Profile]
+        UP --> Personal[Personal Info]
+        UP --> Social[Social Info]
+        UP --> Therapeutic[Therapeutic Info]
+        UP --> Keywords[Keywords]
+        UP --> Strengths[Strengths]
+    end
+    
+    subgraph "Current Session"
+        CS[Current Session]
+        CS --> Objective[Session Objective]
+        CS --> InitialPrompt[Initial Prompt]
+        CS --> FocusAreas[Focus Areas]
+        CS --> Connection[Connection to Previous]
+    end
+    
+    subgraph "AI Processing"
+        AI[AI Service]
+        AI --> ContextPrompt[Context Generation]
+        AI --> PersonalizedResponse[Personalized Response]
+        AI --> NextSession[Next Session Generation]
+    end
+    
+    Summary --> AI
+    Themes --> AI
+    Insights --> AI
+    Personal --> AI
+    Therapeutic --> AI
+    Objective --> AI
+    
+    AI --> PersonalizedResponse
+    AI --> NextSession
+    
+    NextSession --> NewSession[New Personalized Session]
+    NewSession --> NewObjective[New Objective]
+    NewSession --> NewPrompt[New Initial Prompt]
+    NewSession --> NewFocus[New Focus Areas]
+```
+
+### 4. Análise Emocional em Tempo Real
+
+```mermaid
+graph LR
+    subgraph "Emotion Capture"
+        Webcam[Webcam Stream] --> Frame[Frame Capture]
+        Frame --> Process[Process Image]
+        Process --> Detect[Emotion Detection]
+    end
+    
+    subgraph "Text Analysis"
+        UserMsg[User Message] --> TextAnalysis[Text Analysis]
+        TextAnalysis --> Sentiment[Sentiment Detection]
+    end
+    
+    subgraph "Emotion Service"
+        Detect --> EmotionAPI[Emotion API]
+        Sentiment --> EmotionAPI
+        EmotionAPI --> Confidence[Confidence Score]
+        EmotionAPI --> Primary[Primary Emotion]
+        EmotionAPI --> Secondary[Secondary Emotions]
+    end
+    
+    subgraph "Storage & Analysis"
+        Confidence --> MongoDB[(MongoDB)]
+        Primary --> MongoDB
+        Secondary --> MongoDB
+        MongoDB --> Timeline[Emotion Timeline]
+        MongoDB --> Summary[Emotion Summary]
+        MongoDB --> Trends[Emotion Trends]
+    end
+    
+    subgraph "Context Integration"
+        Timeline --> Context[Session Context]
+        Summary --> Context
+        Context --> NextSession[Next Session Gen]
+        Context --> AIResponse[AI Response]
+    end
+```
+
+### 5. Geração Automática de Próximas Sessões
+
+```mermaid
+graph TB
+    subgraph "Session Completion"
+        Complete[Session Complete] --> Analyze[Analyze Session]
+        Analyze --> ExtractThemes[Extract Themes]
+        Analyze --> ExtractInsights[Extract Insights]
+        Analyze --> ExtractEmotions[Extract Emotions]
+        Analyze --> ExtractProgress[Extract Progress]
+    end
+    
+    subgraph "User Profile Analysis"
+        Profile[User Profile] --> Demographics[Demographics]
+        Profile --> Therapeutic[Therapeutic Goals]
+        Profile --> History[Session History]
+        Profile --> Preferences[Preferences]
+    end
+    
+    subgraph "AI Generation"
+        AI[AI Service] --> GenerateTitle[Generate Title]
+        AI --> GenerateObjective[Generate Objective]
+        AI --> GeneratePrompt[Generate Initial Prompt]
+        AI --> GenerateFocus[Generate Focus Areas]
+        AI --> GenerateConnection[Generate Connection]
+    end
+    
+    ExtractThemes --> AI
+    ExtractInsights --> AI
+    Demographics --> AI
+    Therapeutic --> AI
+    History --> AI
+    
+    GenerateTitle --> NewSession[New Personalized Session]
+    GenerateObjective --> NewSession
+    GeneratePrompt --> NewSession
+    GenerateFocus --> NewSession
+    GenerateConnection --> NewSession
+    
+    NewSession --> SaveDB[(Save to MongoDB)]
+    SaveDB --> UnlockSession[Unlock Session]
+    UnlockSession --> NotifyUser[Notify User]
+```
+
+## 📊 Estrutura de Dados
+
+### Collections MongoDB
+
+```mermaid
+erDiagram
+    users {
+        string username PK
+        string email
+        object preferences
+        object user_profile
+        boolean profile_completed
+        datetime created_at
+        datetime last_login
+    }
+    
+    conversations {
+        string session_id PK
+        string username FK
+        object user_preferences
+        int message_count
+        object session_context
+        boolean session_finalized
+        datetime created_at
+        datetime updated_at
+    }
+    
+    messages {
+        string id PK
+        string session_id FK
+        string username FK
+        string type
+        string content
+        string audio_url
+        datetime created_at
+    }
+    
+    user_therapeutic_sessions {
+        string username FK
+        string session_id
+        string title
+        string objective
+        string initial_prompt
+        array focus_areas
+        string status
+        int progress
+        boolean personalized
+        datetime created_at
+    }
+    
+    user_emotions {
+        string username FK
+        string session_id
+        string emotion
+        float confidence
+        object facial_features
+        datetime timestamp
+        string source
+    }
+    
+    therapeutic_sessions {
+        string session_id PK
+        string title
+        string objective
+        string initial_prompt
+        boolean is_active
+        datetime created_at
+    }
+    
+    users ||--o{ conversations : "has"
+    users ||--o{ messages : "sends"
+    users ||--o{ user_therapeutic_sessions : "participates"
+    users ||--o{ user_emotions : "expresses"
+    conversations ||--o{ messages : "contains"
+    therapeutic_sessions ||--o{ user_therapeutic_sessions : "based_on"
 ```
 
 ## 🛠️ Instalação e Configuração
@@ -168,8 +462,8 @@ empath-ia/
    ```
 
 4. **Acesse a aplicação**
-   - Interface principal: http://localhost:3000
-   - Painel admin: http://localhost:3001
+   - Interface principal: http://localhost:7860
+   - Painel admin: http://localhost:7861  
    - API Gateway: http://localhost:8000
    - Documentação API: http://localhost:8000/docs
 
@@ -194,6 +488,14 @@ make dev-voice       # Voice Service
 
 ## 🔧 Configuração de Serviços
 
+### OpenAI API
+
+Configure sua chave da OpenAI no arquivo `.env`:
+```bash
+OPENAI_API_KEY=sk-sua-chave-aqui
+MODEL_NAME=gpt-4o
+```
+
 ### Google Cloud Text-to-Speech
 
 1. **Crie um projeto no Google Cloud Console**
@@ -205,43 +507,55 @@ make dev-voice       # Voice Service
    cp sua-service-account.json services/voice-service/credentials/google-cloud-key.json
    ```
 
-### OpenAI API
-
-Configure sua chave da OpenAI no arquivo `.env`:
-```bash
-OPENAI_API_KEY=sk-sua-chave-aqui
-```
-
 ### MongoDB
 
-O MongoDB é configurado automaticamente via Docker. Para configuração personalizada:
+O MongoDB é configurado automaticamente via Docker:
 ```bash
-MONGODB_URI=mongodb://localhost:27017/empath_ia
-MONGODB_DATABASE=empath_ia
+MONGODB_URL=mongodb://admin:admin123@mongodb:27017/empatia_db?authSource=admin
+DATABASE_NAME=empatia_db
 ```
 
 ## 📚 Documentação das APIs
 
 ### Gateway Service (Porta 8000)
-- **POST** `/api/chat/send` - Enviar mensagem
+
+#### Sistema de Sessões Personalizadas
+- **GET** `/api/user/{username}/sessions` - Listar sessões do usuário
+- **GET** `/api/user/{username}/sessions/{session_id}` - Obter sessão específica
+- **POST** `/api/user/{username}/sessions/{session_id}/unlock` - Desbloquear sessão
+- **POST** `/api/user/{username}/sessions/{session_id}/start` - Iniciar sessão
+- **POST** `/api/user/{username}/sessions/{session_id}/complete` - Completar sessão
+- **GET** `/api/user/{username}/progress` - Progresso do usuário
+
+#### Chat com Contexto
+- **POST** `/api/chat/send` - Enviar mensagem com contexto
 - **GET** `/api/chat/history/{session_id}` - Buscar histórico
-- **GET** `/api/user/status/{session_id}` - Status do usuário
-- **POST** `/api/user/preferences` - Salvar preferências
+- **GET** `/api/chat/initial-message/{session_id}` - Mensagem inicial personalizada
+- **POST** `/api/chat/finalize/{session_id}` - Finalizar sessão
+- **GET** `/api/chat/context/{session_id}` - Contexto da sessão
+
+#### Análise Emocional
+- **GET** `/api/emotions/{username}` - Emoções do usuário
+- **GET** `/api/emotions/{username}/summary` - Resumo emocional
+- **GET** `/api/emotions/{username}/timeline` - Timeline emocional
+- **POST** `/api/emotion/analyze-realtime` - Análise em tempo real
+
+### AI Service (Porta 8001)
+- **POST** `/chat` - Conversa com contexto entre sessões
+- **POST** `/generate-session-context` - Gerar contexto de sessão
+- **POST** `/generate-next-session` - Gerar próxima sessão
+- **GET** `/health` - Status do serviço
 
 ### Voice Service (Porta 8004)
-- **POST** `/api/voice/synthesize` - Sintetizar áudio
+- **POST** `/api/voice/speak` - Sintetizar áudio
 - **GET** `/api/voice/voices` - Listar vozes disponíveis
 - **GET** `/health` - Status do serviço
 
 ### Emotion Service (Porta 8003)
-- **POST** `/api/emotion/analyze-text` - Análise textual
 - **POST** `/api/emotion/analyze-face` - Análise facial
-- **GET** `/api/emotion/history/{session_id}` - Histórico emocional
-
-### AI Service (Porta 8002)
-- **POST** `/api/ai/chat` - Conversa com IA
-- **GET** `/api/ai/context/{session_id}` - Contexto da sessão
-- **POST** `/api/ai/reset-context` - Resetar contexto
+- **POST** `/api/emotion/analyze-video` - Análise de vídeo
+- **POST** `/api/emotion/analyze-realtime` - Análise em tempo real
+- **GET** `/health` - Status do serviço
 
 ## 🎨 Vozes Disponíveis
 
@@ -281,39 +595,90 @@ make test-e2e
 
 ## 📊 Monitoramento
 
-### Métricas (Prometheus)
-- http://localhost:9090
+### Health Check Completo
+```bash
+curl http://localhost:8000/health/all
+```
 
-### Dashboards (Grafana)
-- http://localhost:3001
-- Usuário: admin / Senha: admin
+### Logs Estruturados
+```bash
+# Logs do Gateway
+docker logs empath-ia-gateway-service-1
 
-### Tracing (Jaeger)
-- http://localhost:16686
+# Logs do AI Service
+docker logs empath-ia-ai-service-1
+
+# Logs específicos por sessão
+docker logs empath-ia-gateway-service-1 | grep "session_id"
+```
 
 ## 🚀 Deploy em Produção
 
-### Docker Compose (Recomendado para desenvolvimento)
+### Docker Compose (Recomendado)
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml up -d
 ```
 
-### Kubernetes
+### Variáveis de Ambiente de Produção
 ```bash
-# Aplicar manifests
-kubectl apply -f infrastructure/kubernetes/manifests/
+# Produção
+DEBUG=false
+HOT_RELOAD=false
+ENABLE_SESSION_ISOLATION=true
+ENABLE_CONTEXT_GENERATION=true
+ENABLE_EMOTION_CAPTURE=true
+ENABLE_AUTO_SESSION_CREATION=true
 
-# Ou usar Helm
-helm install empath-ia infrastructure/kubernetes/helm/
+# Segurança
+ALLOWED_ORIGINS=https://seu-dominio.com
+CORS_ALLOW_CREDENTIALS=true
 ```
 
 ## 🔒 Segurança
 
-- **Rate Limiting**: Proteção contra spam e ataques
-- **CORS**: Configuração adequada para produção
-- **Sanitização**: Limpeza de inputs do usuário
-- **Logs**: Auditoria completa de ações
-- **Secrets**: Gerenciamento seguro de credenciais
+### Isolamento de Dados
+- **Sessões por Usuário**: Formato `username_session-id`
+- **Validação Dupla**: Filtro por `session_id` e `username`
+- **Contexto Protegido**: Apenas dados do próprio usuário
+- **Emoções Isoladas**: Dados emocionais completamente separados
+
+### Proteções Implementadas
+- ✅ **Rate Limiting**: Proteção contra spam
+- ✅ **CORS**: Configuração segura para produção
+- ✅ **Sanitização**: Limpeza de todos os inputs
+- ✅ **Logs Seguros**: Sem dados sensíveis em logs
+- ✅ **Validação**: Verificação de propriedade de sessões
+
+## 📋 Estrutura do Projeto
+
+```
+empath-ia/
+├── apps/                          # Aplicações frontend
+│   ├── web-ui/                   # Interface principal (React)
+│   └── admin-panel/              # Painel administrativo
+├── services/                      # Microserviços backend
+│   ├── gateway-service/          # API Gateway e orquestração
+│   ├── ai-service/               # Inteligência artificial
+│   ├── emotion-service/          # Análise emocional
+│   ├── voice-service/            # Síntese de voz
+│   └── avatar-service/           # Avatar 3D (em desenvolvimento)
+├── data/                         # Dados e uploads
+│   ├── shared/                   # Dados compartilhados
+│   ├── uploads/                  # Arquivos enviados
+│   └── tts_output/               # Arquivos de áudio
+├── docs/                         # Documentação
+│   ├── api/                      # Documentação das APIs
+│   ├── architecture/             # Diagramas e arquitetura
+│   └── user-guide/               # Guia do usuário
+├── scripts/                      # Scripts de automação
+│   ├── setup_models.sh           # Configuração de modelos
+│   ├── migrate_*.py              # Scripts de migração
+│   └── cleanup.sh                # Limpeza de dados
+├── infrastructure/               # Configurações de infraestrutura
+│   └── docker/                   # Dockerfiles base
+├── docker-compose.yml            # Orquestração completa
+└── Makefile                      # Comandos de automação
+```
 
 ## 🤝 Contribuição
 
@@ -327,6 +692,7 @@ helm install empath-ia infrastructure/kubernetes/helm/
 - **Python**: PEP 8, Black, isort
 - **JavaScript/TypeScript**: ESLint, Prettier
 - **Commits**: Conventional Commits
+- **Documentação**: Markdown com Mermaid para diagramas
 
 ## 📄 Licença
 
@@ -340,11 +706,12 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 
 ## 🙏 Agradecimentos
 
-- **Carl Rogers** - Inspiração para a abordagem terapêutica
-- **OpenAI** - Tecnologia de IA conversacional
-- **Google Cloud** - Síntese de voz de alta qualidade
+- **Carl Rogers** - Inspiração para a abordagem terapêutica centrada na pessoa
+- **OpenAI** - Tecnologia de IA conversacional avançada
+- **Google Cloud** - Síntese de voz neural de alta qualidade
+- **MongoDB** - Banco de dados flexível para dados complexos
 - **Comunidade Open Source** - Ferramentas e bibliotecas utilizadas
 
 ---
 
-**Empath.IA** - Transformando o cuidado mental através da tecnologia 💙
+**Empath.IA v2.0** - Terapia Virtual Inteligente com Continuidade e Personalização 🧠💙
