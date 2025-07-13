@@ -9,7 +9,7 @@ services:
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:-admin}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:-admin123}
-      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE:-empatia_db}
+      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE:-empatia}
     volumes:
       - mongodb_data:/data/db
       - ./scripts:/docker-entrypoint-initdb.d
@@ -67,10 +67,15 @@ services:
       - AI_SERVICE_PORT=${AI_SERVICE_PORT:-8001}
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MONGODB_URI=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - DATABASE_NAME=${DATABASE_NAME:-empatia}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     volumes:
       - ./services/ai-service:/app
     ports:
       - "${AI_SERVICE_PORT:-8001}:8001"
+    depends_on:
+      - mongodb
     networks:
       - empatia-network
     develop:

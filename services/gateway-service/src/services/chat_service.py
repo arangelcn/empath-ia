@@ -151,7 +151,7 @@ class ChatService:
             ai_message_id = await self._save_message(
                 session_id, 
                 "ai", 
-                ai_response_data["content"], 
+                ai_response_data["response"], 
                 ai_response_data.get("audio_url")
             )
             
@@ -175,7 +175,7 @@ class ChatService:
                     },
                     "ai_response": {
                         "id": ai_message_id,
-                        "content": ai_response_data["content"],
+                        "content": ai_response_data["response"],
                         "audioUrl": ai_response_data.get("audio_url"),
                         "provider": ai_response_data.get("provider", "unknown"),
                         "model": ai_response_data.get("model", "unknown")
@@ -226,7 +226,7 @@ class ChatService:
                     "type": msg["type"],
                     "content": msg["content"],
                     "audio_url": msg.get("audio_url"),
-                    "created_at": msg["created_at"]
+                    "created_at": msg["created_at"].isoformat() if msg.get("created_at") else None
                 })
             
             logger.info(f"📖 Histórico carregado para {session_id}: {len(history)} mensagens (username: {username})")
@@ -298,6 +298,16 @@ class ChatService:
         try:
             logger.info(f"🤖 Chamando AI Service para sessão: {session_id}")
             
+            # ✅ NOVO: Extrair username do session_id
+            username = self._extract_username_from_session_id(session_id)
+            if not username:
+                logger.error(f"❌ Não foi possível extrair username do session_id: {session_id}")
+                raise ValueError(f"Session ID inválido: {session_id}")
+            
+            # ✅ NOVO: Buscar perfil completo do usuário para enviar ao AI Service
+            user_profile = await self._get_user_profile(username)
+            logger.info(f"👤 Perfil do usuário {username}: {'encontrado' if user_profile else 'não encontrado'}")
+            
             # ✅ NOVO: Obter contexto da conversa atual
             conversation_history = await self._get_conversation_context(session_id)
             
@@ -308,49 +318,135 @@ class ChatService:
             ai_request = {
                 "message": user_message,
                 "session_id": session_id,
+                "username": username,  # ✅ NOVO: Incluir username
+                "user_profile": user_profile,  # ✅ NOVO: Perfil completo do usuário
                 "conversation_history": conversation_history,
                 "session_objective": session_objective,
                 "initial_prompt": initial_prompt,
                 "previous_session_context": previous_session_context  # ✅ NOVO: Contexto da sessão anterior
             }
             
-            logger.info(f"📤 Enviando para AI Service - mensagem: {user_message[:50]}..., histórico: {len(conversation_history)} msgs, contexto anterior: {'sim' if previous_session_context else 'não'}")
+            logger.info(f"📤 Enviando para AI Service - usuário: {username}, sessão: {session_id}, mensagem: {user_message[:50]}..., histórico: {len(conversation_history)} msgs, contexto anterior: {'sim' if previous_session_context else 'não'}")
             
-            # Chamar AI Service
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.ai_service_url}/chat",
-                    json=ai_request,
-                    headers={"Content-Type": "application/json"}
-                )
-                
-                if response.status_code == 200:
-                    ai_data = response.json()
-                    ai_content = ai_data.get("response", "Desculpe, não consegui processar sua mensagem.")
-                    
-                    logger.info(f"✅ Resposta recebida do AI Service: {ai_content[:100]}...")
-                    
-                    # Gerar áudio se habilitado
-                    audio_url = None
-                    if voice_enabled and selected_voice:
-                        audio_url = await self._generate_audio_if_available(ai_content, session_id, selected_voice)
-                    
-                    return {
-                        "content": ai_content,
-                        "audio_url": audio_url,
-                        "provider": ai_data.get("provider", "openai"),
-                        "model": ai_data.get("model", "gpt-3.5-turbo")
-                    }
+            # ✅ DEBUG: Log detalhado do que está sendo enviado
+            logger.info(f"🔍 DEBUG GATEWAY - Dados sendo enviados para AI Service:")
+            logger.info(f"  - message: {len(user_message)} chars")
+            logger.info(f"  - session_id: {session_id}")
+            logger.info(f"  - username: {username}")
+            logger.info(f"  - user_profile: {'✅' if user_profile else '❌'}")
+            logger.info(f"  - conversation_history: {len(conversation_history)} mensagens")
+            logger.info(f"  - session_objective: {'✅' if session_objective else '❌'}")
+            logger.info(f"  - initial_prompt: {'✅' if initial_prompt else '❌'}")
+            logger.info(f"  - previous_session_context: {'✅' if previous_session_context else '❌'}")
+            
+            if previous_session_context:
+                logger.info(f"🔍 DEBUG - previous_session_context sendo enviado: {len(str(previous_session_context))} chars")
+                logger.info(f"🔍 DEBUG - Chaves: {list(previous_session_context.keys()) if isinstance(previous_session_context, dict) else 'Não é dict'}")
+                if isinstance(previous_session_context, dict) and previous_session_context.get("registration_data"):
+                    reg_data = previous_session_context["registration_data"]
+                    if reg_data.get("ocupacao"):
+                        logger.info(f"🔍 DEBUG - Ocupação no registration_data: '{reg_data['ocupacao']}'")
+                    else:
+                        logger.warning(f"⚠️ DEBUG - Ocupação NÃO encontrada no registration_data")
                 else:
-                    logger.error(f"❌ AI Service retornou erro {response.status_code}: {response.text}")
-                    return self._get_fallback_response(user_message)
+                    logger.warning(f"⚠️ DEBUG - registration_data NÃO encontrado no previous_session_context")
+            else:
+                logger.error(f"❌ DEBUG - previous_session_context está VAZIO/NULO sendo enviado para AI Service!")
+            
+            # ✅ IMPLEMENTAÇÃO REAL: Chamar AI Service via HTTP
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        f"{self.ai_service_url}/chat",
+                        json=ai_request,
+                        headers={"Content-Type": "application/json"}
+                    )
                     
-        except httpx.ConnectError:
-            logger.error(f"❌ Não foi possível conectar ao AI Service: {self.ai_service_url}")
-            return self._get_fallback_response(user_message)
+                    if response.status_code == 200:
+                        ai_data = response.json()
+                        ai_response = ai_data.get("response", "")
+                        
+                        logger.info(f"✅ Resposta recebida do AI Service para {username}: {ai_response[:100]}...")
+                        
+                        ai_service_response = {
+                            "response": ai_response,
+                            "model": ai_data.get("model", "unknown"),
+                            "session_id": session_id,
+                            "username": username,
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "provider": ai_data.get("provider", "openai"),
+                            "success": True
+                        }
+                        
+                    else:
+                        logger.error(f"❌ AI Service retornou erro {response.status_code}: {response.text}")
+                        # Fallback para resposta padrão
+                        ai_service_response = self._get_fallback_response(user_message)
+                        ai_service_response.update({
+                            "session_id": session_id,
+                            "username": username,
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "error": f"AI Service HTTP {response.status_code}"
+                        })
+                        
+            except httpx.ConnectError:
+                logger.warning(f"⚠️ AI Service não disponível, usando resposta fallback para {username}")
+                ai_service_response = self._get_fallback_response(user_message)
+                ai_service_response.update({
+                    "session_id": session_id,
+                    "username": username,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "error": "AI Service unavailable"
+                })
+                
+            except Exception as http_error:
+                logger.error(f"❌ Erro na chamada HTTP para AI Service: {http_error}")
+                ai_service_response = self._get_fallback_response(user_message)
+                ai_service_response.update({
+                    "session_id": session_id,
+                    "username": username,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "error": str(http_error)
+                })
+            
+            # Usar a resposta do AI Service (ou fallback)
+            simulated_response = ai_service_response
+            
+            # Gerar áudio se habilitado
+            audio_url = None
+            if voice_enabled:
+                audio_url = await self._generate_audio(simulated_response['response'], selected_voice)
+            
+            return {
+                "response": simulated_response['response'],
+                "model": simulated_response['model'],
+                "session_id": session_id,
+                "username": username,  # ✅ NOVO: Username na resposta
+                "timestamp": simulated_response['timestamp'],
+                "provider": simulated_response['provider'],
+                "audio_url": audio_url,
+                "voice_enabled": voice_enabled,
+                "selected_voice": selected_voice
+            }
+            
         except Exception as e:
-            logger.error(f"❌ Erro ao chamar AI Service: {e}")
-            return self._get_fallback_response(user_message)
+            logger.error(f"❌ Erro ao obter resposta da IA: {e}")
+            
+            # Resposta de fallback
+            fallback_response = f"Desculpe, estou com dificuldades técnicas. Pode repetir sua mensagem?"
+            
+            return {
+                "response": fallback_response,
+                "model": "fallback",
+                "session_id": session_id,
+                "username": username if 'username' in locals() else "unknown",  # ✅ NOVO: Username mesmo no fallback
+                "timestamp": datetime.utcnow().isoformat(),
+                "provider": "fallback",
+                "audio_url": None,
+                "voice_enabled": voice_enabled,
+                "selected_voice": selected_voice,
+                "error": str(e)
+            }
 
     async def _get_previous_session_context(self, current_session_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -373,17 +469,24 @@ class ChatService:
             
             logger.info(f"🔍 Buscando contexto da sessão anterior: {previous_session_id}")
             
-            # Buscar contexto salvo da sessão anterior
-            conversations = get_collection("conversations")
-            previous_conversation = await conversations.find_one({"session_id": previous_session_id})
+            # ✅ CORREÇÃO: Buscar contexto na coleção session_contexts primeiro
+            session_contexts = get_collection("session_contexts")
+            context_doc = await session_contexts.find_one({"session_id": previous_session_id})
             
-            if previous_conversation and previous_conversation.get("session_context"):
-                context = previous_conversation["session_context"]
+            if context_doc:
+                context = context_doc.get("context", {})
                 logger.info(f"✅ Contexto encontrado da sessão anterior: {len(str(context))} chars")
                 
-                # Retornar apenas as informações mais relevantes para o AI Service
+                # Buscar registration_data da conversation se necessário
+                conversations = get_collection("conversations")
+                previous_conversation = await conversations.find_one({"session_id": previous_session_id})
+                
+                # Retornar contexto completo incluindo registration_data
                 return {
                     "session_id": previous_session_id,
+                    "registration_data": previous_conversation.get("registration_data", {}) if previous_conversation else {},  # ✅ NOVO: Dados de registro
+                    "session_context": context,  # ✅ NOVO: Contexto completo da sessão
+                    # Campos principais para compatibilidade
                     "summary": context.get("summary", ""),
                     "main_themes": context.get("main_themes", []),
                     "key_insights": context.get("key_insights", []),
@@ -392,14 +495,37 @@ class ChatService:
                     "user_progress": context.get("user_progress", {})
                 }
             else:
-                logger.warning(f"⚠️ Contexto não encontrado para sessão anterior: {previous_session_id}")
-                return None
+                # ✅ FALLBACK: Para sessões antigas que ainda têm contexto na coleção conversations
+                logger.warning(f"⚠️ Contexto não encontrado em session_contexts, tentando fallback para {previous_session_id}")
+                conversations = get_collection("conversations")
+                previous_conversation = await conversations.find_one({"session_id": previous_session_id})
+                
+                if previous_conversation and previous_conversation.get("session_context"):
+                    context = previous_conversation["session_context"]
+                    logger.info(f"✅ Contexto encontrado via fallback da sessão anterior: {len(str(context))} chars")
+                    
+                    # Retornar contexto completo incluindo registration_data
+                    return {
+                        "session_id": previous_session_id,
+                        "registration_data": previous_conversation.get("registration_data", {}),  # ✅ NOVO: Dados de registro
+                        "session_context": context,  # ✅ NOVO: Contexto completo da sessão
+                        # Campos principais para compatibilidade
+                        "summary": context.get("summary", ""),
+                        "main_themes": context.get("main_themes", []),
+                        "key_insights": context.get("key_insights", []),
+                        "emotional_state": context.get("emotional_state", {}),
+                        "future_sessions": context.get("future_sessions", {}),
+                        "user_progress": context.get("user_progress", {})
+                    }
+                else:
+                    logger.warning(f"⚠️ Contexto não encontrado para sessão anterior: {previous_session_id}")
+                    return None
                 
         except Exception as e:
             logger.error(f"❌ Erro ao buscar contexto da sessão anterior: {e}")
             return None
 
-    async def _generate_audio_if_available(self, text: str, session_id: str, voice: str) -> Optional[str]:
+    async def _generate_audio(self, text: str, voice: str) -> Optional[str]:
         """
         Gerar áudio via Voice Service se disponível
         """
@@ -452,7 +578,7 @@ class ChatService:
         ai_response_text = default_responses[response_index]
         
         return {
-            "content": ai_response_text,
+            "response": ai_response_text,
             "audio_url": None,
             "provider": "fallback",
             "model": "empathic_fallback"
@@ -590,6 +716,7 @@ class ChatService:
             
             # ✅ CORREÇÃO: Para session-1 (cadastro), aceitar qualquer quantidade de mensagens
             # pois pode ser finalizada antes de completar todo o questionário
+            # A session-1 tem lógica especial: dados de cadastro em registration_data + contexto normal
             original_session_id = session_id.split('_')[-1] if '_' in session_id else session_id
             is_registration_session = original_session_id == "session-1"
             
@@ -602,14 +729,48 @@ class ChatService:
             # Gerar contexto usando IA
             context_data = await self._generate_session_context(session_id, messages, manual_termination)
             
-            # Salvar contexto na conversa
+            # ✅ CORREÇÃO: Salvar contexto apenas na coleção session_contexts (eliminar duplicação)
             if context_data:
+                session_contexts = get_collection("session_contexts")
                 conversations = get_collection("conversations")
+                
+                # Verificar se o contexto já foi salvo na coleção session_contexts pelo SessionContextService
+                context_doc = await session_contexts.find_one({"session_id": session_id})
+                
+                if not context_doc:
+                    # Se não foi salvo pelo SessionContextService, salvar agora (fallback para análise básica)
+                    logger.info(f"💾 Salvando contexto na coleção session_contexts (fallback): {session_id}")
+                    
+                    # Extrair username do session_id
+                    username = self._extract_username_from_session_id(session_id)
+                    
+                    # Criar documento para session_contexts
+                    context_document = {
+                        "session_id": session_id,
+                        "username": username,
+                        "context": context_data,
+                        "conversation_text": self._format_conversation_for_analysis(
+                            (await self.get_conversation_history(session_id)).get("history", [])
+                        ),
+                        "created_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow(),
+                        "emotions_data": [],
+                        "is_active": True,
+                        "source": "gateway_fallback",
+                        "version": 1
+                    }
+                    
+                    # Salvar na coleção session_contexts
+                    result = await session_contexts.insert_one(context_document)
+                    context_doc = {"_id": result.inserted_id}
+                    logger.info(f"✅ Contexto salvo na coleção session_contexts: {session_id}")
+                
+                # Salvar apenas referência na coleção conversations
                 update_result = await conversations.update_one(
                     {"session_id": session_id},
                     {
                         "$set": {
-                            "session_context": context_data,
+                            "session_context_ref": context_doc["_id"],  # Referência ao documento
                             "context_generated_at": datetime.utcnow(),
                             "session_finalized": True,
                             "manual_termination": manual_termination,
@@ -619,7 +780,7 @@ class ChatService:
                 )
                 
                 if update_result.modified_count > 0:
-                    logger.info(f"✅ Contexto salvo para sessão: {session_id}")
+                    logger.info(f"✅ Contexto referenciado para sessão: {session_id}")
                     
                     # ✅ NOVO: Criar próxima sessão automaticamente
                     next_session_result = await self._create_next_session_automatically(session_id, context_data)
@@ -631,8 +792,8 @@ class ChatService:
                         "next_session": next_session_result
                     }
                 else:
-                    logger.error(f"❌ Falha ao salvar contexto: {session_id}")
-                    return {"success": False, "error": "Falha ao salvar contexto"}
+                    logger.error(f"❌ Falha ao referenciar contexto: {session_id}")
+                    return {"success": False, "error": "Falha ao referenciar contexto"}
             else:
                 logger.error(f"❌ Falha ao gerar contexto: {session_id}")
                 return {"success": False, "error": "Falha ao gerar contexto"}
@@ -718,42 +879,128 @@ class ChatService:
 
     def _extract_username_from_session_id(self, session_id: str) -> Optional[str]:
         """
-        Extrair username do session_id formato: username_session-X
+        Extrair username do session_id no formato 'username_session-X'
         """
         try:
+            if not session_id:
+                return None
+                
+            # Formato esperado: "username_session-X"
             if "_" in session_id:
-                # Formato: "teste_01_session-1" -> "teste_01"
-                parts = session_id.split("_")
-                if len(parts) >= 2:
-                    # Remover a última parte que é o session-X
-                    username_parts = parts[:-1]
-                    return "_".join(username_parts)
+                # Encontrar o último "_" para lidar com usernames que contêm underscores
+                last_underscore_index = session_id.rfind("_")
+                if last_underscore_index != -1:
+                    username = session_id[:last_underscore_index]
+                    session_part = session_id[last_underscore_index + 1:]
+                    
+                    # Validar que a parte da sessão tem formato correto
+                    if session_part.startswith("session-"):
+                        return username
+                    else:
+                        logger.warning(f"⚠️ Formato de session_id inválido: {session_id}")
+                        return None
+                else:
+                    logger.warning(f"⚠️ Underscore não encontrado em session_id: {session_id}")
+                    return None
+            else:
+                # Para sessões legacy sem username
+                if session_id in ["default", "test"]:
+                    return "anonymous"
+                else:
+                    logger.warning(f"⚠️ Session ID sem username: {session_id}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"❌ Erro ao extrair username do session_id {session_id}: {e}")
             return None
-        except Exception:
-            return None
+
+    def _validate_session_ownership(self, session_id: str, username: str) -> bool:
+        """
+        Validar se o usuário tem acesso à sessão
+        """
+        try:
+            extracted_username = self._extract_username_from_session_id(session_id)
+            if not extracted_username:
+                logger.error(f"❌ Não foi possível extrair username do session_id: {session_id}")
+                return False
+                
+            if extracted_username != username:
+                logger.error(f"❌ Tentativa de acesso não autorizado: {username} tentou acessar sessão de {extracted_username}")
+                return False
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao validar propriedade da sessão: {e}")
+            return False
 
     async def _get_user_profile(self, username: str) -> Dict[str, Any]:
         """
-        Buscar perfil completo do usuário
+        Buscar perfil completo do usuário incluindo dados de registration_data da sessão-1
         """
         try:
             users = get_collection("users")
+            conversations = get_collection("conversations")
+            
+            # 1. Buscar dados estruturados do usuário (se existir)
             user = await users.find_one({"username": username})
+            user_profile = {}
             
             if user and user.get("user_profile"):
-                return user["user_profile"]
+                user_profile = user["user_profile"]
+                logger.info(f"✅ Perfil estruturado encontrado para {username}")
+            
+            # 2. ✅ NOVO: Buscar registration_data da sessão-1 para integrar ao perfil
+            session_1_id = f"{username}_session-1"
+            session_1_data = await conversations.find_one({"session_id": session_1_id})
+            
+            if session_1_data and session_1_data.get("registration_data"):
+                registration_data = session_1_data["registration_data"]
+                logger.info(f"✅ Registration data da sessão-1 encontrado para {username}")
+                
+                # Integrar registration_data ao user_profile
+                user_profile["registration_data"] = registration_data
+                user_profile["username"] = username
+                
+                # ✅ NOVO: Criar summary baseado no registration_data se não existir
+                if not user_profile.get("profile_summary"):
+                    summary_parts = []
+                    if registration_data.get("idade"):
+                        summary_parts.append(f"{registration_data['idade']} anos")
+                    if registration_data.get("ocupacao"):
+                        if "engenheiro de dados" in registration_data["ocupacao"].lower():
+                            summary_parts.append("engenheiro de dados")
+                        elif "professor" in registration_data["ocupacao"].lower():
+                            summary_parts.append("professor")
+                    if registration_data.get("localizacao"):
+                        summary_parts.append(f"de {registration_data['localizacao']}")
+                    
+                    if summary_parts:
+                        user_profile["profile_summary"] = f"Usuário {username}: {', '.join(summary_parts)}"
+                
+                return user_profile
+            
+            # 3. Fallback: retornar perfil básico ou vazio
+            if user_profile:
+                logger.info(f"✅ Perfil parcial encontrado para {username}")
+                return user_profile
             else:
-                logger.warning(f"⚠️ Perfil do usuário não encontrado: {username}")
+                logger.warning(f"⚠️ Nenhum dado de perfil encontrado para {username}")
                 return {
+                    "username": username,
+                    "profile_summary": f"Usuário {username} - dados limitados",
+                    "registration_data": {},
                     "personal_info": {},
-                    "social_info": {},
-                    "therapeutic_info": {},
-                    "profile_summary": f"Usuário {username} - perfil básico"
+                    "therapeutic_info": {}
                 }
                 
         except Exception as e:
             logger.error(f"❌ Erro ao buscar perfil do usuário {username}: {e}")
-            return {}
+            return {
+                "username": username,
+                "profile_summary": f"Usuário {username} - erro ao carregar dados",
+                "error": str(e)
+            }
 
     async def _call_ai_service_for_next_session(self, user_profile: Dict[str, Any], session_context: Dict[str, Any], current_session_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -946,27 +1193,27 @@ class ChatService:
             # Criar prompt específico para gerar contexto
             context_prompt = self._create_context_generation_prompt(session_id, conversation_text, manual_termination)
             
-            # Fazer chamada para AI Service
+            # Fazer chamada para SessionContextService
             ai_response = await self._call_ai_service_for_context(context_prompt, session_id)
             
             if ai_response and ai_response.get("success"):
-                # Processar resposta da IA
-                context_data = self._parse_ai_context_response(ai_response.get("response", ""))
+                # Usar contexto estruturado do SessionContextService
+                context_data = ai_response.get("context_data", {})
                 
                 # Adicionar metadados
                 context_data.update({
                     "session_id": session_id,
                     "total_messages": len(messages),
                     "generated_at": datetime.utcnow().isoformat(),
-                    "generation_method": "ai_service",
+                    "generation_method": "session_context_service",
                     "manual_termination": manual_termination,
                     "conversation_duration_estimate": self._estimate_conversation_duration(messages)
                 })
                 
-                logger.info(f"✅ Contexto gerado com sucesso para sessão: {session_id}")
+                logger.info(f"✅ Contexto gerado com sucesso pelo SessionContextService para sessão: {session_id}")
                 return context_data
             else:
-                logger.warning(f"⚠️ IA não disponível, usando análise básica para sessão: {session_id}")
+                logger.warning(f"⚠️ SessionContextService não disponível, usando análise básica para sessão: {session_id}")
                 return await self._generate_basic_context(session_id, messages, manual_termination)
                 
         except Exception as e:
@@ -1050,48 +1297,66 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
     
     async def _call_ai_service_for_context(self, prompt: str, session_id: str) -> Optional[Dict[str, Any]]:
         """
-        Chamar AI Service para gerar contexto da sessão
+        Chamar AI Service para gerar contexto da sessão usando o SessionContextService
         """
         try:
-            logger.info(f"🤖 Chamando AI Service para gerar contexto da sessão: {session_id}")
+            logger.info(f"🤖 Chamando SessionContextService para gerar contexto da sessão: {session_id}")
             
-            # Preparar dados para o AI Service
+            # Obter histórico da conversa para enviar ao SessionContextService
+            history_data = await self.get_conversation_history(session_id)
+            messages = history_data.get("history", [])
+            
+            # Converter mensagens para texto de conversa
+            conversation_text = self._format_conversation_for_analysis(messages)
+            
+            # Extrair username do session_id
+            username = self._extract_username_from_session_id(session_id)
+            
+            # Preparar dados para o SessionContextService
             ai_request = {
-                "message": prompt,
                 "session_id": session_id,
-                "conversation_history": [],
-                "session_objective": None,
-                "initial_prompt": None,
-                "context_generation": True  # Flag para indicar que é geração de contexto
+                "username": username,
+                "conversation_text": conversation_text,
+                "emotions_data": [],  # Poderá ser usado no futuro
+                "manual_termination": True,  # Como é chamado manualmente
+                "additional_context": {
+                    "analysis_prompt": prompt,
+                    "total_messages": len(messages)
+                }
             }
             
-            # Chamar AI Service
+            # Chamar o endpoint correto do SessionContextService
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
-                    f"{self.ai_service_url}/chat",
+                    f"{self.ai_service_url}/openai/generate-session-context",
                     json=ai_request,
                     headers={"Content-Type": "application/json"}
                 )
                 
                 if response.status_code == 200:
                     ai_data = response.json()
-                    ai_response = ai_data.get("response", "")
                     
-                    logger.info(f"✅ Contexto gerado pelo AI Service para {session_id}")
-                    
-                    return {
-                        "success": True,
-                        "response": ai_response
-                    }
+                    # Verificar se foi bem-sucedido
+                    if ai_data.get("success"):
+                        context_data = ai_data.get("context", {})
+                        logger.info(f"✅ Contexto gerado pelo SessionContextService para {session_id}")
+                        
+                        return {
+                            "success": True,
+                            "context_data": context_data
+                        }
+                    else:
+                        logger.error(f"❌ SessionContextService retornou erro: {ai_data.get('error', 'Erro desconhecido')}")
+                        return None
                 else:
-                    logger.error(f"❌ AI Service retornou erro {response.status_code}: {response.text}")
+                    logger.error(f"❌ SessionContextService retornou erro {response.status_code}: {response.text}")
                     return None
                     
         except httpx.ConnectError:
-            logger.warning(f"⚠️ AI Service não disponível, usando análise básica para {session_id}")
+            logger.warning(f"⚠️ SessionContextService não disponível, usando análise básica para {session_id}")
             return None
         except Exception as e:
-            logger.error(f"❌ Erro ao chamar AI Service para contexto: {e}")
+            logger.error(f"❌ Erro ao chamar SessionContextService para contexto: {e}")
             return None
     
     def _parse_ai_context_response(self, ai_response: str) -> Dict[str, Any]:
@@ -1221,12 +1486,12 @@ RESPONDA EM FORMATO JSON com as seguintes chaves:
 RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
 """
             
-            # Tentar usar AI Service primeiro
+            # Tentar usar SessionContextService primeiro
             ai_response = await self._call_ai_service_for_context(context_prompt, session_id)
             
             if ai_response and ai_response.get("success"):
-                # Processar resposta da IA
-                context_data = self._parse_ai_context_response(ai_response.get("response", ""))
+                # Usar contexto estruturado do SessionContextService
+                context_data = ai_response.get("context_data", {})
                 
                 if context_data:
                     # Adicionar metadados específicos do cadastro
@@ -1236,15 +1501,15 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
                         "total_messages": len(user_messages + ai_messages),
                         "user_responses": len(user_messages),
                         "generated_at": datetime.utcnow().isoformat(),
-                        "generation_method": "ai_service_registration",
+                        "generation_method": "session_context_service_registration",
                         "manual_termination": manual_termination
                     })
                     
-                    logger.info(f"✅ Contexto de cadastro gerado via AI Service para {session_id}")
+                    logger.info(f"✅ Contexto de cadastro gerado via SessionContextService para {session_id}")
                     return context_data
             
             # Fallback para análise básica
-            logger.warning(f"⚠️ AI Service não disponível, usando análise básica para cadastro {session_id}")
+            logger.warning(f"⚠️ SessionContextService não disponível, usando análise básica para cadastro {session_id}")
             return self._generate_fallback_registration_context(session_id, user_messages, ai_messages)
             
         except Exception as e:
@@ -1509,15 +1774,27 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
     
     async def get_session_context(self, session_id: str) -> Optional[Dict[str, Any]]:
         """
-        Obter contexto salvo de uma sessão
+        Obter contexto salvo de uma sessão - busca na coleção session_contexts
         """
         try:
-            conversation = await self.get_conversation_by_session_id(session_id)
+            # ✅ CORREÇÃO: Buscar contexto na coleção session_contexts para eliminar duplicação
+            session_contexts = get_collection("session_contexts")
+            context_doc = await session_contexts.find_one({"session_id": session_id})
             
-            if conversation and conversation.get("session_context"):
-                return conversation["session_context"]
+            if context_doc:
+                logger.info(f"✅ Contexto encontrado na coleção session_contexts: {session_id}")
+                return context_doc.get("context", {})
             else:
-                return None
+                # ✅ FALLBACK: Para sessões antigas que ainda têm contexto na coleção conversations
+                logger.warning(f"⚠️ Contexto não encontrado em session_contexts, tentando fallback para {session_id}")
+                conversation = await self.get_conversation_by_session_id(session_id)
+                
+                if conversation and conversation.get("session_context"):
+                    logger.info(f"✅ Contexto encontrado via fallback em conversations: {session_id}")
+                    return conversation["session_context"]
+                else:
+                    logger.warning(f"⚠️ Contexto não encontrado para sessão: {session_id}")
+                    return None
                 
         except Exception as e:
             logger.error(f"❌ Erro ao obter contexto da sessão {session_id}: {e}")

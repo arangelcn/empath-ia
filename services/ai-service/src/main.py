@@ -28,6 +28,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Incluir rotas do OpenAI
+from .api.openai_routes import router as openai_router
+app.include_router(openai_router)
+
 def generate_therapeutic_response(user_message: str) -> str:
     """
     Gera resposta terapêutica baseada na mensagem do usuário
@@ -84,57 +88,158 @@ async def root():
         "docs": "/docs"
     }
 
-# Importar serviço OpenAI
+# Importar serviços
 from .services.openai_service import OpenAIService
 
-# Inicializar serviço OpenAI
+# Inicializar serviços
 openai_service = OpenAIService()
+token_economy_service = None  # Será inicializado na startup
+
+# Evento de startup para inicializar nova arquitetura
+@app.on_event("startup")
+async def startup_event():
+    """Inicializar nova arquitetura MongoDB + Redis na startup"""
+    try:
+        from .services.token_economy_service import TokenEconomyService
+        token_economy_service = TokenEconomyService()
+        await token_economy_service.initialize()
+        logger.info("✅ TokenEconomyService inicializado com sucesso")
+        logger.info("✅ Nova arquitetura MongoDB (repositório) + Redis (performance) inicializada")
+    except Exception as e:
+        logger.warning(f"⚠️ Erro ao inicializar nova arquitetura: {e}")
 
 # Chat endpoint (melhorado)
 @app.post("/chat")
 async def chat(message: dict):
     """
-    Endpoint principal para conversas de chat
+    Endpoint principal para conversas de chat com isolamento por usuário
     """
     user_message = message.get("message", "")
     session_id = message.get("session_id", "default")
+    username = message.get("username", "")  # ✅ NOVO: Username obrigatório
+    user_profile = message.get("user_profile", None)  # ✅ NOVO: Perfil do usuário
     conversation_history = message.get("conversation_history", None)
     session_objective = message.get("session_objective", None)
     initial_prompt = message.get("initial_prompt", None)
+    previous_session_context = message.get("previous_session_context", None)  # ✅ EXTRAIR: Contexto da sessão anterior
+    
+    # ✅ DEBUG: Log detalhado do que foi recebido
+    logger.info(f"🔍 DEBUG ENDPOINT /chat - Campos recebidos:")
+    logger.info(f"  - message: {'✅' if user_message else '❌'}")
+    logger.info(f"  - session_id: {'✅' if session_id else '❌'}")
+    logger.info(f"  - username: {'✅' if username else '❌'}")
+    logger.info(f"  - user_profile: {'✅' if user_profile else '❌'}")
+    logger.info(f"  - conversation_history: {'✅' if conversation_history else '❌'} ({len(conversation_history) if conversation_history else 0} mensagens)")
+    logger.info(f"  - session_objective: {'✅' if session_objective else '❌'}")
+    logger.info(f"  - initial_prompt: {'✅' if initial_prompt else '❌'}")
+    logger.info(f"  - previous_session_context: {'✅' if previous_session_context else '❌'}")
+    
+    if previous_session_context:
+        logger.info(f"🔍 DEBUG - previous_session_context recebido: {len(str(previous_session_context))} chars")
+        logger.info(f"🔍 DEBUG - Chaves do previous_session_context: {list(previous_session_context.keys()) if isinstance(previous_session_context, dict) else 'Não é dict'}")
+    else:
+        logger.warning(f"⚠️ DEBUG - previous_session_context está VAZIO ou NULO!")
     
     try:
+        # ✅ NOVO: Validar parâmetros obrigatórios
+        if not username or not username.strip():
+            logger.error("❌ Username não fornecido no chat endpoint")
+            return {
+                "error": "Username é obrigatório",
+                "service": "ai-service",
+                "status": "error",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        if not session_id or not session_id.strip():
+            logger.error("❌ Session ID não fornecido no chat endpoint")
+            return {
+                "error": "Session ID é obrigatório",
+                "service": "ai-service",
+                "status": "error",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        if not user_message or not user_message.strip():
+            logger.error("❌ Mensagem não fornecida no chat endpoint")
+            return {
+                "error": "Mensagem é obrigatória",
+                "service": "ai-service",
+                "status": "error",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        logger.info(f"🔗 Chat endpoint: {username} -> {session_id}")
+        
+        # ✅ NOVO: Cachear perfil do usuário se fornecido
+        if user_profile:
+            openai_service.cache_user_profile(username, user_profile)
+            logger.info(f"💾 Perfil do usuário {username} cacheado no AI Service")
+        
         # Usar OpenAI se disponível, senão fallback
-        result = await openai_service.generate_therapeutic_response(
+        response = await openai_service.generate_therapeutic_response(
             user_message=user_message,
             session_id=session_id,
+            username=username,  # ✅ NOVO: Passar username
             conversation_history=conversation_history,
             session_objective=session_objective,
-            initial_prompt=initial_prompt
+            initial_prompt=initial_prompt,
+            previous_session_context=previous_session_context  # ✅ CORRIGIDO: Usar variável extraída
         )
         
         return {
-            "response": result["response"],
+            "response": response["response"],
             "service": "ai-service",
             "status": "active",
             "session_id": session_id,
+            "username": username,  # ✅ NOVO: Incluir username na resposta
             "timestamp": datetime.now().isoformat(),
-            "provider": result.get("provider", "fallback"),
-            "model": result.get("model", "fallback")
+            "provider": response.get("provider", "fallback"),
+            "model": response.get("model", "fallback")
         }
         
+    except ValueError as e:
+        # ✅ NOVO: Capturar erros de validação específicos
+        logger.error(f"❌ Erro de validação no chat: {e}")
+        return {
+            "error": str(e),
+            "service": "ai-service",
+            "status": "error",
+            "session_id": session_id,
+            "username": username,
+            "timestamp": datetime.now().isoformat(),
+            "provider": "error",
+            "model": "error"
+        }
     except Exception as e:
         logger.error(f"❌ Erro no chat: {e}")
-        # Fallback para resposta básica
-        response_text = generate_therapeutic_response(user_message)
-        return {
-            "response": response_text,
-            "service": "ai-service",
-            "status": "active",
-            "session_id": session_id,
-            "timestamp": datetime.now().isoformat(),
-            "provider": "fallback",
-            "model": "fallback"
-        }
+        # Fallback para resposta básica usando OpenAIService
+        try:
+            fallback_response = await openai_service._fallback_response(user_message, username)
+            return {
+                "response": fallback_response["response"],
+                "service": "ai-service",
+                "status": "active",
+                "session_id": session_id,
+                "username": username,
+                "timestamp": datetime.now().isoformat(),
+                "provider": "fallback_emergency",
+                "model": "fallback"
+            }
+        except Exception as fallback_error:
+            logger.error(f"❌ Erro no fallback: {fallback_error}")
+            # Último recurso - resposta hardcoded
+            response_text = generate_therapeutic_response(user_message)
+            return {
+                "response": response_text,
+                "service": "ai-service",
+                "status": "active",
+                "session_id": session_id,
+                "username": username,
+                "timestamp": datetime.now().isoformat(),
+                "provider": "hardcoded_fallback",
+                "model": "fallback"
+            }
 
 # Endpoint para configurações
 @app.get("/config")

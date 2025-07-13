@@ -15,6 +15,7 @@ from .services.user_service import UserService
 from .services.therapeutic_session_service import TherapeuticSessionService
 from .services.user_therapeutic_session_service import UserTherapeuticSessionService
 from .services.user_emotion_service import UserEmotionService
+from .services.prompt_service import PromptService
 from .api.admin import router as admin_router
 
 # Configurar logging
@@ -71,6 +72,7 @@ user_service = UserService()
 therapeutic_session_service = TherapeuticSessionService()
 user_therapeutic_session_service = UserTherapeuticSessionService()
 user_emotion_service = UserEmotionService()
+prompt_service = PromptService()
 
 # Incluir rotas de administração
 app.include_router(admin_router)
@@ -1377,6 +1379,120 @@ Como você está se sentindo hoje? O que gostaria de conversar comigo?"""
             "success": False,
             "error": f"Erro ao gerar mensagem inicial: {str(e)}"
         }
+
+# === ENDPOINTS DE GERENCIAMENTO DE PROMPTS ===
+
+@app.post("/api/prompts")
+async def create_prompt(prompt_data: dict):
+    """Criar novo prompt"""
+    try:
+        result = await prompt_service.create_prompt(prompt_data)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"❌ Erro ao criar prompt: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.get("/api/prompts/{prompt_key}")
+async def get_prompt(prompt_key: str):
+    """Buscar prompt por chave"""
+    try:
+        prompt = await prompt_service.get_prompt(prompt_key)
+        if not prompt:
+            raise HTTPException(status_code=404, detail="Prompt não encontrado")
+        return prompt
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar prompt: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.get("/api/prompts/active/{prompt_key}")
+async def get_active_prompt(prompt_key: str):
+    """Buscar prompt ativo por chave"""
+    try:
+        prompt = await prompt_service.get_active_prompt(prompt_key)
+        if not prompt:
+            raise HTTPException(status_code=404, detail="Prompt ativo não encontrado")
+        return prompt
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar prompt ativo: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.put("/api/prompts/{prompt_key}")
+async def update_prompt(prompt_key: str, update_data: dict):
+    """Atualizar prompt"""
+    try:
+        result = await prompt_service.update_prompt(prompt_key, update_data)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"❌ Erro ao atualizar prompt: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.delete("/api/prompts/{prompt_key}")
+async def delete_prompt(prompt_key: str):
+    """Deletar prompt (soft delete)"""
+    try:
+        result = await prompt_service.delete_prompt(prompt_key)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"❌ Erro ao deletar prompt: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.get("/api/prompts")
+async def list_prompts(prompt_type: Optional[str] = None, active_only: bool = True):
+    """Listar prompts com filtros"""
+    try:
+        prompts = await prompt_service.list_prompts(prompt_type=prompt_type, active_only=active_only)
+        return {"prompts": prompts}
+    except Exception as e:
+        logger.error(f"❌ Erro ao listar prompts: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.get("/api/prompts/type/{prompt_type}")
+async def get_prompts_by_type(prompt_type: str):
+    """Buscar prompts por tipo"""
+    try:
+        prompts = await prompt_service.get_prompts_by_type(prompt_type)
+        return {"prompts": prompts}
+    except Exception as e:
+        logger.error(f"❌ Erro ao buscar prompts por tipo: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.post("/api/prompts/render/{prompt_key}")
+async def render_prompt(prompt_key: str, variables: dict):
+    """Renderizar prompt com variáveis"""
+    try:
+        rendered = await prompt_service.render_prompt(prompt_key, variables)
+        if not rendered:
+            raise HTTPException(status_code=404, detail="Prompt não encontrado ou não pôde ser renderizado")
+        return {"rendered_content": rendered}
+    except Exception as e:
+        logger.error(f"❌ Erro ao renderizar prompt: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.get("/api/prompts/stats")
+async def get_prompt_stats():
+    """Obter estatísticas dos prompts"""
+    try:
+        stats = await prompt_service.get_prompt_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"❌ Erro ao obter estatísticas de prompts: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.post("/api/prompts/initialize")
+async def initialize_default_prompts():
+    """Inicializar prompts padrão do sistema"""
+    try:
+        result = await prompt_service.create_default_prompts()
+        return result
+    except Exception as e:
+        logger.error(f"❌ Erro ao inicializar prompts padrão: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 if __name__ == "__main__":
     import uvicorn

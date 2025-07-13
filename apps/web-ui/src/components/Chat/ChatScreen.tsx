@@ -369,6 +369,7 @@ const ChatScreen = ({ username }) => {
     if (isFinalizing) return;
     
     setIsFinalizing(true);
+    console.log('🔚 Iniciando finalização da sessão:', currentSessionId);
     
     try {
       const response = await fetch(`/api/chat/finalize/${currentSessionId}`, {
@@ -377,17 +378,23 @@ const ChatScreen = ({ username }) => {
       });
       
       const result = await response.json();
+      console.log('📋 Resultado da finalização:', result);
       
       if (result.success) {
+        console.log('✅ Sessão finalizada com sucesso');
+        console.log('📄 Contexto da sessão:', result.data.context);
+        
         setIsConversationEnded(true);
         setSessionContext(result.data.context);
         setShowSessionSummary(true);
         setShowFinalizeButton(false);
+        
+        console.log('🎯 States atualizados - Modal deve aparecer agora');
       } else {
-        console.error('Erro ao finalizar sessão:', result);
+        console.error('❌ Erro ao finalizar sessão:', result);
       }
     } catch (error) {
-      console.error('Erro na finalização da sessão:', error);
+      console.error('❌ Erro na finalização da sessão:', error);
     } finally {
       setIsFinalizing(false);
     }
@@ -416,7 +423,18 @@ const ChatScreen = ({ username }) => {
 
   // Modal de resumo da sessão
   const SessionSummaryModal = () => {
-    if (!showSessionSummary || !sessionContext) return null;
+    console.log('🔍 SessionSummaryModal - States:', {
+      showSessionSummary,
+      sessionContext,
+      hasContext: !!sessionContext
+    });
+    
+    if (!showSessionSummary || !sessionContext) {
+      console.log('⚠️ Modal não será mostrado - showSessionSummary:', showSessionSummary, 'sessionContext:', !!sessionContext);
+      return null;
+    }
+    
+    console.log('✅ Modal será mostrado com contexto:', sessionContext);
     
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">

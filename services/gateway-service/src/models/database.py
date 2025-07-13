@@ -153,7 +153,17 @@ async def create_indexes():
         await user_emotions.create_index("face_detected")
         await user_emotions.create_index([("username", 1), ("session_id", 1), ("timestamp", -1)])
         
-        logger.info("✅ Índices MongoDB criados com melhorias de segurança e suporte a emoções")
+        # Índices para prompts
+        prompts = get_collection("prompts")
+        await prompts.create_index("prompt_key", unique=True)
+        await prompts.create_index("prompt_type")
+        await prompts.create_index("is_active")
+        await prompts.create_index("created_at")
+        await prompts.create_index("updated_at")
+        await prompts.create_index([("prompt_type", 1), ("is_active", 1)])
+        await prompts.create_index([("tags", 1)])
+        
+        logger.info("✅ Índices MongoDB criados com melhorias de segurança, suporte a emoções e gerenciamento de prompts")
         
     except Exception as e:
         logger.error(f"❌ Erro ao criar índices: {e}")

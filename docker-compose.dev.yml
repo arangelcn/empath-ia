@@ -10,7 +10,7 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-admin123}
-      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-empatia_db}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-empatia}
       DOCKER_ENV: "true"
     volumes:
       - mongodb_data_dev:/data/db
@@ -64,8 +64,8 @@ services:
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia_db?authSource=admin}
-      - DATABASE_NAME=${DATABASE_NAME:-empatia_db}
+      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - DATABASE_NAME=${DATABASE_NAME:-empatia}
       - SQL_DEBUG=${DEBUG:-true}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7860,http://localhost:3000}
@@ -95,7 +95,13 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - MODEL_NAME=${MODEL_NAME:-gpt-4o}
       - HOT_RELOAD=${HOT_RELOAD:-true}
+      - MONGODB_URI=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - DATABASE_NAME=${DATABASE_NAME:-empatia}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--log-level", "debug"]
+    depends_on:
+      - mongodb
+      - redis
     networks:
       - empatia-network
 

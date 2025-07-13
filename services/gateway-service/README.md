@@ -4,6 +4,34 @@
 
 O **Gateway Service** é o coração da arquitetura do Empath.IA, funcionando como um **API Gateway** que orquestra todos os microserviços, gerencia a persistência de dados no MongoDB, e coordena o sistema de sessões terapêuticas personalizadas por usuário.
 
+## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**
+
+### ✅ **Eliminação de Duplicação de Contextos**
+- **Problema Resolvido**: Contextos eram salvos duplicadamente em `conversations.session_context` e `session_contexts`
+- **Nova Arquitetura**: 
+  - `session_contexts` → **Fonte principal** para contextos estruturados
+  - `conversations.session_context_ref` → **Referência** ao documento em `session_contexts`
+  - **Fallback** mantido para sessões antigas
+- **Benefícios**: Redução significativa de espaço em disco e consistência de dados
+
+### ✅ **Integração SessionContextService Corrigida**
+- **Problema**: Gateway chamava endpoint incorreto `/chat` em vez de `/openai/generate-session-context`
+- **Correção**: Integração completa com SessionContextService do AI Service
+- **Formato Correto**: Envia `conversation_text` e `username` conforme esperado
+- **Processamento**: Resposta estruturada processada corretamente
+- **Persistência**: Contextos salvos diretamente na coleção `session_contexts`
+
+### ✅ **Continuidade Terapêutica Aprimorada**
+- **Contexto Anterior**: Método `_get_previous_session_context` otimizado
+- **Busca Inteligente**: Prioriza `session_contexts`, fallback para `conversations`
+- **Session-1 Preservada**: Lógica especial de cadastro mantida intacta
+- **Dados Completos**: Inclui `registration_data` junto com contexto terapêutico
+
+### ✅ **Serialização JSON Corrigida**
+- **Problema**: Campos `datetime` causavam erro de serialização
+- **Correção**: Conversão automática para ISO string com `isoformat()`
+- **Compatibilidade**: Dados temporais preservados em formato padrão
+
 ## 🏗️ Arquitetura
 
 ### **Serviços Principais**
@@ -316,31 +344,62 @@ Content-Type: application/json
 }
 ```
 
-#### **Finalizar Sessão**
+#### **Finalizar Sessão** ⭐ **ATUALIZADO**
 ```http
 POST /api/chat/finalize/{session_id}
 ```
+
+**Descrição:** Finaliza sessão e gera contexto estruturado via **SessionContextService** do AI Service. O contexto é salvo na coleção `session_contexts` e a conversa recebe apenas uma referência.
 
 **Resposta:**
 ```json
 {
   "success": true,
-  "context": {
-    "summary": "Usuário trabalhou questões de ansiedade relacionadas ao trabalho",
-    "main_themes": ["ansiedade", "trabalho", "stress"],
-    "key_insights": ["Dificuldade em gerenciar pressão"],
-    "future_sessions": {
-      "suggested_topics": ["técnicas de relaxamento", "gestão de tempo"]
-    }
-  },
-  "next_session": {
+  "data": {
     "success": true,
-    "session_id": "session-3",
-    "title": "Sessão 3: Estratégias para ansiedade no trabalho",
-    "created": true
+    "context": {
+      "summary": "O usuário expressou preocupação com sua ansiedade, principalmente relacionada ao trabalho...",
+      "main_themes": ["ansiedade", "trabalho", "estratégias de enfrentamento"],
+      "emotional_state": {
+        "dominant_emotion": "neutro",
+        "emotional_journey": "O usuário apresentou neutralidade emocional...",
+        "stability": "estável"
+      },
+      "key_insights": [
+        "importância da expressão emocional",
+        "impacto da ansiedade no trabalho"
+      ],
+      "therapeutic_progress": {
+        "engagement_level": "alto",
+        "communication_style": "empático e encorajador",
+        "areas_of_focus": ["ansiedade no trabalho", "estratégias de enfrentamento"]
+      },
+      "next_session_recommendations": [
+        "explorar gatilhos específicos de ansiedade",
+        "praticar técnicas de relaxamento"
+      ],
+      "session_quality": "excelente",
+      "session_id": "usuario_session-2",
+      "generated_at": "2025-01-13T22:05:35.602105",
+      "generation_method": "session_context_service"
+    },
+    "manual_termination": true,
+    "next_session": {
+      "success": true,
+      "session_id": "session-3",
+      "title": "Sessão 3: Estratégias para ansiedade no trabalho",
+      "created": true
+    }
   }
 }
 ```
+
+**Novidades na Resposta:**
+- **Contexto Estruturado**: Gerado pelo SessionContextService com IA
+- **Estado Emocional**: Análise detalhada da jornada emocional
+- **Progresso Terapêutico**: Avaliação do engajamento e estilo de comunicação
+- **Qualidade da Sessão**: Métrica automática baseada na interação
+- **Persistência**: Salvo em `session_contexts`, não duplicado
 
 #### **Contexto da Sessão**
 ```http
