@@ -394,9 +394,47 @@ graph TB
     UnlockSession --> NotifyUser[Notify User]
 ```
 
-## 📊 Estrutura de Dados
+## 📊 Estrutura de Dados ⭐ **ATUALIZADA**
+
+### Visão Geral do Banco de Dados
+
+O sistema utiliza **MongoDB** como banco de dados principal, com coleções especializadas para diferentes aspectos da aplicação. A arquitetura de dados foi projetada para garantir **isolamento total por usuário**, **continuidade terapêutica** e **eliminação de duplicação**.
+
+### 🆕 **Nova Arquitetura de Contextos (2025-01-13)**
+
+#### **Antes (Duplicação)**
+```
+conversations.session_context → Dados duplicados
+session_contexts → Dados duplicados
+```
+
+#### **Depois (Referência)**
+```
+conversations.session_context_ref → Referência ObjectId
+session_contexts → Fonte única de contextos
+```
+
+### **Benefícios da Nova Arquitetura**
+- ✅ **Eliminação de Duplicação**: Contextos salvos apenas uma vez
+- ✅ **Consistência**: Dados sempre atualizados
+- ✅ **Performance**: Redução significativa de espaço em disco
+- ✅ **Manutenibilidade**: Estrutura mais limpa e organizada
 
 ### Collections MongoDB
+
+#### **Coleções Principais**
+
+**users** - Perfis de usuários e preferências
+**conversations** - Sessões de conversa com referência a contextos
+**session_contexts** - Contextos estruturados de sessões (fonte única)
+**messages** - Mensagens individuais das conversas
+**user_therapeutic_sessions** - Sessões terapêuticas personalizadas
+**user_emotions** - Dados de análise emocional
+**therapeutic_sessions** - Templates de sessões terapêuticas
+**user_session_data** - Métricas e progresso de sessões
+**session_lifecycle** - Ciclo de vida das sessões
+
+#### **Diagrama de Relacionamentos**
 
 ```mermaid
 erDiagram
@@ -415,8 +453,25 @@ erDiagram
         string username FK
         object user_preferences
         int message_count
-        object session_context
+        objectid session_context_ref FK
         boolean session_finalized
+        datetime created_at
+        datetime updated_at
+        object registration_data
+        int registration_step
+        boolean is_registration_complete
+    }
+    
+    session_contexts {
+        objectid _id PK
+        string session_id
+        string username FK
+        object context
+        string conversation_text
+        array emotions_data
+        string source
+        int version
+        boolean is_active
         datetime created_at
         datetime updated_at
     }
@@ -463,12 +518,59 @@ erDiagram
         datetime created_at
     }
     
+    user_session_data {
+        string username FK
+        string session_id
+        object session_metrics
+        object therapeutic_progress
+        datetime created_at
+        datetime updated_at
+    }
+    
+    session_lifecycle {
+        string session_id PK
+        string username FK
+        string status
+        datetime started_at
+        datetime completed_at
+        object lifecycle_events
+    }
+    
     users ||--o{ conversations : "has"
     users ||--o{ messages : "sends"
     users ||--o{ user_therapeutic_sessions : "participates"
     users ||--o{ user_emotions : "expresses"
+    users ||--o{ session_contexts : "generates"
+    users ||--o{ user_session_data : "tracks"
+    users ||--o{ session_lifecycle : "manages"
     conversations ||--o{ messages : "contains"
+    conversations ||--|| session_contexts : "references"
     therapeutic_sessions ||--o{ user_therapeutic_sessions : "based_on"
+```
+
+#### **Detalhes das Coleções Atualizadas**
+
+##### **conversations** ⭐ **ATUALIZADA**
+- `session_context_ref`: Referência ObjectId para `session_contexts`
+- `registration_data`: Dados de cadastro (session-1)
+- `registration_step`: Progresso do cadastro
+- `is_registration_complete`: Status de conclusão
+
+##### **session_contexts** 🆕 **NOVA COLEÇÃO**
+- `context`: Contexto estruturado gerado pelo SessionContextService
+- `conversation_text`: Texto completo da conversa
+- `emotions_data`: Dados emocionais capturados
+- `source`: Origem da geração (ai_service, gateway_fallback)
+- `version`: Controle de versão do contexto
+
+##### **user_session_data** 🆕 **NOVA COLEÇÃO**
+- `session_metrics`: Métricas de performance da sessão
+- `therapeutic_progress`: Progresso terapêutico estruturado
+
+##### **session_lifecycle** 🆕 **NOVA COLEÇÃO**
+- `status`: Status atual da sessão
+- `lifecycle_events`: Eventos do ciclo de vida
+- `started_at` / `completed_at`: Timestamps de controle
 ```
 
 ## 🛠️ Instalação e Configuração
