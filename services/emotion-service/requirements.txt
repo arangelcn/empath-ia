@@ -7,6 +7,4 @@ numpy==1.24.3
 pillow==10.0.1
 python-dotenv==1.0.0
 pydantic-settings==2.0.3
-python-multipart==0.0.6
-typing
-logging 
+python-multipart==0.0.6 

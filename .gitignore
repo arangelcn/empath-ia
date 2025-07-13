@@ -403,7 +403,6 @@ services/voice-service/cache/
 # ===== OPENFACE =====
 # OpenFace outputs
 *.csv
-*.txt
 *.au
 shared_data/output/
 shared_data/processed/
