@@ -427,7 +427,10 @@ checkpoints/
 dataset/
 datasets/
 *.csv
-*.json
+# Removido *.json para permitir package.json
+# Mantendo apenas arquivos específicos que devem ser ignorados:
+credentials/*.json
+config/*.json
 *.parquet
 
 # ===== SEGURANÇA =====
