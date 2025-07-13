@@ -2,6 +2,43 @@
 
 Uma plataforma completa de terapia virtual baseada na abordagem humanística de Carl Rogers, com sistema de sessões personalizadas, análise emocional em tempo real, contexto entre sessões e geração automática de próximas sessões terapêuticas.
 
+## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**
+
+### ✅ **SessionContextService - Sistema de Contextos Totalmente Funcional**
+- **Problema Resolvido**: SessionContextService não estava persistindo dados no MongoDB
+- **Correção Completa**: 
+  - Variáveis de ambiente MongoDB e Redis configuradas
+  - Coleções `session_contexts`, `user_session_data`, `session_lifecycle` criadas
+  - Rotas OpenAI expostas no FastAPI principal
+  - Problemas async/await e Motor driver resolvidos
+  - Conflitos de upsert MongoDB corrigidos
+- **Resultado**: Contextos estruturados salvos corretamente na coleção `session_contexts`
+
+### ✅ **Eliminação de Duplicação de Dados**
+- **Problema**: Contexto duplicado em `conversations.session_context` E `session_contexts`
+- **Nova Arquitetura**:
+  - `session_contexts` → **Fonte principal** de contextos estruturados
+  - `conversations.session_context_ref` → **Referência** ao documento
+  - **Fallback** mantido para sessões antigas
+- **Benefícios**: Redução significativa de espaço em disco e consistência de dados
+
+### ✅ **Integração Front-end ↔ Backend Corrigida**
+- **Gateway Service**: Usa endpoint correto `/openai/generate-session-context`
+- **Formato de Dados**: Ajustado para `conversation_text` e `username`
+- **Serialização JSON**: Campos datetime convertidos para ISO string
+- **Resultado**: Popup de finalização funcionando perfeitamente
+
+### ✅ **Continuidade Terapêutica Aprimorada**
+- **Contexto Anterior**: Sessões subsequentes carregam contexto da sessão anterior
+- **Session-1 Especial**: Lógica de cadastro preservada com `registration_data`
+- **AI Service**: Recebe contexto completo incluindo dados de registro do usuário
+- **Busca Inteligente**: Prioriza `session_contexts`, fallback para `conversations`
+
+### ✅ **Documentação Técnica Atualizada**
+- **AI Service README**: Endpoints documentados, correções detalhadas
+- **Gateway Service README**: Nova arquitetura de contextos explicada
+- **Resultado**: Documentação técnica completa e atualizada
+
 ## 🎯 Visão Geral
 
 **Empath.IA** é uma solução inovadora que combina inteligência artificial avançada, análise emocional em tempo real e continuidade terapêutica para criar uma experiência terapêutica virtual personalizada e progressiva. O sistema oferece:
@@ -527,12 +564,12 @@ DATABASE_NAME=empatia_db
 - **POST** `/api/user/{username}/sessions/{session_id}/complete` - Completar sessão
 - **GET** `/api/user/{username}/progress` - Progresso do usuário
 
-#### Chat com Contexto
+#### Chat com Contexto ⭐ **ATUALIZADO**
 - **POST** `/api/chat/send` - Enviar mensagem com contexto
 - **GET** `/api/chat/history/{session_id}` - Buscar histórico
 - **GET** `/api/chat/initial-message/{session_id}` - Mensagem inicial personalizada
-- **POST** `/api/chat/finalize/{session_id}` - Finalizar sessão
-- **GET** `/api/chat/context/{session_id}` - Contexto da sessão
+- **POST** `/api/chat/finalize/{session_id}` - Finalizar sessão com **SessionContextService**
+- **GET** `/api/chat/context/{session_id}` - Contexto da sessão (busca em `session_contexts`)
 
 #### Análise Emocional
 - **GET** `/api/emotions/{username}` - Emoções do usuário
@@ -540,9 +577,9 @@ DATABASE_NAME=empatia_db
 - **GET** `/api/emotions/{username}/timeline` - Timeline emocional
 - **POST** `/api/emotion/analyze-realtime` - Análise em tempo real
 
-### AI Service (Porta 8001)
+### AI Service (Porta 8001) ⭐ **ATUALIZADO**
 - **POST** `/chat` - Conversa com contexto entre sessões
-- **POST** `/generate-session-context` - Gerar contexto de sessão
+- **POST** `/openai/generate-session-context` - Gerar contexto estruturado de sessão
 - **POST** `/generate-next-session` - Gerar próxima sessão
 - **GET** `/health` - Status do serviço
 
@@ -641,6 +678,7 @@ CORS_ALLOW_CREDENTIALS=true
 - **Validação Dupla**: Filtro por `session_id` e `username`
 - **Contexto Protegido**: Apenas dados do próprio usuário
 - **Emoções Isoladas**: Dados emocionais completamente separados
+- **Eliminação de Duplicação**: Contextos salvos apenas em `session_contexts` com referências
 
 ### Proteções Implementadas
 - ✅ **Rate Limiting**: Proteção contra spam
@@ -658,7 +696,13 @@ empath-ia/
 │   └── admin-panel/              # Painel administrativo
 ├── services/                      # Microserviços backend
 │   ├── gateway-service/          # API Gateway e orquestração
+│   │   └── src/services/
+│   │       ├── chat_service.py   # ✅ Chat com SessionContextService
+│   │       └── user_service.py   # Gestão de usuários
 │   ├── ai-service/               # Inteligência artificial
+│   │   └── src/services/
+│   │       ├── session_context_service.py  # ✅ Contextos estruturados
+│   │       └── openai_service.py # Integração OpenAI
 │   ├── emotion-service/          # Análise emocional
 │   ├── voice-service/            # Síntese de voz
 │   └── avatar-service/           # Avatar 3D (em desenvolvimento)
