@@ -26,6 +26,15 @@ const Button = ({
     md: 'px-4 py-3 text-sm min-h-[44px]',
     lg: 'px-6 py-4 text-base min-h-[52px]',
     xl: 'px-8 py-5 text-lg min-h-[60px]',
+    // Novos tamanhos específicos para mobile
+    'mobile-sm': 'px-4 py-3 text-sm min-h-[48px] sm:px-3 sm:py-2 sm:min-h-[36px]',
+    'mobile-md': 'px-6 py-4 text-base min-h-[52px] sm:px-4 sm:py-3 sm:text-sm sm:min-h-[44px]',
+    'mobile-lg': 'px-8 py-5 text-lg min-h-[60px] sm:px-6 sm:py-4 sm:text-base sm:min-h-[52px]',
+    // Tamanho específico para botões de ação importantes em mobile
+    'touch-friendly': 'px-6 py-4 text-base min-h-[52px] md:px-4 md:py-3 md:text-sm md:min-h-[44px]',
+    // Para botões de ícone em mobile
+    icon: 'w-10 h-10 md:w-8 md:h-8 flex items-center justify-center',
+    'icon-lg': 'w-12 h-12 md:w-10 md:h-10 flex items-center justify-center',
   };
   
   const classes = [

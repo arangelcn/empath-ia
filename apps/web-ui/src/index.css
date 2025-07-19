@@ -244,6 +244,23 @@
   .hover-scale:active {
     transform: scale(0.98);
   }
+  
+  /* Classes de responsividade para botões mobile */
+  .btn-responsive {
+    @apply px-6 py-4 text-base min-h-[52px] md:px-4 md:py-3 md:text-sm md:min-h-[44px];
+  }
+  
+  .btn-icon-responsive {
+    @apply w-12 h-12 md:w-10 md:h-10 p-3 md:p-2 flex items-center justify-center;
+  }
+  
+  .touch-target {
+    @apply min-h-[44px] min-w-[44px];
+  }
+  
+  .touch-target-lg {
+    @apply min-h-[52px] min-w-[52px];
+  }
 }
 
 /* Responsividade */
@@ -267,6 +284,22 @@
   
   .space-y-6 > * + * {
     margin-top: 2rem;
+  }
+  
+  /* Touch targets específicos para mobile */
+  .mobile-touch-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+  
+  /* Botões responsivos melhorados */
+  .btn-mobile-friendly {
+    @apply px-6 py-4 text-base min-h-[52px];
+  }
+  
+  /* Melhor espaçamento para formulários em mobile */
+  .form-mobile-spacing {
+    @apply space-y-6;
   }
 }
 

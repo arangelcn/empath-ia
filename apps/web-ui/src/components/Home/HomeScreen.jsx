@@ -198,7 +198,7 @@ const HomeScreen = ({ username, onLogout }) => {
           <p className="text-red-600 mb-4">{error}</p>
           <button
             onClick={loadSessions}
-            className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+            className="px-6 py-4 md:px-4 md:py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors min-h-[52px] md:min-h-[44px] text-base md:text-sm font-medium"
           >
             Tentar novamente
           </button>
@@ -230,16 +230,16 @@ const HomeScreen = ({ username, onLogout }) => {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => navigate('/settings')}
-                className="p-2 text-gray-500 hover:text-primary-600 transition-colors"
+                className="p-3 md:p-2 text-gray-500 hover:text-primary-600 transition-colors min-h-[44px] flex items-center justify-center"
               >
-                <Settings className="w-5 h-5" />
+                <Settings className="w-6 h-6 md:w-5 md:h-5" />
               </button>
               
               <button
                 onClick={onLogout}
-                className="p-2 text-gray-500 hover:text-red-600 transition-colors"
+                className="p-3 md:p-2 text-gray-500 hover:text-red-600 transition-colors min-h-[44px] flex items-center justify-center"
               >
-                <LogOut className="w-5 h-5" />
+                <LogOut className="w-6 h-6 md:w-5 md:h-5" />
               </button>
             </div>
           </div>
@@ -332,10 +332,10 @@ const HomeScreen = ({ username, onLogout }) => {
               
               <button
                 onClick={loadSessions}
-                className="p-2 text-gray-500 hover:text-primary-600 transition-colors"
+                className="p-3 md:p-2 text-gray-500 hover:text-primary-600 transition-colors min-h-[44px] flex items-center justify-center"
                 title="Atualizar sessões"
               >
-                <RefreshCw className="w-5 h-5" />
+                <RefreshCw className="w-6 h-6 md:w-5 md:h-5" />
               </button>
             </div>
 
@@ -376,7 +376,7 @@ const HomeScreen = ({ username, onLogout }) => {
             {/* Timeline de sessões */}
             <div className="relative">
               {/* Linha da timeline */}
-              <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary-200 to-secondary-200"></div>
+              <div className="absolute left-6 sm:left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary-200 to-secondary-200"></div>
               
               {/* Sessões ordenadas por nome */}
               {userSessions
@@ -395,7 +395,7 @@ const HomeScreen = ({ username, onLogout }) => {
                       className="relative mb-8 last:mb-0"
                     >
                       {/* Ponto da timeline */}
-                      <div className="absolute left-5 top-6 w-6 h-6 rounded-full border-2 border-white shadow-sm z-10">
+                      <div className="absolute left-3 sm:left-5 top-6 w-6 h-6 rounded-full border-2 border-white shadow-sm z-10">
                         {isCompleted ? (
                           <div className="w-full h-full bg-green-500 rounded-full flex items-center justify-center">
                             <CheckCircle className="w-8 h-8 text-white -m-1" />
@@ -412,9 +412,9 @@ const HomeScreen = ({ username, onLogout }) => {
                       </div>
 
                       {/* Card da sessão */}
-                      <div className="ml-16">
+                      <div className="ml-12 sm:ml-16">
                         <div className={`
-                          bg-white rounded-xl border-2 p-6 shadow-sm transition-all duration-300 hover:shadow-md
+                          bg-white rounded-xl border-2 p-4 sm:p-6 shadow-sm transition-all duration-300 hover:shadow-md
                           ${isCompleted ? 'border-green-200 bg-green-50' : 
                             isCurrent ? 'border-orange-200 bg-orange-50' :
                             isUnlocked ? 'border-blue-200 bg-blue-50 cursor-pointer hover:border-blue-300' : 
@@ -422,8 +422,8 @@ const HomeScreen = ({ username, onLogout }) => {
                         `}
                         onClick={() => (isUnlocked || isCompleted) && handleSessionSelect(session)}
                         >
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="flex-1">
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-4">
+                            <div className="flex-1 mb-4 sm:mb-0">
                               <div className="flex items-center gap-3 mb-2">
                                 <h3 className="text-lg font-bold text-gray-900 font-manrope">
                                   {session.title}
@@ -459,17 +459,18 @@ const HomeScreen = ({ username, onLogout }) => {
                             </div>
 
                             {/* Botão de ação */}
-                            <div className="ml-4 flex flex-col items-end gap-2">
+                            <div className="sm:ml-4 flex flex-col sm:items-end gap-2 w-full sm:w-auto">
                               {isCompleted ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleSessionSelect(session);
                                   }}
-                                  className="px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg bg-green-500 hover:bg-green-600 text-white hover:scale-105"
+                                  className="px-6 py-3 md:px-6 md:py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg bg-green-500 hover:bg-green-600 text-white hover:scale-105 min-h-[48px] w-full sm:w-auto"
                                 >
                                   <Eye className="w-4 h-4" />
-                                  Visualizar conversa
+                                  <span className="sm:hidden">Ver conversa</span>
+                                  <span className="hidden sm:inline">Visualizar conversa</span>
                                 </button>
                               ) : isUnlocked ? (
                                 <button
@@ -479,7 +480,7 @@ const HomeScreen = ({ username, onLogout }) => {
                                   }}
                                   disabled={startingSession === session.session_id}
                                   className={`
-                                    px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg text-white hover:scale-105
+                                    px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg text-white hover:scale-105 min-h-[48px] w-full sm:w-auto
                                     ${isCurrent ? 
                                       'bg-orange-500 hover:bg-orange-600' :
                                       'bg-blue-500 hover:bg-blue-600'
@@ -499,7 +500,7 @@ const HomeScreen = ({ username, onLogout }) => {
                               ) : (
                                 <button
                                   disabled
-                                  className="px-6 py-3 bg-gray-300 text-gray-600 rounded-xl font-bold text-sm cursor-not-allowed opacity-60"
+                                  className="px-6 py-3 bg-gray-300 text-gray-600 rounded-xl font-bold text-sm cursor-not-allowed opacity-60 min-h-[48px] w-full sm:w-auto"
                                 >
                                   Bloqueada
                                 </button>
@@ -507,7 +508,7 @@ const HomeScreen = ({ username, onLogout }) => {
                               
                               {/* Indicador visual para sessão disponível */}
                               {isUnlocked && !isCurrent && !isCompleted && (
-                                <div className="text-xs text-blue-600 font-medium animate-pulse">
+                                <div className="text-xs text-blue-600 font-medium animate-pulse text-center sm:text-right">
                                   ✨ Disponível para iniciar
                                 </div>
                               )}

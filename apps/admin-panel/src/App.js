@@ -8,9 +8,9 @@ import Layout from './components/Layout/Layout';
 import Dashboard from './pages/Dashboard';
 import SystemStatus from './pages/SystemStatus';
 import UserManagement from './pages/UserManagement';
+import SessionManagement from './pages/SessionManagement';
 import Analytics from './pages/Analytics';
 import Conversations from './pages/Conversations';
-import SessionManagement from './pages/SessionManagement';
 import Settings from './pages/Settings';
 
 function AuthenticatedApp() {
@@ -21,9 +21,9 @@ function AuthenticatedApp() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/system-status" element={<SystemStatus />} />
         <Route path="/users" element={<UserManagement />} />
+        <Route path="/sessions" element={<SessionManagement />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/conversations" element={<Conversations />} />
-        <Route path="/sessions" element={<SessionManagement />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>

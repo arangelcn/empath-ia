@@ -685,22 +685,21 @@ const ChatScreen = ({ username }) => {
           <Button
             type="button"
             variant="primary"
-            size="sm"
+            size="icon-lg"
             onClick={handleVoiceModeToggle}
             disabled={isLoading}
-            className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center mr-2"
+            className="mr-2"
             title="Modo de Voz"
           >
-            <Mic className="w-5 h-5 md:w-7 md:h-7" />
+            <Mic className="w-5 h-5 md:w-6 md:h-6" />
           </Button>
           <Button
             type="submit"
             variant="primary"
-            size="sm"
+            size="icon-lg"
             disabled={isLoading || !inputValue.trim()}
-            className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"
           >
-            <Send className="w-5 h-5 md:w-7 md:h-7" />
+            <Send className="w-5 h-5 md:w-6 md:h-6" />
           </Button>
         </form>
       </div>

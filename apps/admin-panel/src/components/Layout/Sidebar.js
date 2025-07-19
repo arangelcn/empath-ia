@@ -3,25 +3,25 @@ import { Dialog, Transition } from '@headlessui/react';
 import { 
   XMarkIcon,
   HomeIcon,
-  FaceSmileIcon,
-  SpeakerWaveIcon,
   CpuChipIcon,
+  UserGroupIcon,
+  AcademicCapIcon,
   ChartBarIcon,
+  ChatBubbleLeftRightIcon,
   Cog6ToothIcon,
-  ArrowRightOnRectangleIcon,
-  FunnelIcon
+  ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
-  { name: 'Sessões Terapêuticas', href: '/sessions', icon: FunnelIcon },
-  { name: 'Configurações de Emoção', href: '/emotion-settings', icon: FaceSmileIcon },
-  { name: 'Configurações de Áudio', href: '/audio-settings', icon: SpeakerWaveIcon },
+  { name: 'Usuários', href: '/users', icon: UserGroupIcon },
+  { name: 'Sessões', href: '/sessions', icon: AcademicCapIcon },
+  { name: 'Conversas', href: '/conversations', icon: ChatBubbleLeftRightIcon },
+  { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   { name: 'Status do Sistema', href: '/system-status', icon: CpuChipIcon },
-  { name: 'Monitor em Tempo Real', href: '/monitor', icon: ChartBarIcon },
-  { name: 'Configurações Gerais', href: '/settings', icon: Cog6ToothIcon },
+  { name: 'Configurações', href: '/settings', icon: Cog6ToothIcon },
 ];
 
 function classNames(...classes) {
@@ -43,7 +43,7 @@ export default function Sidebar({ open, setOpen }) {
       <div className="flex h-16 shrink-0 items-center">
         <div className="flex items-center">
           <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-            <FaceSmileIcon className="w-5 h-5 text-white" />
+            <HomeIcon className="w-5 h-5 text-white" />
           </div>
           <span className="ml-3 text-xl font-semibold text-gray-900">Empath IA</span>
         </div>

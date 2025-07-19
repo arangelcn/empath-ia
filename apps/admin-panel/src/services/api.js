@@ -80,9 +80,103 @@ class ApiService {
     return this.get(`/api/admin/conversations/${sessionId}`);
   }
 
+  // ===== NOVOS ENDPOINTS PARA USUÁRIOS =====
+
+  // Usuários
+  async getUsers(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/api/admin/users${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async getUserDetails(username) {
+    return this.get(`/api/admin/users/${username}`);
+  }
+
+  async getUserStats(username) {
+    return this.get(`/api/admin/users/${username}/stats`);
+  }
+
+  async createUser(userData) {
+    return this.post('/api/admin/users', userData);
+  }
+
+  async updateUser(username, userData) {
+    return this.put(`/api/admin/users/${username}`, userData);
+  }
+
+  async deleteUser(username) {
+    return this.delete(`/api/admin/users/${username}`);
+  }
+
+  // ===== NOVOS ENDPOINTS PARA SESSÕES TERAPÊUTICAS =====
+
+  // Sessões Terapêuticas (Templates)
+  async getTherapeuticSessions(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/api/admin/therapeutic-sessions${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async createTherapeuticSession(sessionData) {
+    return this.post('/api/admin/therapeutic-sessions', sessionData);
+  }
+
+  async updateTherapeuticSession(sessionId, sessionData) {
+    return this.put(`/api/admin/therapeutic-sessions/${sessionId}`, sessionData);
+  }
+
+  async deleteTherapeuticSession(sessionId) {
+    return this.delete(`/api/admin/therapeutic-sessions/${sessionId}`);
+  }
+
+  // Sessões dos Usuários
+  async getUserSessions(username, params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/api/user/${username}/sessions${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async getUserSessionDetails(username, sessionId) {
+    return this.get(`/api/user/${username}/sessions/${sessionId}`);
+  }
+
+  async getAllUserSessions(params = {}) {
+    // Buscar todas as sessões de todos os usuários via admin
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/api/admin/user-sessions${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  // ===== NOVOS ENDPOINTS PARA CONTEXTOS E RESUMOS =====
+
+  // Contextos de Sessão
+  async getSessionContext(sessionId) {
+    return this.get(`/api/admin/session-contexts/${sessionId}`);
+  }
+
+  async getAllSessionContexts(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/api/admin/session-contexts${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  // Novo endpoint otimizado para buscar todas as sessões dos usuários com contextos
+  async getAllUserSessionsWithContexts(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/api/admin/user-sessions${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
   // Emotions Analysis
   async getEmotionsAnalysis(days = 7) {
     return this.get(`/api/admin/emotions/analysis?days=${days}`);
+  }
+
+  async getUserEmotions(username, params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/api/emotions/${username}${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
   }
 
   // Real-time Activity
@@ -98,47 +192,6 @@ class ApiService {
   async listChatConversations() {
     return this.get('/api/chat/conversations');
   }
-
-  // System Health
-  async getSystemHealth() {
-    return this.get('/health');
-  }
-
-  async getAllServicesHealth() {
-    return this.get('/health/all');
-  }
-
-  // ===== ENDPOINTS PARA SESSÕES TERAPÊUTICAS =====
-
-  // Listar sessões terapêuticas
-  async getTherapeuticSessions(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
-    const endpoint = `/api/admin/therapeutic-sessions${queryString ? `?${queryString}` : ''}`;
-    return this.get(endpoint);
-  }
-
-  // Obter detalhes de uma sessão terapêutica
-  async getTherapeuticSession(sessionId) {
-    return this.get(`/api/admin/therapeutic-sessions/${sessionId}`);
-  }
-
-  // Criar nova sessão terapêutica
-  async createTherapeuticSession(sessionData) {
-    return this.post('/api/admin/therapeutic-sessions', sessionData);
-  }
-
-  // Atualizar sessão terapêutica
-  async updateTherapeuticSession(sessionId, sessionData) {
-    return this.put(`/api/admin/therapeutic-sessions/${sessionId}`, sessionData);
-  }
-
-  // Deletar sessão terapêutica
-  async deleteTherapeuticSession(sessionId) {
-    return this.delete(`/api/admin/therapeutic-sessions/${sessionId}`);
-  }
 }
 
-// Instância singleton
-const apiService = new ApiService();
-
-export default apiService; 
+export default new ApiService(); 
