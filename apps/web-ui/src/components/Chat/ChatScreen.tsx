@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Heart, LogOut, Send, Target } from 'lucide-react';
+import { Heart, LogOut, Send, Target, Mic } from 'lucide-react';
 import { sendMessage, getChatHistory, getTherapeuticSession, getInitialMessage } from '../../services/api.js';
 import Button from '../Common/Button.jsx';
 import Loading from '../Common/Loading.jsx';
 import EmotionBadge from './EmotionBadge.jsx';
 import WebcamEmotionCapture from '../EmotionAnalysis/WebcamEmotionCapture.jsx';
+import VoiceConversationMode from './VoiceConversationMode.jsx';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer.js';
 
 interface Message {
@@ -77,6 +78,7 @@ const ChatScreen = ({ username }) => {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [sessionContext, setSessionContext] = useState(null);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -407,6 +409,20 @@ const ChatScreen = ({ username }) => {
     return endings.some(ending => messageLower.includes(ending));
   };
 
+  // Funções do modo de voz
+  const handleVoiceModeToggle = () => {
+    setIsVoiceModeOpen(true);
+  };
+
+  const handleVoiceModeClose = () => {
+    setIsVoiceModeOpen(false);
+  };
+
+  const handleVoiceMessage = (message) => {
+    // Adicionar mensagem ao estado
+    setMessages(prev => [...prev, message]);
+  };
+
   // Função para obter contexto da sessão
   const getSessionContext = async () => {
     try {
@@ -419,6 +435,17 @@ const ChatScreen = ({ username }) => {
     } catch (error) {
       console.error('Erro ao obter contexto da sessão:', error);
     }
+  };
+
+  // Função para obter a última mensagem da IA
+  const getLastAIMessage = () => {
+    // Encontrar a última mensagem da IA na lista de mensagens
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].type === 'ai' && messages[i].audioUrl) {
+        return messages[i];
+      }
+    }
+    return null;
   };
 
   // Modal de resumo da sessão
@@ -656,9 +683,20 @@ const ChatScreen = ({ username }) => {
             disabled={isLoading}
           />
           <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={handleVoiceModeToggle}
+            disabled={isLoading}
+            className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center mr-2"
+            title="Modo de Voz"
+          >
+            <Mic className="w-5 h-5 md:w-7 md:h-7" />
+          </Button>
+          <Button
             type="submit"
             variant="primary"
-            size="icon"
+            size="sm"
             disabled={isLoading || !inputValue.trim()}
             className="w-8 h-8 md:w-12 md:h-12 flex items-center justify-center"
           >
@@ -669,6 +707,16 @@ const ChatScreen = ({ username }) => {
       
       {/* Modal de resumo da sessão */}
       <SessionSummaryModal />
+      
+      {/* Modo conversacional de voz */}
+      <VoiceConversationMode
+        sessionId={currentSessionId}
+        username={username}
+        isOpen={isVoiceModeOpen}
+        onClose={handleVoiceModeClose}
+        onNewMessage={handleVoiceMessage}
+        lastAIMessage={messages.filter(msg => msg.type === 'ai').pop() || null}
+      />
     </div>
   );
 };

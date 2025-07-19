@@ -153,7 +153,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
       
       # Configurações Google Cloud Text-to-Speech
-      - GOOGLE_APPLICATION_CREDENTIALS=${CREDENTIALS_JSON:-/app/credentials/empathia-462921-deff8cdf0d47.json}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-734245aa641d.json
       - TTS_OUTPUT_DIR=/app/output
       - VOICE_SERVICE_BASE_URL=http://localhost:8004
       
@@ -168,7 +168,7 @@ services:
       # Volume compartilhado para arquivos de áudio
       - ./data/tts_output:/app/output
       # Volume para credenciais do GCP (mapeando o arquivo JSON real)
-      - ./services/voice-service/credentials/empathia-462921-deff8cdf0d47.json:/app/credentials/empathia-462921-deff8cdf0d47.json:ro
+      - ./services/voice-service/credentials/empathia-462921-734245aa641d.json:/app/credentials/empathia-462921-734245aa641d.json:ro
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8004", "--reload", "--log-level", "debug"]
     networks:
       - empatia-network

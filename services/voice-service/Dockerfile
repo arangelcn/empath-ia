@@ -26,7 +26,7 @@ RUN mkdir -p /app/output \
     && mkdir -p /app/credentials
 
 # Configurar credenciais do Google Cloud
-ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-deff8cdf0d47.json
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-734245aa641d.json
 
 # Expor porta
 EXPOSE 8004

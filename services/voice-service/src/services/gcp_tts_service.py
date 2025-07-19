@@ -220,7 +220,7 @@ class GCPTextToSpeechService:
             duration = self.get_audio_duration(str(output_path))
             
             # URL pública do arquivo
-            audio_url = f"{self.base_url}/audio/{filename}"
+            audio_url = f"{self.base_url}/api/v1/audio/{filename}"
             
             logger.info(f"✅ Áudio gerado com sucesso: {filename} (duração: {duration:.2f}s, voz: {voice_name})")
             
@@ -350,7 +350,7 @@ class GCPTextToSpeechService:
                     "size_bytes": stat.st_size,
                     "created_at": stat.st_ctime,
                     "modified_at": stat.st_mtime,
-                    "url": f"{self.base_url}/audio/{file_path.name}"
+                    "url": f"{self.base_url}/api/v1/audio/{file_path.name}"
                 })
             
             # Ordenar por data de criação (mais recente primeiro)

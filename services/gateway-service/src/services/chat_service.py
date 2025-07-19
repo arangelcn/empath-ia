@@ -68,13 +68,14 @@ class ChatService:
             logger.error(f"❌ Erro ao iniciar/recuperar conversa: {e}")
             raise
     
-    async def process_user_message(self, session_id: str, user_message: str, session_objective: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def process_user_message(self, session_id: str, user_message: str, session_objective: Optional[Dict[str, Any]] = None, is_voice_mode: bool = False) -> Dict[str, Any]:
         """
         Processar mensagem do usuário e gerar resposta da IA
         """
         try:
             logger.info(f"💬 PROCESSANDO MENSAGEM para sessão {session_id}")
             logger.info(f"📝 Mensagem do usuário: {user_message[:100]}...")
+            logger.info(f"🎤 Modo de voz: {'ATIVO' if is_voice_mode else 'INATIVO'}")  # ✅ NOVO: Log do VoiceMode
             
             # ✅ NOVO: Detectar se é sessão de cadastro (session-1)
             # Extrair session_id original para verificar se é session-1
@@ -102,7 +103,7 @@ class ChatService:
             # Se for session-1, usar nossa função de cadastro
             if is_registration_session:
                 logger.info(f"🔒 DETECTADA SESSÃO DE CADASTRO - usando função própria para {session_id}")
-                return await self._handle_registration_session(session_id, user_message)
+                return await self._handle_registration_session(session_id, user_message, is_voice_mode)
             
             # Para outras sessões, usar fluxo normal com OpenAI
             logger.info(f"🤖 SESSÃO NORMAL - usando OpenAI para {session_id}")
@@ -125,6 +126,13 @@ class ChatService:
                 selected_voice = preferences.get("selected_voice", selected_voice)
                 voice_enabled = preferences.get("voice_enabled", voice_enabled)
             
+            # ✅ NOVO: Forçar voice_enabled=True quando em VoiceMode
+            if is_voice_mode:
+                voice_enabled = True
+                logger.info(f"🎤 VoiceMode detectado - Forçando síntese de voz (voice_enabled=True)")
+            
+            logger.info(f"🔊 Configuração de voz - voice_enabled: {voice_enabled}, selected_voice: {selected_voice}")
+            
             # Buscar initial_prompt se não foi fornecido via session_objective
             initial_prompt = None
             if not session_objective:
@@ -141,7 +149,8 @@ class ChatService:
                 selected_voice, 
                 voice_enabled,
                 session_objective,
-                initial_prompt
+                initial_prompt,
+                is_voice_mode  # ✅ NOVO: Passar indicador de VoiceMode
             )
             
             # Salvar mensagem do usuário
@@ -293,10 +302,14 @@ class ChatService:
             logger.error(f"❌ Erro ao salvar mensagem: {e}")
             raise
     
-    async def _get_ai_response(self, user_message: str, session_id: str, selected_voice: str, voice_enabled: bool = True, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None) -> Dict[str, Any]:
+    async def _get_ai_response(self, user_message: str, session_id: str, selected_voice: str, voice_enabled: bool = True, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None, is_voice_mode: bool = False) -> Dict[str, Any]:
         """Obter resposta da IA usando AI Service com contexto completo"""
         try:
             logger.info(f"🤖 Chamando AI Service para sessão: {session_id}")
+            
+            # ✅ NOVO: Log adicional para VoiceMode
+            if is_voice_mode:
+                logger.info(f"🎤 VoiceMode ativo - Priorizando síntese de voz para resposta fluida")
             
             # ✅ NOVO: Extrair username do session_id
             username = self._extract_username_from_session_id(session_id)
@@ -415,7 +428,9 @@ class ChatService:
             # Gerar áudio se habilitado
             audio_url = None
             if voice_enabled:
-                audio_url = await self._generate_audio(simulated_response['response'], selected_voice)
+                if is_voice_mode:
+                    logger.info(f"🎤 Iniciando síntese de voz para VoiceMode - Texto: {simulated_response['response'][:50]}...")
+                audio_url = await self._generate_audio(simulated_response['response'], selected_voice, is_voice_mode)
             
             return {
                 "response": simulated_response['response'],
@@ -525,19 +540,26 @@ class ChatService:
             logger.error(f"❌ Erro ao buscar contexto da sessão anterior: {e}")
             return None
 
-    async def _generate_audio(self, text: str, voice: str) -> Optional[str]:
+    async def _generate_audio(self, text: str, voice: str, is_voice_mode: bool = False) -> Optional[str]:
         """
         Gerar áudio via Voice Service se disponível
+        Otimizado para VoiceMode quando is_voice_mode=True
         """
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            # ✅ NOVO: Timeout otimizado para VoiceMode (conversação fluida)
+            timeout_seconds = 15.0 if is_voice_mode else 30.0
+            
+            if is_voice_mode:
+                logger.info(f"🎤 Gerando áudio para VoiceMode - Timeout otimizado: {timeout_seconds}s")
+            
+            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
                 # Usar endpoint do Voice Service via Gateway
                 response = await client.post(
                     f"http://localhost:8000/api/voice/speak",
                     json={
                         "text": text,
                         "voice": voice,
-                        "speed": 1.0
+                        "speed": 1.1 if is_voice_mode else 1.0  # ✅ NOVO: Velocidade ligeiramente aumentada para VoiceMode
                     },
                     headers={"Content-Type": "application/json"}
                 )
@@ -545,11 +567,12 @@ class ChatService:
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success") and data.get("audio_url"):
-                        logger.info(f"🔊 Áudio gerado: {data['audio_url']}")
+                        logger.info(f"🔊 Áudio gerado: {data['audio_url']} {'(VoiceMode)' if is_voice_mode else ''}")
                         return data["audio_url"]
                 
         except Exception as e:
-            logger.warning(f"⚠️ Falha ao gerar áudio: {e}")
+            error_msg = f"⚠️ Falha ao gerar áudio{'(VoiceMode)' if is_voice_mode else ''}: {e}"
+            logger.warning(error_msg)
         
         return None
 
@@ -1847,17 +1870,27 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             raise
 
     # ✅ NOVO: Sistema de cadastro/onboarding para session-1
-    async def _handle_registration_session(self, session_id: str, user_message: str) -> Dict[str, Any]:
+    async def _handle_registration_session(self, session_id: str, user_message: str, is_voice_mode: bool = False) -> Dict[str, Any]:
         """
         Gerenciar a sessão de cadastro (session-1) com perguntas próprias, sem OpenAI
         """
         try:
             logger.info(f"🔍 PROCESSANDO SESSÃO DE CADASTRO para {session_id}")
+            if is_voice_mode:
+                logger.info(f"🎤 VoiceMode ativo na sessão de cadastro")
             
             # Extrair username do session_id
             username = session_id.split('_')[0] if '_' in session_id else 'usuario'
             
-            # Buscar dados existentes do usuário
+            # Buscar preferências do usuário para áudio
+            users_collection = get_collection("users")
+            user = await users_collection.find_one({"username": username})
+            
+            selected_voice = "pt-BR-Neural2-A"  # padrão
+            if user and user.get("preferences"):
+                selected_voice = user["preferences"].get("selected_voice", selected_voice)
+            
+            # Buscar dados existentes da conversa
             conversations = get_collection("conversations")
             conversation = await conversations.find_one({"session_id": session_id})
             
@@ -1967,6 +2000,9 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
                     # Salvar resposta da IA para próxima pergunta
                     ai_message_id = await self._save_message(session_id, "ai", ai_response)
                     
+                    # ✅ NOVO: Gerar áudio se VoiceMode estiver ativo
+                    audio_url = await self._generate_audio_for_registration(ai_response, username, is_voice_mode)
+                    
                     # Atualizar step
                     await conversations.update_one(
                         {"session_id": session_id},
@@ -1984,7 +2020,7 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
                             "ai_response": {
                                 "id": ai_message_id,
                                 "content": ai_response,
-                                "audioUrl": None,
+                                "audioUrl": audio_url,  # ✅ NOVO: Incluir URL do áudio
                                 "provider": "registration_system",
                                 "model": "cadastro_v1"
                             }
@@ -2010,6 +2046,9 @@ Você agora pode acessar as outras sessões terapêuticas na sua jornada de auto
                     # 2. Salvar resposta da IA PRIMEIRO
                     ai_message_id = await self._save_message(session_id, "ai", ai_response)
                     logger.info(f"✅ CADASTRO: Mensagem de finalização salva para {username}")
+                    
+                    # ✅ NOVO: Gerar áudio para finalização se VoiceMode estiver ativo
+                    finalization_audio_url = await self._generate_audio_for_registration(ai_response, username, is_voice_mode)
                     
                     # 3. Marcar cadastro como completo
                     await conversations.update_one(
@@ -2070,7 +2109,7 @@ Você agora pode acessar as outras sessões terapêuticas na sua jornada de auto
                             "ai_response": {
                                 "id": ai_message_id,
                                 "content": ai_response,
-                                "audioUrl": None,
+                                "audioUrl": finalization_audio_url,
                                 "provider": "registration_system",
                                 "model": "cadastro_v1"
                             },
@@ -2489,3 +2528,37 @@ Você agora pode acessar as outras sessões terapêuticas na sua jornada de auto
                     break
         
         return list(set(strengths))  # Remove duplicatas 
+
+    async def _generate_audio_for_registration(self, ai_response: str, username: str, is_voice_mode: bool) -> Optional[str]:
+        """
+        Gerar áudio para respostas da sessão de cadastro quando VoiceMode está ativo
+        """
+        if not is_voice_mode:
+            return None
+            
+        try:
+            # Buscar preferências do usuário para áudio
+            users_collection = get_collection("users")
+            user = await users_collection.find_one({"username": username})
+            
+            selected_voice = "pt-BR-Neural2-A"  # padrão
+            if user and user.get("preferences"):
+                selected_voice = user["preferences"].get("selected_voice", selected_voice)
+            
+            logger.info(f"🎤 Gerando áudio para cadastro (VoiceMode) - {username}, voz: {selected_voice}")
+            
+            # Gerar áudio usando a função existente
+            audio_url = await self._generate_audio(ai_response, selected_voice, is_voice_mode)
+            
+            if audio_url:
+                logger.info(f"✅ Áudio gerado para cadastro: {audio_url}")
+            else:
+                logger.warning(f"⚠️ Falha ao gerar áudio para cadastro")
+                
+            return audio_url
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar áudio para cadastro: {e}")
+            return None
+
+    # ✅ NOVO: Sistema de cadastro/onboarding para session-1

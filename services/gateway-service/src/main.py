@@ -30,6 +30,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     session_objective: Optional[Dict[str, Any]] = None
+    is_voice_mode: Optional[bool] = False  # ✅ NOVO: Indicador de modo de voz
 
 class ConversationRequest(BaseModel):
     session_id: str
@@ -134,12 +135,13 @@ async def send_message(request: ChatRequest):
     Enviar mensagem e receber resposta com persistência
     """
     try:
-        logger.info(f"🌐 GATEWAY: Recebendo mensagem para session_id={request.session_id}")
+        logger.info(f"🌐 GATEWAY: Recebendo mensagem para session_id={request.session_id}, VoiceMode={request.is_voice_mode}")
         
         result = await chat_service.process_user_message(
             session_id=request.session_id or "default",
             user_message=request.message,
-            session_objective=request.session_objective
+            session_objective=request.session_objective,
+            is_voice_mode=request.is_voice_mode  # ✅ NOVO: Passar indicador de VoiceMode
         )
         
         logger.info(f"✅ GATEWAY: Processamento concluído com sucesso para session_id={request.session_id}")

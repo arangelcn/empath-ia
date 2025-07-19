@@ -5,6 +5,8 @@ export const useAudioPlayer = () => {
   const [activeAudioUrl, setActiveAudioUrl] = useState(null);
   const audioRef = useRef(null);
   const isLoadingRef = useRef(false);
+  const callbackRef = useRef(null); // ✅ NOVO: Guardar callback para chamada segura
+  const timeoutRef = useRef(null); // ✅ NOVO: Timeout de segurança
 
   useEffect(() => {
     // Limpa o objeto de áudio ao desmontar o componente
@@ -13,7 +15,38 @@ export const useAudioPlayer = () => {
         audioRef.current.pause();
         audioRef.current = null;
       }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
     };
+  }, []);
+
+  // ✅ NOVA função para finalizar áudio com segurança
+  const finishAudio = useCallback((reason = 'ended') => {
+    console.log(`🏁 FINALIZANDO ÁUDIO: ${reason}`);
+    
+    setIsPlaying(false);
+    setActiveAudioUrl(null);
+    isLoadingRef.current = false;
+    
+    // Limpar timeout de segurança
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
+    // Chamar callback se existir
+    if (callbackRef.current) {
+      console.log(`🎯 CHAMANDO CALLBACK: ${reason}`);
+      const callback = callbackRef.current;
+      callbackRef.current = null; // Limpar para evitar múltiplas chamadas
+      callback();
+    }
+    
+    // Limpar referência do áudio
+    if (audioRef.current) {
+      audioRef.current = null;
+    }
   }, []);
 
   const playAudio = useCallback((audioUrl, onEndCallback) => {
@@ -23,92 +56,99 @@ export const useAudioPlayer = () => {
       return;
     }
 
-    console.log('🎵 Reproduzindo áudio:', audioUrl);
+    console.log('🎵 ÁUDIO PLAYER: Reproduzindo áudio:', audioUrl);
+    console.log('🎯 ÁUDIO PLAYER: Callback recebido:', onEndCallback ? 'SIM' : 'NÃO');
     
-    // Parar áudio atual se existir
+    // Finalizar áudio anterior se existir
     if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current = null;
+      console.log('🛑 ÁUDIO PLAYER: Finalizando áudio anterior');
+      finishAudio('replaced');
     }
 
     // Resetar estados
     setIsPlaying(false);
     setActiveAudioUrl(null);
     isLoadingRef.current = true;
+    callbackRef.current = onEndCallback; // ✅ GUARDAR callback para uso seguro
     
     try {
       const newAudio = new Audio(audioUrl);
       audioRef.current = newAudio;
       setActiveAudioUrl(audioUrl);
 
+      // ✅ TIMEOUT DE SEGURANÇA: Se não terminar em 60s, forçar finalização
+      timeoutRef.current = setTimeout(() => {
+        console.log('⏰ TIMEOUT DE SEGURANÇA: Forçando finalização do áudio');
+        finishAudio('timeout');
+      }, 60000); // 60 segundos de segurança
+
       // Configurar eventos
       newAudio.onloadstart = () => {
-        console.log('📥 Carregando áudio...');
+        console.log('📥 ÁUDIO PLAYER: Carregando áudio...');
       };
 
       newAudio.oncanplay = () => {
-        console.log('✅ Áudio pronto para reprodução');
+        console.log('✅ ÁUDIO PLAYER: Áudio pronto para reprodução');
         isLoadingRef.current = false;
       };
 
       newAudio.onplay = () => {
-        console.log('▶️ Reprodução iniciada');
+        console.log('▶️ ÁUDIO PLAYER: Reprodução iniciada');
         setIsPlaying(true);
       };
 
       newAudio.onpause = () => {
-        console.log('⏸️ Reprodução pausada');
+        console.log('⏸️ ÁUDIO PLAYER: Reprodução pausada');
         setIsPlaying(false);
       };
 
       newAudio.onended = () => {
-        console.log('✅ Reprodução finalizada');
-        setIsPlaying(false);
-        setActiveAudioUrl(null);
-        audioRef.current = null;
-        isLoadingRef.current = false;
-        if (onEndCallback) {
-          onEndCallback();
-        }
+        console.log('🏁 ÁUDIO PLAYER: EVENTO ONENDED disparado!');
+        finishAudio('ended');
       };
 
       newAudio.onerror = (error) => {
-        console.error('❌ Erro na reprodução:', error);
-        setIsPlaying(false);
-        setActiveAudioUrl(null);
-        audioRef.current = null;
-        isLoadingRef.current = false;
+        console.error('❌ ÁUDIO PLAYER: Erro na reprodução:', error);
+        finishAudio('error');
+      };
+
+      // ✅ MONITORAMENTO ADICIONAL: Verificar periodicamente se terminou
+      const checkAudioStatus = () => {
+        if (audioRef.current && !audioRef.current.paused) {
+          // ✅ VERIFICAÇÃO: Se chegou ao final mas onended não foi chamado
+          if (audioRef.current.currentTime >= audioRef.current.duration - 0.1) {
+            console.log('🔍 DETECTADO: Áudio terminou mas onended não foi chamado');
+            finishAudio('detected_end');
+          } else {
+            // Continuar verificando a cada 500ms
+            setTimeout(checkAudioStatus, 500);
+          }
+        }
       };
 
       // Iniciar reprodução
-      newAudio.play().catch(err => {
-        console.error("❌ Erro ao reproduzir áudio:", err);
-        setIsPlaying(false);
-        setActiveAudioUrl(null);
-        audioRef.current = null;
-        isLoadingRef.current = false;
+      newAudio.play().then(() => {
+        console.log('✅ ÁUDIO PLAYER: Play iniciado com sucesso');
+        // Iniciar monitoramento
+        setTimeout(checkAudioStatus, 1000);
+      }).catch(err => {
+        console.error("❌ ÁUDIO PLAYER: Erro ao reproduzir áudio:", err);
+        finishAudio('play_error');
       });
 
     } catch (error) {
-      console.error('❌ Erro ao criar áudio:', error);
-      setIsPlaying(false);
-      setActiveAudioUrl(null);
-      audioRef.current = null;
-      isLoadingRef.current = false;
+      console.error('❌ ÁUDIO PLAYER: Erro ao criar áudio:', error);
+      finishAudio('creation_error');
     }
-  }, []); // Remover dependência circular
+  }, [finishAudio]);
 
   const stopAudio = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
-      audioRef.current = null;
     }
-    setIsPlaying(false);
-    setActiveAudioUrl(null);
-    isLoadingRef.current = false;
-  }, []);
+    finishAudio('stopped');
+  }, [finishAudio]);
 
   return { playAudio, stopAudio, isPlaying, activeAudioUrl };
 }; 

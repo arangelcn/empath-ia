@@ -12,13 +12,15 @@ const apiClient = axios.create({
  * @param {string} message - A mensagem do usuário.
  * @param {string} sessionId - O ID da sessão atual.
  * @param {object} sessionObjective - Objetivo da sessão terapêutica (opcional).
+ * @param {boolean} isVoiceMode - Indica se está no modo de voz (opcional).
  * @returns {Promise<object>} A resposta da IA.
  */
-export const sendMessage = async (message, sessionId, sessionObjective = null) => {
+export const sendMessage = async (message, sessionId, sessionObjective = null, isVoiceMode = false) => {
   try {
     const payload = {
       message,
       session_id: sessionId,
+      is_voice_mode: isVoiceMode, // ✅ NOVO: Indicador de modo de voz
     };
     
     // Adicionar objetivo da sessão se fornecido
@@ -31,10 +33,23 @@ export const sendMessage = async (message, sessionId, sessionObjective = null) =
       };
     }
     
+    console.log(`🚀 API - Iniciando envio de mensagem`);
+    console.log(`📋 API - SessionId: ${sessionId}`);
+    console.log(`💬 API - Mensagem: "${message}"`);
+    console.log(`🎤 API - VoiceMode: ${isVoiceMode ? 'ATIVO' : 'INATIVO'}`);
+    console.log(`📦 API - Payload completo:`, payload);
+    
     const response = await apiClient.post('/chat/send', payload);
+    
+    console.log(`✅ API - Resposta recebida:`, response.data);
+    console.log(`🔍 API - Status: ${response.status}`);
+    
     return response.data;
   } catch (error) {
-    console.error('Erro ao enviar mensagem:', error.response?.data || error.message);
+    console.error('❌ API - Erro completo:', error);
+    console.error('❌ API - Response data:', error.response?.data);
+    console.error('❌ API - Status:', error.response?.status);
+    console.error('❌ API - Headers:', error.response?.headers);
     throw error;
   }
 };
