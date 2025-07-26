@@ -27,8 +27,12 @@ A interface principal consiste em uma experiência de chat completa onde o usuá
 
 ### ✅ Implementado
 - ✅ **Chat em Tempo Real**: Interface de chat responsiva e intuitiva
+- ✅ **Modo Conversação por Voz**: Interface completa para conversação por voz com controle inteligente do microfone
+- ✅ **Controle Inteligente de Microfone**: Microfone automaticamente desligado durante processamento e reprodução de áudio
 - ✅ **Persistência de Histórico**: Mensagens mantidas entre sessões
 - ✅ **Síntese de Voz**: Reprodução automática das respostas da IA
+- ✅ **Reconhecimento de Voz**: Captura e transcrição automática da fala do usuário
+- ✅ **Cancelamento de Eco**: Configuração avançada do microfone para evitar feedback
 - ✅ **Seleção de Vozes**: Múltiplas opções de vozes neurais em português
 - ✅ **Tela de Boas-vindas**: Onboarding com coleta de preferências
 - ✅ **Controles de Áudio**: Play/pause manual para cada mensagem
@@ -102,6 +106,21 @@ Componente para exibição de emoções em tempo real:
 - **Indicadores Visuais**: Emoji e cor correspondente à emoção
 - **Estados Suportados**: Feliz, Triste, Neutro, Surpreso, Com Raiva
 
+### `VoiceConversationMode.jsx`
+Componente para conversação por voz em tempo real:
+- **Reconhecimento de Voz**: Captura automática da fala do usuário em português brasileiro
+- **Controle Inteligente de Microfone**: Automaticamente liga/desliga o microfone nos momentos apropriados
+- **Fluxo Seguro**: Garante que o sistema não "se ouça" durante processamento ou reprodução
+- **Cancelamento de Eco**: Configurações avançadas para evitar feedback de áudio
+- **Transcrição em Tempo Real**: Mostra o que está sendo capturado em tempo real
+- **Estados Visuais**: Indicadores claros de quando está ouvindo, processando ou reproduzindo
+
+**Fluxo do Modo de Voz:**
+1. **Usuário fala** → Microfone ativo e capturando
+2. **Sistema processa** → Microfone automaticamente desligado
+3. **IA responde** → Microfone permanece desligado durante reprodução
+4. **Áudio termina** → Microfone reativado para nova fala
+
 ## 🎣 Hooks Customizados
 
 ### `useAudioPlayer.js`
@@ -123,6 +142,43 @@ if (isPlaying && activeAudioUrl === messageAudioUrl) {
 - Rastreamento de áudio ativo
 - Callbacks de conclusão
 - Prevenção de reprodução simultânea
+
+### `useVoiceMode.js`
+Hook React para gerenciar conversação por voz:
+```javascript
+const {
+  isVoiceModeActive,
+  isListening,
+  isProcessing,
+  transcript,
+  error,
+  activateVoiceMode,
+  deactivateVoiceMode,
+  startListening,
+  stopListening,
+  muteMicrophone,
+  setAudioPlaying
+} = useVoiceMode(onTranscriptComplete);
+
+// Ativar modo de voz
+activateVoiceMode();
+
+// Controlar microfone manualmente
+muteMicrophone(true); // Mutar
+muteMicrophone(false); // Desmutar
+
+// Informar estado do áudio
+setAudioPlaying(true); // Áudio iniciou
+setAudioPlaying(false); // Áudio parou
+```
+
+**Funcionalidades:**
+- Reconhecimento de voz contínuo em português brasileiro
+- Controle físico do microfone (mute/unmute)
+- Cancelamento de eco e supressão de ruído
+- Sincronização com reprodução de áudio
+- Detecção automática de fim de fala
+- Prevenção de feedback entre microfone e alto-falantes
 
 ### `useChat.js` (Planejado)
 Hook para gerenciamento centralizado do chat:

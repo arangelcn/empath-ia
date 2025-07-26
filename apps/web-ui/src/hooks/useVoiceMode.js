@@ -14,6 +14,7 @@ export const useVoiceMode = (onTranscriptComplete) => {
   const onTranscriptCompleteRef = useRef(onTranscriptComplete);
   const isVoiceModeActiveRef = useRef(isVoiceModeActive); // ✅ NOVO: Ref para valor atual
   const isProcessingRef = useRef(isProcessing); // ✅ NOVO: Ref para valor atual
+  const isPlayingRef = useRef(false); // ✅ NOVO: Ref para controle de áudio
 
   // Atualizar referências
   useEffect(() => {
@@ -139,9 +140,9 @@ export const useVoiceMode = (onTranscriptComplete) => {
           console.log('🔇 Reconhecimento de voz finalizado');
           setIsListening(false);
           
-          // ✅ NOVO: Reiniciar automaticamente se modo ativo e não processando
+          // ✅ CORREÇÃO: Não reiniciar se estiver processando OU reproduzindo áudio
           setTimeout(() => {
-            if (isVoiceModeActiveRef.current && !isProcessingRef.current) {
+            if (isVoiceModeActiveRef.current && !isProcessingRef.current && !isPlayingRef.current) {
               console.log('🔄 Reiniciando reconhecimento automaticamente...');
               // Tentar reiniciar
               try {
@@ -154,6 +155,8 @@ export const useVoiceMode = (onTranscriptComplete) => {
               } catch (error) {
                 console.warn('⚠️ Não foi possível reiniciar reconhecimento:', error);
               }
+            } else {
+              console.log('🛑 Não reiniciando reconhecimento - processando ou reproduzindo áudio');
             }
           }, 200); // Delay um pouco maior para estabilidade
         };
@@ -193,8 +196,8 @@ export const useVoiceMode = (onTranscriptComplete) => {
     setIsListening(false); // ✅ CRÍTICO: Parar escuta imediatamente
     setTranscript('');
 
-    // ✅ CRÍTICO: Mutar microfone IMEDIATAMENTE após capturar fala
-    console.log('🔇 MUTANDO microfone após capturar transcrição');
+    // ✅ CRÍTICO: Mutar microfone IMEDIATAMENTE após capturar fala e durante processamento
+    console.log('🔇 MUTANDO microfone após capturar transcrição e durante processamento');
     muteMicrophone(true);
 
     // Chamar callback externo se disponível
@@ -321,6 +324,12 @@ export const useVoiceMode = (onTranscriptComplete) => {
     }, 2000); // 2 segundos para garantir que não há áudio residual
   }, [isVoiceModeActive, startListening]);
 
+  // ✅ NOVA função para controlar estado do áudio
+  const setAudioPlaying = useCallback((playing) => {
+    console.log(`🎵 Atualizando estado do áudio: ${playing ? 'TOCANDO' : 'PARADO'}`);
+    isPlayingRef.current = playing;
+  }, []);
+
   // Verificar suporte à Web Speech API
   const isSupported = typeof window !== 'undefined' && 
     (window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -340,6 +349,7 @@ export const useVoiceMode = (onTranscriptComplete) => {
     resumeListening,
     resetProcessing,
     resumeListeningAfterAudio, // ✅ NOVA função específica para após áudio
+    setAudioPlaying, // ✅ NOVA função para controle de áudio
     
     // Utilitários
     startListening,

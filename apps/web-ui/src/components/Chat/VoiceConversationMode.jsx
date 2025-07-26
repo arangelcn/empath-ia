@@ -20,7 +20,8 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
     startListening,
     stopListening,
     muteMicrophone,
-    resetProcessing
+    resetProcessing,
+    setAudioPlaying
   } = useVoiceMode((transcript) => {
     if (!transcript.trim()) return;
 
@@ -31,6 +32,10 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
     // ✅ CRÍTICO: Parar reconhecimento IMEDIATAMENTE ao receber transcrição
     console.log('🎤 Reconhecimento parado');
     stopListening();
+    
+    // ✅ CRÍTICO: Garantir que o microfone está mutado durante o processamento
+    console.log('🔇 Mutando microfone durante processamento');
+    muteMicrophone(true);
     
     // ✅ Processar mensagem
     console.log('📤 Enviando mensagem para IA...');
@@ -68,8 +73,14 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
             // ▶️ PASSO 2: Reproduzir resposta da IA
             console.log("▶️ Tocando resposta da IA");
             
+            // ✅ Informar ao hook que o áudio está tocando
+            setAudioPlaying(true);
+            
             // ✅ USAR playAudio com callback para aguardar término completo
             playAudio(response.data.ai_response.audioUrl, () => {
+              // ✅ Informar ao hook que o áudio parou
+              setAudioPlaying(false);
+              
               // 🎤 PASSO 3: Reativar microfone após reprodução
               console.log("🎤 Microfone reativado - resetando estado de processamento");
               
@@ -154,6 +165,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
       if (isPlaying) {
         console.log('🔇 Parando áudio ao fechar');
         stopAudio();
+        setAudioPlaying(false); // ✅ Informar que o áudio parou
       }
       
       console.log('🎤 Microfone desligado (modo fechado)');
@@ -164,7 +176,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
 
   // ✅ Iniciar escuta quando modo estiver ativo
   useEffect(() => {
-    if (isVoiceModeActive && isOpen && !isListening && !isPlaying) {
+    if (isVoiceModeActive && isOpen && !isListening && !isPlaying && !isProcessing) {
       console.log('🎤 Microfone ativado - pronto para escutar');
       const timer = setTimeout(() => {
         startListening();
@@ -172,7 +184,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
       
       return () => clearTimeout(timer);
     }
-  }, [isVoiceModeActive, isOpen, isListening, isPlaying]);
+  }, [isVoiceModeActive, isOpen, isListening, isPlaying, isProcessing]);
 
   // ✅ MELHORADO: Fechar modo de voz com limpeza completa
   const handleClose = () => {
@@ -186,6 +198,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
       if (isPlaying) {
         console.log('🔇 Interrompendo reprodução de áudio');
         stopAudio();
+        setAudioPlaying(false); // ✅ Informar que o áudio parou
       }
       
       // 🛑 PASSO 3: Parar reconhecimento de voz
