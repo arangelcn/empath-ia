@@ -192,6 +192,43 @@ class ApiService {
   async listChatConversations() {
     return this.get('/api/chat/conversations');
   }
+
+  // ===== NOVOS ENDPOINTS PARA PROMPTS =====
+
+  // Prompts
+  async getPrompts(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = `/api/prompts${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async getPrompt(promptKey) {
+    return this.get(`/api/prompts/${promptKey}`);
+  }
+
+  async createPrompt(promptData) {
+    return this.post('/api/prompts', promptData);
+  }
+
+  async updatePrompt(promptKey, promptData) {
+    return this.put(`/api/prompts/${promptKey}`, promptData);
+  }
+
+  async deletePrompt(promptKey) {
+    return this.delete(`/api/prompts/${promptKey}`);
+  }
+
+  async getPromptsStats() {
+    return this.get('/api/prompts/stats');
+  }
+
+  async initializeDefaultPrompts() {
+    return this.post('/api/prompts/initialize');
+  }
+
+  async renderPrompt(promptKey, variables) {
+    return this.post(`/api/prompts/${promptKey}/render`, { variables });
+  }
 }
 
 export default new ApiService(); 

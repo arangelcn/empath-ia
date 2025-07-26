@@ -5,11 +5,14 @@ Este é o painel administrativo do sistema Empath IA, uma ferramenta desenvolvid
 ## 🎯 Funcionalidades
 
 - **Dashboard Principal**: Visão geral com métricas e estatísticas do sistema
-- **Configurações de Emoção**: Ajustar sensibilidade e thresholds para detecção emocional
-- **Configurações de Áudio**: Configurar parâmetros de voz e TTS
-- **Status do Sistema**: Monitoramento de serviços e health checks
-- **Monitor em Tempo Real**: Acompanhamento de sessões ativas e emoções dos usuários
-- **Autenticação**: Sistema de login para acesso restrito
+- **Gerenciamento de Usuários**: Visualizar e gerenciar usuários, perfis e progressos
+- **Gerenciamento de Sessões**: Criar e editar templates de sessões terapêuticas
+- **Análise de Conversas**: Visualizar histórico e analisar interações dos usuários
+- **Gerenciamento de Prompts** ⭐ **NOVO**: Interface completa para editar prompts do sistema de IA
+- **Analytics Avançado**: Métricas, relatórios e análise de tendências
+- **Status do Sistema**: Monitoramento de serviços e health checks em tempo real
+- **Configurações**: Parâmetros gerais do sistema e preferências administrativas
+- **Autenticação**: Sistema de login seguro para acesso restrito
 
 ## 🚀 Como Executar
 
@@ -53,25 +56,42 @@ npm start
    - Gráficos de uso e performance
    - Estatísticas de emoções detectadas
 
-3. **Configurações de Emoção** (`/emotion-settings`)
-   - Ajustar sensibilidade por emoção
-   - Configurar thresholds de detecção
-   - Definir intervalos de análise
+3. **Usuários** (`/users`)
+   - Gerenciar usuários do sistema
+   - Visualizar perfis e estatísticas
+   - Acompanhar progresso terapêutico
 
-4. **Configurações de Áudio** (`/audio-settings`)
-   - Parâmetros de TTS (velocidade, tom, volume)
-   - Configurações de microfone
-   - Teste de qualidade de áudio
+4. **Sessões** (`/sessions`)
+   - Gerenciar sessões terapêuticas
+   - Criar e editar templates de sessão
+   - Acompanhar sessões dos usuários
 
-5. **Status do Sistema** (`/system-status`)
+5. **Conversas** (`/conversations`)
+   - Visualizar histórico de conversas
+   - Analisar interações dos usuários
+   - Exportar dados de sessões
+
+6. **Prompts** (`/prompts`) ⭐ **NOVO**
+   - Gerenciar prompts do sistema de IA
+   - Criar, editar e organizar prompts por tipo
+   - Ativar/desativar prompts dinamicamente
+   - Estatísticas de uso e distribuição
+   - Sistema de variáveis e tags
+
+7. **Analytics** (`/analytics`)
+   - Métricas avançadas do sistema
+   - Relatórios de performance
+   - Análise de tendências
+
+8. **Status do Sistema** (`/system-status`)
    - Monitoramento de serviços
    - Health checks em tempo real
    - Métricas de performance
 
-6. **Monitor em Tempo Real** (`/real-time-monitor`)
-   - Sessões ativas de usuários
-   - Fluxo emocional ao vivo
-   - Timeline de emoções
+9. **Configurações** (`/settings`)
+   - Configurações gerais do sistema
+   - Parâmetros de funcionamento
+   - Preferências administrativas
 
 ## 🎨 Design System
 

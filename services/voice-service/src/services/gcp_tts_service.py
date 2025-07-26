@@ -41,8 +41,8 @@ class GCPTextToSpeechService:
         
         # Configurações de voz padrão para português brasileiro
         self.default_language_code = "pt-BR"
-        self.default_voice_name = "pt-BR-Wavenet-A"  # Voz feminina de alta qualidade
-        self.default_ssml_gender = texttospeech.SsmlVoiceGender.FEMALE
+        self.default_voice_name = "pt-BR-Neural2-B"  # Voz masculina de alta qualidade
+        self.default_ssml_gender = texttospeech.SsmlVoiceGender.MALE
         
         # Configurações de áudio
         self.audio_encoding = texttospeech.AudioEncoding.MP3

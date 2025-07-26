@@ -12,14 +12,22 @@ export const useVoiceMode = (onTranscriptComplete) => {
   const audioContextRef = useRef(null); // ✅ NOVO: AudioContext para controle avançado
   const silenceTimeoutRef = useRef(null);
   const onTranscriptCompleteRef = useRef(onTranscriptComplete);
+  const isVoiceModeActiveRef = useRef(isVoiceModeActive); // ✅ NOVO: Ref para valor atual
+  const isProcessingRef = useRef(isProcessing); // ✅ NOVO: Ref para valor atual
 
-  // Atualizar referência do callback
+  // Atualizar referências
   useEffect(() => {
     onTranscriptCompleteRef.current = onTranscriptComplete;
-  }, [onTranscriptComplete]);
+    isVoiceModeActiveRef.current = isVoiceModeActive;
+    isProcessingRef.current = isProcessing;
+  }, [onTranscriptComplete, isVoiceModeActive, isProcessing]);
 
   // Configurações de reconhecimento
-  const SILENCE_THRESHOLD = 2000; // 2 segundos de silêncio para processar
+  // ⚙️ TIMEOUT PERSONALIZADO: Tempo em milissegundos que aguarda após o usuário parar de falar
+  // antes de enviar a mensagem para o gateway/ai-service
+  // Valores sugeridos: 2000-5000ms (2-5 segundos)
+  // 🔧 FUNCIONALIDADE: Agora SEMPRE usa este timeout, ignorando detecção automática do navegador
+  const SILENCE_THRESHOLD = 2000; // 4 segundos de silêncio para processar
 
   // ✅ NOVA função para configurar microfone com cancelamento de eco
   const setupMicrophoneWithEchoCancellation = useCallback(async () => {
@@ -70,7 +78,7 @@ export const useVoiceMode = (onTranscriptComplete) => {
       
       if (SpeechRecognition) {
         recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = false;
+        recognitionRef.current.continuous = true;  // ✅ MUDANÇA: Mantém escuta contínua
         recognitionRef.current.interimResults = true;
         recognitionRef.current.lang = 'pt-BR';
         recognitionRef.current.maxAlternatives = 1;
@@ -100,10 +108,24 @@ export const useVoiceMode = (onTranscriptComplete) => {
           // ✅ Sempre atualizar transcript para feedback visual
           setTranscript(currentTranscript);
 
-          // Se temos texto final, processar imediatamente
-          if (finalTranscript.trim()) {
-            console.log('📝 Transcript final recebido:', finalTranscript.substring(0, 30));
-            processTranscript(finalTranscript.trim());
+          // ✅ NOVO: SEMPRE usar timeout personalizado para dar tempo ao usuário
+          // Limpar timeout anterior se existir
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+          }
+
+          // ✅ CORREÇÃO: SEMPRE aguardar SILENCE_THRESHOLD, independente de ser final ou interim
+          if (currentTranscript.trim()) {
+            const isFinale = finalTranscript.trim().length > 0;
+            console.log(`🎙️ ${isFinale ? 'Transcript final' : 'Resultado intermediário'} recebido: "${currentTranscript.substring(0, 30)}..."`);
+            console.log(`⏰ Aguardando ${SILENCE_THRESHOLD}ms antes de processar...`);
+            
+            silenceTimeoutRef.current = setTimeout(() => {
+              if (currentTranscript.trim()) {
+                console.log('⏰ Timeout de silêncio atingido, processando transcrição');
+                processTranscript(currentTranscript.trim());
+              }
+            }, SILENCE_THRESHOLD);
           }
         };
 
@@ -116,6 +138,24 @@ export const useVoiceMode = (onTranscriptComplete) => {
         recognitionRef.current.onend = () => {
           console.log('🔇 Reconhecimento de voz finalizado');
           setIsListening(false);
+          
+          // ✅ NOVO: Reiniciar automaticamente se modo ativo e não processando
+          setTimeout(() => {
+            if (isVoiceModeActiveRef.current && !isProcessingRef.current) {
+              console.log('🔄 Reiniciando reconhecimento automaticamente...');
+              // Tentar reiniciar
+              try {
+                if (recognitionRef.current && mediaStreamRef.current) {
+                  muteMicrophone(false);
+                  setTranscript('');
+                  setError(null);
+                  recognitionRef.current.start();
+                }
+              } catch (error) {
+                console.warn('⚠️ Não foi possível reiniciar reconhecimento:', error);
+              }
+            }
+          }, 200); // Delay um pouco maior para estabilidade
         };
       } else {
         setError('Web Speech API não suportada neste navegador');
@@ -140,6 +180,12 @@ export const useVoiceMode = (onTranscriptComplete) => {
         hasText: !!finalText.trim()
       });
       return;
+    }
+
+    // ✅ NOVO: Limpar timeout de silêncio ao processar
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
     }
 
     console.log('📝 Transcript completo ACEITO:', finalText);

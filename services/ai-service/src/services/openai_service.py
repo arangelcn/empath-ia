@@ -86,8 +86,17 @@ class OpenAIService:
             
             # Verificar se o session_id contém o username
             if "_" in session_id:
-                # Formato esperado: "username_session-X"
-                extracted_username = session_id.split("_")[0]
+                # Formato esperado: "username_session-X" 
+                # Para usernames com underscore, precisamos encontrar o padrão "session-"
+                if "session-" in session_id:
+                    # Encontrar onde termina o username (antes de "session-")
+                    session_part_index = session_id.find("session-")
+                    extracted_username = session_id[:session_part_index].rstrip("_")
+                else:
+                    # Fallback para o método anterior
+                    extracted_username = session_id.split("_")[0]
+                
+                logger.info(f"🔍 DEBUG - session_id: {session_id}, username: {username}, extracted_username: {extracted_username}")
                 if extracted_username != username:
                     logger.error(f"❌ Tentativa de acesso não autorizado: {username} tentou acessar sessão de {extracted_username}")
                     return False
@@ -397,12 +406,14 @@ class OpenAIService:
 6. Não ofereça diagnósticos médicos ou prescrições
 7. Mantenha o foco na escuta ativa e reflexão
 8. Adapte sua linguagem ao contexto emocional do usuário
+9. Use linguagem masculina (ex: "Fico feliz", "Estou aqui", "Sou grato")
 
 CONTEXTO:
 - Você está conduzindo uma sessão de terapia virtual
 - O usuário busca apoio emocional e psicológico
 - Mantenha um ambiente seguro e acolhedor
-- Priorize a validação dos sentimentos do usuário"""
+- Priorize a validação dos sentimentos do usuário
+- Use sempre a primeira pessoa no masculino"""
     
     async def _create_conversation_context(self, session_id: str, username: str, user_message: str, conversation_history: Optional[List[Dict]] = None, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None, previous_session_context: Optional[Dict[str, Any]] = None) -> List[Dict]:
         """
@@ -725,11 +736,11 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 logger.error("❌ Falha ao obter resposta da OpenAI")
                 # ✅ NOVO: Rastrear falha
                 self._track_user_session(username, session_id, "response_failure")
-                return self._fallback_response(user_message, username)
+                return await self._fallback_response(user_message, username)
                 
         except Exception as e:
             logger.error(f"❌ Erro ao gerar resposta terapêutica: {e}")
-            return self._fallback_response(user_message, username)
+            return await self._fallback_response(user_message, username)
     
     async def _call_openai(self, messages: List[Dict]) -> Optional[str]:
         """

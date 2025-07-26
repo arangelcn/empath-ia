@@ -2,7 +2,24 @@
 
 Uma plataforma completa de terapia virtual baseada na abordagem humanística de Carl Rogers, com sistema de sessões personalizadas, análise emocional em tempo real, contexto entre sessões e geração automática de próximas sessões terapêuticas.
 
-## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**
+## 🚀 **ATUALIZAÇÕES RECENTES (2025-07-26)**
+
+### ✅ **Sistema de Gerenciamento de Prompts via Admin Panel** ⭐ **NOVO**
+- **Funcionalidade**: Interface completa para gerenciar prompts do sistema de IA
+- **Implementação Completa**:
+  - Auto-inicialização de prompts padrão no startup dos serviços
+  - API RESTful completa para CRUD de prompts
+  - Interface administrativa moderna com React + Tailwind CSS
+  - Estatísticas em tempo real (Total, Ativos, por Tipo)
+  - Sistema de fallback inteligente para prompts hardcodados
+- **Benefícios**: 
+  - Prompts editáveis via interface web sem necessidade de redeploy
+  - Controle granular de ativação/desativação de prompts
+  - Organização por tipos (Sistema, Fallback, Geração de Sessão)
+  - Backup automático com fallbacks hardcodados
+- **Acesso**: Admin Panel → Menu "Prompts" → http://localhost:3001/prompts
+
+## 🚀 **ATUALIZAÇÕES ANTERIORES (2025-01-13)**
 
 ### ✅ **SessionContextService - Sistema de Contextos Totalmente Funcional**
 - **Problema Resolvido**: SessionContextService não estava persistindo dados no MongoDB
@@ -68,6 +85,16 @@ Uma plataforma completa de terapia virtual baseada na abordagem humanística de 
 - ✅ **Personalização Profunda**: Respostas adaptadas ao perfil e histórico do usuário
 - ✅ **Análise de Progresso**: Avaliação contínua do desenvolvimento terapêutico
 - ✅ **Fallback Inteligente**: Respostas empáticas quando serviços externos não estão disponíveis
+
+### ✅ Gerenciamento de Prompts ⭐ **NOVO**
+- ✅ **Interface Administrativa**: Painel completo para gerenciar prompts via web
+- ✅ **CRUD Completo**: Criar, editar, ativar/desativar e excluir prompts
+- ✅ **Auto-inicialização**: Prompts padrão criados automaticamente no startup
+- ✅ **Organização por Tipos**: Sistema, Fallback, Geração de Sessão, Análise
+- ✅ **Estatísticas em Tempo Real**: Métricas de uso e distribuição de prompts
+- ✅ **Sistema de Fallback**: Prompts hardcodados como backup automático
+- ✅ **Variáveis Dinâmicas**: Suporte a substituição de variáveis nos prompts
+- ✅ **Versionamento**: Controle de atualizações com timestamps
 
 ### ✅ Análise Emocional em Tempo Real
 - ✅ **Captura via Webcam**: Detecção de emoções faciais durante conversas

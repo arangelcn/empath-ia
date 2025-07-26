@@ -4,7 +4,7 @@ import { saveUserPreferences, createUser, userLogin } from '../services/api.js';
 import GoogleAuth from './GoogleAuth.jsx';
 
 const LoginScreen = ({ onComplete, sessionId }) => {
-  const [selectedVoice, setSelectedVoice] = useState('pt-BR-Neural2-A');
+  const [selectedVoice, setSelectedVoice] = useState('pt-BR-Neural2-B');
   const [error, setError] = useState('');
   const [showAuth, setShowAuth] = useState(false);
   const [userData, setUserData] = useState(null);
@@ -14,16 +14,16 @@ const LoginScreen = ({ onComplete, sessionId }) => {
   // Vozes do Google Cloud TTS com interface amigável
   const voiceOptions = [
     {
+      id: 'pt-BR-Neural2-B',
+      label: 'Voz Masculina Confiante (Recomendada)',
+      emoji: '⚡',
+      description: 'Tom seguro e profissional'
+    },
+    {
       id: 'pt-BR-Neural2-A',
       label: 'Voz Feminina Suave',
       emoji: '🌸',
       description: 'Tom suave e acolhedor'
-    },
-    {
-      id: 'pt-BR-Neural2-B',
-      label: 'Voz Masculina Confiante',
-      emoji: '⚡',
-      description: 'Tom seguro e profissional'
     },
     {
       id: 'pt-BR-Wavenet-A',

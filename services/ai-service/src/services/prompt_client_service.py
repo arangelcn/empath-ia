@@ -179,6 +179,68 @@ class PromptClientService:
             logger.error(f"❌ Erro ao buscar prompt de sistema: {e}")
             return self._get_fallback_system_prompt()
     
+    async def get_session_analysis_prompt(self, variables: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """
+        Buscar prompt para análise de contexto de sessão
+        
+        Args:
+            variables: Variáveis para renderizar o prompt (conversation_text, emotion_summary)
+            
+        Returns:
+            Prompt de análise de sessão renderizado ou None se não encontrado
+        """
+        try:
+            prompt_key = "session_context_analysis"
+            
+            if variables:
+                # Renderizar com variáveis
+                rendered_prompt = await self.render_prompt(prompt_key, variables)
+                if rendered_prompt:
+                    return rendered_prompt
+            
+            # Buscar prompt simples
+            prompt_data = await self.get_prompt(prompt_key)
+            if prompt_data:
+                return prompt_data.get("content", "")
+            
+            # Retornar None para usar fallback hardcoded
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao buscar prompt de análise de sessão: {e}")
+            return None
+    
+    async def get_next_session_prompt(self, variables: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """
+        Buscar prompt para geração de próxima sessão
+        
+        Args:
+            variables: Variáveis para renderizar o prompt (current_session_id, next_session_id, user_summary, session_summary)
+            
+        Returns:
+            Prompt de geração de próxima sessão renderizado ou None se não encontrado
+        """
+        try:
+            prompt_key = "next_session_generation"
+            
+            if variables:
+                # Renderizar com variáveis
+                rendered_prompt = await self.render_prompt(prompt_key, variables)
+                if rendered_prompt:
+                    return rendered_prompt
+            
+            # Buscar prompt simples
+            prompt_data = await self.get_prompt(prompt_key)
+            if prompt_data:
+                return prompt_data.get("content", "")
+            
+            # Retornar None para usar fallback hardcoded
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao buscar prompt de geração de próxima sessão: {e}")
+            return None
+    
     async def get_fallback_response(self, pattern_type: str) -> Optional[str]:
         """
         Buscar resposta de fallback para um padrão específico
@@ -201,54 +263,6 @@ class PromptClientService:
             
         except Exception as e:
             logger.error(f"❌ Erro ao buscar fallback {pattern_type}: {e}")
-            return None
-    
-    async def get_session_analysis_prompt(self, variables: Dict[str, Any]) -> Optional[str]:
-        """
-        Buscar prompt para análise de contexto de sessão
-        
-        Args:
-            variables: Variáveis para renderizar o prompt
-            
-        Returns:
-            Prompt renderizado para análise de sessão
-        """
-        try:
-            prompt_key = "session_context_analysis"
-            
-            rendered_prompt = await self.render_prompt(prompt_key, variables)
-            if rendered_prompt:
-                return rendered_prompt
-            
-            logger.warning("⚠️ Prompt de análise de sessão não encontrado")
-            return None
-            
-        except Exception as e:
-            logger.error(f"❌ Erro ao buscar prompt de análise de sessão: {e}")
-            return None
-    
-    async def get_next_session_prompt(self, variables: Dict[str, Any]) -> Optional[str]:
-        """
-        Buscar prompt para geração de próxima sessão
-        
-        Args:
-            variables: Variáveis para renderizar o prompt
-            
-        Returns:
-            Prompt renderizado para geração de próxima sessão
-        """
-        try:
-            prompt_key = "next_session_generation"
-            
-            rendered_prompt = await self.render_prompt(prompt_key, variables)
-            if rendered_prompt:
-                return rendered_prompt
-            
-            logger.warning("⚠️ Prompt de geração de sessão não encontrado")
-            return None
-            
-        except Exception as e:
-            logger.error(f"❌ Erro ao buscar prompt de geração de sessão: {e}")
             return None
     
     def _get_from_cache(self, prompt_key: str) -> Optional[Dict[str, Any]]:

@@ -105,8 +105,54 @@ async def startup_event():
         await token_economy_service.initialize()
         logger.info("✅ TokenEconomyService inicializado com sucesso")
         logger.info("✅ Nova arquitetura MongoDB (repositório) + Redis (performance) inicializada")
+        
+        # ✅ NOVO: Verificar e inicializar prompts do banco de dados
+        await verify_and_initialize_prompts()
+        
     except Exception as e:
         logger.warning(f"⚠️ Erro ao inicializar nova arquitetura: {e}")
+
+async def verify_and_initialize_prompts():
+    """
+    Verificar se existem prompts no banco de dados e inicializar se necessário
+    """
+    try:
+        logger.info("🔍 Verificando prompts no banco de dados...")
+        
+        # Tentar buscar prompt principal do sistema
+        system_prompt = await openai_service.prompt_client.get_prompt("system_rogers")
+        
+        if not system_prompt:
+            logger.warning("⚠️ Prompts não encontrados no banco. Inicializando prompts padrão...")
+            
+            # Chamar endpoint do Gateway para inicializar prompts padrão
+            await initialize_prompts_via_gateway()
+        else:
+            logger.info("✅ Prompts encontrados no banco de dados")
+            
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar prompts: {e}")
+
+async def initialize_prompts_via_gateway():
+    """
+    Inicializar prompts padrão via Gateway Service
+    """
+    try:
+        import httpx
+        gateway_url = os.getenv("GATEWAY_SERVICE_URL", "http://gateway:8000")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(f"{gateway_url}/api/prompts/initialize")
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"✅ Prompts inicializados via Gateway: {result.get('created_count', 0)} prompts criados")
+            else:
+                logger.error(f"❌ Erro ao inicializar prompts via Gateway: {response.status_code}")
+                
+    except Exception as e:
+        logger.error(f"❌ Erro ao chamar inicialização de prompts no Gateway: {e}")
+        logger.warning("⚠️ Sistema irá usar prompts hardcodados como fallback")
 
 # Chat endpoint (melhorado)
 @app.post("/chat")
@@ -187,6 +233,10 @@ async def chat(message: dict):
             previous_session_context=previous_session_context  # ✅ CORRIGIDO: Usar variável extraída
         )
         
+        # Verificar se response é uma coroutine
+        if hasattr(response, '__await__'):
+            response = await response
+            
         return {
             "response": response["response"],
             "service": "ai-service",

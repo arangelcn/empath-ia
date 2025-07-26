@@ -319,16 +319,35 @@ class PromptService:
             active_prompts = await self.prompts_collection.count_documents({"is_active": True})
             inactive_prompts = await self.prompts_collection.count_documents({"is_active": False})
             
+            # Contar por tipos específicos (para o frontend)
+            system_prompts = await self.prompts_collection.count_documents({"prompt_type": "system"})
+            fallback_prompts = await self.prompts_collection.count_documents({"prompt_type": "fallback"})
+            session_generation_prompts = await self.prompts_collection.count_documents({"prompt_type": "session_generation"})
+            analysis_prompts = await self.prompts_collection.count_documents({"prompt_type": "analysis"})
+            
             return {
                 "total_prompts": total_prompts,
                 "active_prompts": active_prompts,
                 "inactive_prompts": inactive_prompts,
+                "system_prompts": system_prompts,
+                "fallback_prompts": fallback_prompts,
+                "session_generation_prompts": session_generation_prompts,
+                "analysis_prompts": analysis_prompts,
                 "by_type": type_stats
             }
             
         except Exception as e:
             logger.error(f"❌ Erro ao obter estatísticas de prompts: {e}")
-            return {}
+            return {
+                "total_prompts": 0,
+                "active_prompts": 0,
+                "inactive_prompts": 0,
+                "system_prompts": 0,
+                "fallback_prompts": 0,
+                "session_generation_prompts": 0,
+                "analysis_prompts": 0,
+                "by_type": []
+            }
     
     async def create_default_prompts(self) -> Dict[str, Any]:
         """
@@ -350,12 +369,14 @@ class PromptService:
 6. Não ofereça diagnósticos médicos ou prescrições
 7. Mantenha o foco na escuta ativa e reflexão
 8. Adapte sua linguagem ao contexto emocional do usuário
+9. Use linguagem masculina (ex: "Fico feliz", "Estou aqui", "Sou grato")
 
 CONTEXTO:
 - Você está conduzindo uma sessão de terapia virtual
 - O usuário busca apoio emocional e psicológico
 - Mantenha um ambiente seguro e acolhedor
-- Priorize a validação dos sentimentos do usuário""",
+- Priorize a validação dos sentimentos do usuário
+- Use sempre a primeira pessoa no masculino""",
                     "variables": ["username", "session_id", "user_context", "previous_session_info"],
                     "tags": ["sistema", "rogers", "terapia", "principal"],
                     "is_active": True

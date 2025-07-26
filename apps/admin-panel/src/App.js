@@ -12,6 +12,7 @@ import SessionManagement from './pages/SessionManagement';
 import Analytics from './pages/Analytics';
 import Conversations from './pages/Conversations';
 import Settings from './pages/Settings';
+import PromptManagement from './pages/PromptManagement';
 
 function AuthenticatedApp() {
   return (
@@ -24,6 +25,7 @@ function AuthenticatedApp() {
         <Route path="/sessions" element={<SessionManagement />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/conversations" element={<Conversations />} />
+        <Route path="/prompts" element={<PromptManagement />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>

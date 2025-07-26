@@ -86,9 +86,32 @@ async def startup_event():
         init_mongodb()
         logger.info("✅ Gateway Service iniciado com sucesso")
         logger.info("✅ MongoDB conectado")
+        
+        # ✅ NOVO: Auto-inicializar prompts padrão se não existirem
+        await auto_initialize_prompts()
+        
     except Exception as e:
         logger.error(f"❌ Erro na startup: {e}")
         raise
+
+async def auto_initialize_prompts():
+    """
+    Auto-inicializar prompts padrão na startup se não existirem
+    """
+    try:
+        # Verificar se prompt principal existe
+        system_prompt = await prompt_service.get_prompt("system_rogers")
+        
+        if not system_prompt:
+            logger.info("🔍 Prompts não encontrados. Inicializando prompts padrão...")
+            result = await prompt_service.create_default_prompts()
+            logger.info(f"✅ Auto-inicialização concluída: {result.get('created_count', 0)} prompts criados")
+        else:
+            logger.info("✅ Prompts já existem no banco de dados")
+            
+    except Exception as e:
+        logger.error(f"❌ Erro na auto-inicialização de prompts: {e}")
+        # Não fazer raise aqui para não impedir o startup da aplicação
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -1187,7 +1210,7 @@ async def get_initial_message(session_id: str):
             # Sessão 1: Mensagem de boas-vindas e primeira pergunta
             initial_message = f"""Olá, {username}! 
 
-Eu sou sua assistente terapêutica. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. 
+Eu sou seu assistente terapêutico. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. 
 
 Primeiro, me conta: qual é a sua idade?"""
             
@@ -1288,7 +1311,7 @@ Como você está se sentindo desde nossa conversa anterior? Há algo específico
                         
                         f"""Oi, {username}! Que bom que você voltou.
 
-Esta é nossa segunda sessão juntas. Como você tem estado desde que conversamos?
+Esta é nossa segunda sessão juntos. Como você tem estado desde que conversamos?
 
 O que você gostaria de compartilhar comigo hoje? Há algo que tem estado em sua mente?""",
                         
@@ -1396,6 +1419,26 @@ async def create_prompt(prompt_data: dict):
         logger.error(f"❌ Erro ao criar prompt: {e}")
         raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
+@app.get("/api/prompts/stats")
+async def get_prompt_stats():
+    """Obter estatísticas dos prompts"""
+    try:
+        stats = await prompt_service.get_prompt_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"❌ Erro ao obter estatísticas de prompts: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@app.post("/api/prompts/initialize")
+async def initialize_default_prompts():
+    """Inicializar prompts padrão do sistema"""
+    try:
+        result = await prompt_service.create_default_prompts()
+        return result
+    except Exception as e:
+        logger.error(f"❌ Erro ao inicializar prompts padrão: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
 @app.get("/api/prompts/{prompt_key}")
 async def get_prompt(prompt_key: str):
     """Buscar prompt por chave"""
@@ -1474,26 +1517,6 @@ async def render_prompt(prompt_key: str, variables: dict):
         return {"rendered_content": rendered}
     except Exception as e:
         logger.error(f"❌ Erro ao renderizar prompt: {e}")
-        raise HTTPException(status_code=500, detail="Erro interno do servidor")
-
-@app.get("/api/prompts/stats")
-async def get_prompt_stats():
-    """Obter estatísticas dos prompts"""
-    try:
-        stats = await prompt_service.get_prompt_stats()
-        return stats
-    except Exception as e:
-        logger.error(f"❌ Erro ao obter estatísticas de prompts: {e}")
-        raise HTTPException(status_code=500, detail="Erro interno do servidor")
-
-@app.post("/api/prompts/initialize")
-async def initialize_default_prompts():
-    """Inicializar prompts padrão do sistema"""
-    try:
-        result = await prompt_service.create_default_prompts()
-        return result
-    except Exception as e:
-        logger.error(f"❌ Erro ao inicializar prompts padrão: {e}")
         raise HTTPException(status_code=500, detail="Erro interno do servidor")
 
 if __name__ == "__main__":

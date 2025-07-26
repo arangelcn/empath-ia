@@ -57,7 +57,7 @@ class UserTherapeuticSessionService:
                 "subtitle": "Vamos nos conhecer melhor",
                 "description": "Sessão inicial para coleta de informações pessoais e estabelecimento do vínculo terapêutico",
                 "objective": "Coletar informações pessoais do usuário e estabelecer o primeiro contato terapêutico",
-                "initial_prompt": "Olá! Eu sou sua assistente terapêutica. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. Primeiro, me conta: qual é a sua idade?",
+                "initial_prompt": "Olá! Eu sou seu assistente terapêutico. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. Primeiro, me conta: qual é a sua idade?",
                 "category": "onboarding",
                 "difficulty": "beginner",
                 "estimated_duration": 30,

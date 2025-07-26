@@ -161,7 +161,7 @@ class AudioService {
       }
 
       // Obter a voz selecionada pelo usuário
-      const selectedVoice = localStorage.getItem('empatia_selected_voice') || 'pt-BR-Neural2-A'
+      const selectedVoice = localStorage.getItem('empatia_selected_voice') || 'pt-BR-Neural2-B'
 
       const requestData = {
         text: text.substring(0, 1000), // Limite de caracteres

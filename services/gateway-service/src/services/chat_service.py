@@ -118,7 +118,7 @@ class ChatService:
             users_collection = get_collection("users")
             user = await users_collection.find_one({"username": username})
             
-            selected_voice = "pt-BR-Neural2-A"  # padrão
+            selected_voice = "pt-BR-Neural2-B"  # padrão masculino
             voice_enabled = True
             
             if user and user.get("preferences"):
@@ -587,7 +587,7 @@ class ChatService:
             "Percebo que há algo significativo no que você está compartilhando. Gostaria de explorar isso mais?",
             "Suas palavras me mostram muito sobre seus sentimentos. O que mais vem à sua mente sobre isso?",
             "Compreendo que isso é parte da sua experiência. Como você se sente em relação a isso agora?",
-            "Obrigada por compartilhar isso comigo. Que sentimentos isso desperta em você?",
+            "Obrigado por compartilhar isso comigo. Que sentimentos isso desperta em você?",
             "Vejo que isso tem um significado especial para você. Pode me ajudar a entender melhor?",
             "Suas reflexões são muito valiosas. O que você pensa sobre essa situação?",
             "Sinto que há algo profundo no que você está expressando. Como isso se conecta com você?",
@@ -1915,13 +1915,13 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             registration_questions = [
                 {
                     "step": 0,
-                    "question": f"Olá! Eu sou sua assistente terapêutica. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. Primeiro, me conta: qual é a sua idade?",
+                    "question": f"Olá! Eu sou seu assistente terapêutico. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. Primeiro, me conta: qual é a sua idade?",
                     "field": "idade",
                     "type": "number"
                 },
                 {
                     "step": 1,
-                    "question": "Obrigada! Agora me conta: como você se identifica em relação ao seu gênero? (Por exemplo: feminino, masculino, não-binário, prefiro não responder, etc.)",
+                    "question": "Obrigado! Agora me conta: como você se identifica em relação ao seu gênero? (Por exemplo: feminino, masculino, não-binário, prefiro não responder, etc.)",
                     "field": "genero",
                     "type": "text"
                 },
@@ -1933,7 +1933,7 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
                 },
                 {
                     "step": 3,
-                    "question": "Obrigada por compartilhar! Agora me conta: em que cidade e estado você mora atualmente?",
+                    "question": "Obrigado por compartilhar! Agora me conta: em que cidade e estado você mora atualmente?",
                     "field": "localizacao",
                     "type": "text"
                 },
@@ -1951,7 +1951,7 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
                 },
                 {
                     "step": 6,
-                    "question": "Obrigada por compartilhar! Agora me conta: qual é sua ocupação atual? Você trabalha, estuda, está desempregado(a)? Como é sua rotina?",
+                    "question": "Obrigado por compartilhar! Agora me conta: qual é sua ocupação atual? Você trabalha, estuda, está desempregado(a)? Como é sua rotina?",
                     "field": "ocupacao",
                     "type": "text"
                 },
@@ -1963,7 +1963,7 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
                 },
                 {
                     "step": 8,
-                    "question": "Muito obrigada por compartilhar todas essas informações comigo! Isso me ajuda muito a te conhecer melhor. Há mais alguma coisa sobre você que gostaria de me contar? Algo que considera importante para nossa conversa?",
+                    "question": "Muito obrigado por compartilhar todas essas informações comigo! Isso me ajuda muito a te conhecer melhor. Há mais alguma coisa sobre você que gostaria de me contar? Algo que considera importante para nossa conversa?",
                     "field": "informacoes_adicionais",
                     "type": "text"
                 }
@@ -2035,7 +2035,7 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
                     logger.info(f"🎯 INICIANDO FINALIZAÇÃO DO CADASTRO para {username}")
                     
                     # 1. Preparar mensagem de finalização
-                    ai_response = f"""Perfeito! Muito obrigada por compartilhar todas essas informações comigo, {username}! 
+                    ai_response = f"""Perfeito! Muito obrigado por compartilhar todas essas informações comigo, {username}! 
 
 Agora eu te conheço melhor e posso oferecer um apoio mais personalizado. Suas informações estão seguras e serão usadas apenas para tornar nossas conversas mais significativas.
 

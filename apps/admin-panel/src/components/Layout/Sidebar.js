@@ -8,6 +8,7 @@ import {
   AcademicCapIcon,
   ChartBarIcon,
   ChatBubbleLeftRightIcon,
+  CommandLineIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline';
@@ -19,6 +20,7 @@ const navigation = [
   { name: 'Usuários', href: '/users', icon: UserGroupIcon },
   { name: 'Sessões', href: '/sessions', icon: AcademicCapIcon },
   { name: 'Conversas', href: '/conversations', icon: ChatBubbleLeftRightIcon },
+  { name: 'Prompts', href: '/prompts', icon: CommandLineIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   { name: 'Status do Sistema', href: '/system-status', icon: CpuChipIcon },
   { name: 'Configurações', href: '/settings', icon: Cog6ToothIcon },
