@@ -10,10 +10,10 @@ pillow>=10.0.0,<11.0.0
 python-multipart==0.0.6
 python-dotenv==1.0.0
 
-# DeepFace com dependências Keras/TensorFlow
+# DeepFace com dependências (TensorFlow já incluído na imagem base)
 deepface>=0.0.79
 tf-keras  # Necessário para TensorFlow 2.17+
-tensorflow>=2.15.0  # Compatível com tf-keras
+# TensorFlow já incluído na imagem tensorflow/tensorflow:2.15.0-gpu
 mediapipe>=0.10.0
 protobuf>=3.20.0,<4.0.0
 

@@ -119,20 +119,40 @@ async def health_check():
     
     try:
         if _processor_initialized:
-            # DeepFace processor
+            # DeepFace processor com informações de GPU
+            gpu_info = {}
+            if hasattr(emotion_engine, 'get_device_info'):
+                gpu_info = emotion_engine.get_device_info()
+            
             processor_details = {
                 "type": "DeepFace",
                 "model_loaded": True,
-                "device": getattr(emotion_engine, 'device', 'cpu'),
-                "detector_backend": getattr(emotion_engine, 'detector_backend', 'mediapipe')
+                "device_type": gpu_info.get("device_type", "CPU"),
+                "cuda_available": gpu_info.get("cuda_available", False),
+                "gpu_available": gpu_info.get("gpu_available", False),
+                "gpu_count": gpu_info.get("gpu_count", 0),
+                "detector_backend": getattr(emotion_engine, 'primary_detector', 'mediapipe'),
+                "gpu_devices": gpu_info.get("gpu_devices", [])
             }
-            device_info = processor_details["device"]
+            device_info = {
+                "type": gpu_info.get("device_type", "CPU"),
+                "cuda_available": gpu_info.get("cuda_available", False),
+                "gpu_available": gpu_info.get("gpu_available", False),
+                "gpu_count": gpu_info.get("gpu_count", 0)
+            }
         else:
             processor_details = {
                 "type": "DeepFace",
                 "model_loaded": False,
-                "device": "unknown",
+                "device_type": "unknown",
+                "cuda_available": False,
+                "gpu_available": False,
                 "detector_backend": "unknown"
+            }
+            device_info = {
+                "type": "unknown",
+                "cuda_available": False,
+                "gpu_available": False
             }
     except Exception as e:
         logger.warning(f"Processor status check failed: {e}")
@@ -140,8 +160,15 @@ async def health_check():
         processor_details = {
             "type": "Error",
             "model_loaded": False,
-            "device": "unknown",
+            "device_type": "unknown",
+            "cuda_available": False,
+            "gpu_available": False,
             "error": str(e)
+        }
+        device_info = {
+            "type": "error",
+            "cuda_available": False,
+            "gpu_available": False
         }
     
     # Determinar status geral
@@ -157,7 +184,8 @@ async def health_check():
         "processor_available": processor_status,
         "processor_details": processor_details,
         "device": device_info,
-        "cuda_available": False,  # MediaPipe usa CPU
+        "cuda_available": device_info.get("cuda_available", False),
+        "gpu_available": device_info.get("gpu_available", False),
         "ready_for_requests": processor_status
     }
 

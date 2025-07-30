@@ -1,15 +1,83 @@
 """
 Processador de emoções faciais usando DeepFace com configurações otimizadas para acurácia
 Melhorias: pré-processamento robusto, modelos precisos, multi-detector e calibração
+Suporte: GPU com fallback automático para CPU
 """
 
 import logging
 import numpy as np
+import os
 from typing import Dict, Any, Optional, List
 from deepface import DeepFace
 import cv2
 
+# Configuração de GPU/CPU para TensorFlow
+import tensorflow as tf
+
 logger = logging.getLogger(__name__)
+
+
+def setup_tensorflow_gpu():
+    """
+    Configura TensorFlow para usar GPU quando disponível, com fallback para CPU
+    """
+    try:
+        # Log das variáveis de ambiente relacionadas à GPU
+        logger.info(f"🔍 Variáveis de ambiente GPU:")
+        logger.info(f"   CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'não definida')}")
+        logger.info(f"   NVIDIA_VISIBLE_DEVICES: {os.environ.get('NVIDIA_VISIBLE_DEVICES', 'não definida')}")
+        
+        # Verificar se CUDA está compilado no TensorFlow
+        cuda_available = tf.test.is_built_with_cuda()
+        logger.info(f"📦 TensorFlow compilado com CUDA: {cuda_available}")
+        
+        # Verificar GPUs disponíveis
+        gpus = tf.config.experimental.list_physical_devices('GPU')
+        logger.info(f"🔍 GPUs físicos detectados: {len(gpus)}")
+        
+        for i, gpu in enumerate(gpus):
+            logger.info(f"   GPU {i}: {gpu.name} ({gpu.device_type})")
+        
+        if gpus and cuda_available:
+            logger.info(f"🚀 Configurando GPU: {len(gpus)} dispositivo(s) encontrado(s)")
+            
+            # Configurar uso de memória dinâmica (evita alocar toda a VRAM)
+            for gpu in gpus:
+                try:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+                    logger.info(f"✅ Memória dinâmica configurada para {gpu.name}")
+                except Exception as gpu_e:
+                    logger.warning(f"⚠️  Erro ao configurar memória dinâmica para {gpu.name}: {gpu_e}")
+            
+            # Verificar se GPU está realmente disponível para computação
+            try:
+                with tf.device('/GPU:0'):
+                    test_tensor = tf.constant([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+                    result = tf.matmul(test_tensor, test_tensor, transpose_b=True)
+                    # Forçar execução
+                    _ = result.numpy()
+                logger.info("✅ GPU testada e funcionando para computação")
+                return "GPU", gpus
+                
+            except Exception as test_e:
+                logger.warning(f"❌ GPU detectada mas teste falhou: {test_e}")
+                logger.info("🔄 Retornando para CPU")
+                return "CPU", []
+                
+        else:
+            if not cuda_available:
+                logger.info("⚠️  TensorFlow não foi compilado com CUDA")
+            if not gpus:
+                logger.info("⚠️  Nenhuma GPU física detectada")
+            logger.info("💻 Usando CPU")
+            return "CPU", []
+            
+    except Exception as e:
+        logger.warning(f"❌ Erro geral ao configurar GPU: {e}")
+        logger.info("🔄 Forçando uso de CPU")
+        # Forçar uso de CPU em caso de erro
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+        return "CPU", []
 
 
 class DeepFaceProcessor:
@@ -22,6 +90,7 @@ class DeepFaceProcessor:
     - Modelo de emoção mais preciso
     - Calibração de emoções baseada em datasets reais
     - Threshold de confiança adaptativo
+    - Suporte automático à GPU com fallback para CPU
     """
     
     def __init__(self, detector_backend: str = "retinaface"):
@@ -31,10 +100,12 @@ class DeepFaceProcessor:
         Args:
             detector_backend (str): Backend de detecção facial prioritário
         """
+        # Configurar TensorFlow para GPU/CPU
+        self.device_type, self.gpus = setup_tensorflow_gpu()
+        
         # Lista de detectores em ordem de precisão (fallback automático)
         self.detector_backends = ["retinaface", "mtcnn", "opencv", "mediapipe"]
         self.primary_detector = detector_backend
-        self.device = "cpu"
         
         # Calibração de emoções baseada em análise de datasets
         self.emotion_calibration = {
@@ -52,10 +123,35 @@ class DeepFaceProcessor:
         self.confidence_threshold = 0.3
         
         logger.info(f"Inicializando DeepFaceProcessor otimizado:")
+        logger.info(f"  - Dispositivo: {self.device_type}")
+        if self.device_type == "GPU":
+            logger.info(f"  - GPUs disponíveis: {len(self.gpus)}")
         logger.info(f"  - Detectores: {self.detector_backends}")
         logger.info(f"  - Calibração ativada: Sim")
         logger.info(f"  - Threshold de confiança: {self.confidence_threshold}")
-    
+
+    def get_device_info(self) -> Dict[str, Any]:
+        """
+        Retorna informações sobre o dispositivo de processamento
+        """
+        device_info = {
+            "device_type": self.device_type,
+            "cuda_available": tf.test.is_built_with_cuda(),
+            "gpu_available": tf.test.is_gpu_available(),
+            "gpu_count": len(self.gpus) if self.gpus else 0,
+        }
+        
+        if self.gpus:
+            device_info["gpu_devices"] = []
+            for i, gpu in enumerate(self.gpus):
+                device_info["gpu_devices"].append({
+                    "device_id": i,
+                    "name": gpu.name,
+                    "device_type": gpu.device_type
+                })
+        
+        return device_info
+
     def preprocess_image(self, img: np.ndarray) -> np.ndarray:
         """
         Pré-processamento robusto da imagem para melhor detecção
