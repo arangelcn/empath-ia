@@ -14,11 +14,15 @@ from .processors.facial_emotion_processor import facial_emotion_processor
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Usar wrapper otimizado com DeepFace + Legacy fallback
+processor_type = "DeepFace + MediaPipe (with Legacy fallback)"
+use_legacy = False  # Principal é DeepFace, legacy apenas como fallback
+
 # Criar app FastAPI
 app = FastAPI(
     title="empatIA Emotion Service",
-    description="Serviço de análise emocional facial com OpenFace",
-    version="1.0.0",
+    description=f"Serviço de análise emocional facial com {processor_type}",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -32,18 +36,129 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Inicializar processador de emoções faciais
-emotion_processor = facial_emotion_processor
+# Inicializar processador de emoções faciais (Wrapper DeepFace + Legacy)
+emotion_engine = facial_emotion_processor
+
+# Variável global para controlar inicialização
+_processor_initialized = False
+
+@app.on_event("startup")
+async def startup_event():
+    """Evento executado no startup da aplicação para inicializar processadores"""
+    global _processor_initialized
+    
+    logger.info("🚀 Iniciando Emotion Service v2.0...")
+    logger.info(f"📊 Processador configurado: {processor_type}")
+    logger.info(f"🔧 Legacy mode: {use_legacy}")
+    logger.info(f"💻 Detector: MediaPipe (CPU optimized)")
+    
+    try:
+        logger.info("🔄 Inicializando processador DeepFace...")
+        
+        # Forçar inicialização do processador DeepFace
+        logger.info("📥 Baixando/carregando modelos DeepFace...")
+        if hasattr(emotion_engine, 'initialize'):
+            emotion_engine.initialize()
+        else:
+            # Se não existe método initialize, criar uma imagem teste para forçar inicialização
+            import numpy as np
+            test_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+            
+            # Usar PIL para criar imagem temporária
+            from PIL import Image
+            import tempfile
+            test_pil = Image.fromarray(test_image)
+            
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                test_pil.save(tmp.name)
+                logger.info("🧪 Executando inicialização com imagem de teste...")
+                result = emotion_engine.process_image(tmp.name)
+                os.unlink(tmp.name)
+                logger.info(f"✅ Processador DeepFace inicializado: {result is not None}")
+        
+        _processor_initialized = True
+        logger.info("🎉 Emotion Service inicializado com sucesso!")
+        
+        # Log de informações finais
+        logger.info("📋 Configuração final:")
+        logger.info(f"   - Processador: {processor_type}")
+        logger.info(f"   - Device: {getattr(emotion_engine, 'device', 'cpu')}")
+        logger.info(f"   - Detector: {getattr(emotion_engine, 'detector_backend', 'mediapipe')}")
+        logger.info(f"   - Status: Pronto para receber requisições")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro na inicialização do processador: {e}")
+        logger.error("⚠️ Serviço pode funcionar em modo degradado")
+        _processor_initialized = False
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Evento executado no shutdown da aplicação"""
+    logger.info("🛑 Encerrando Emotion Service...")
+    
+    # Cleanup se necessário
+    if hasattr(emotion_engine, 'cleanup'):
+        try:
+            emotion_engine.cleanup()
+            logger.info("🧹 Cleanup realizado com sucesso")
+        except Exception as e:
+            logger.warning(f"⚠️ Erro no cleanup: {e}")
+    
+    logger.info("👋 Emotion Service encerrado")
 
 # Health check endpoint
 @app.get("/health")
 async def health_check():
+    """Verifica saúde do serviço e status de inicialização do processador"""
+    global _processor_initialized
+    
+    # Verificar disponibilidade do processador
+    processor_status = _processor_initialized
+    device_info = "cpu"
+    processor_details = {}
+    
+    try:
+        if _processor_initialized:
+            # DeepFace processor
+            processor_details = {
+                "type": "DeepFace",
+                "model_loaded": True,
+                "device": getattr(emotion_engine, 'device', 'cpu'),
+                "detector_backend": getattr(emotion_engine, 'detector_backend', 'mediapipe')
+            }
+            device_info = processor_details["device"]
+        else:
+            processor_details = {
+                "type": "DeepFace",
+                "model_loaded": False,
+                "device": "unknown",
+                "detector_backend": "unknown"
+            }
+    except Exception as e:
+        logger.warning(f"Processor status check failed: {e}")
+        processor_status = False
+        processor_details = {
+            "type": "Error",
+            "model_loaded": False,
+            "device": "unknown",
+            "error": str(e)
+        }
+    
+    # Determinar status geral
+    overall_status = "healthy" if processor_status else "initializing" if not _processor_initialized else "degraded"
+    
     return {
-        "status": "healthy",
-        "service": "emotion-service",
+        "status": overall_status,
+        "service": "emotion-service", 
         "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0",
-        "mediapipe_available": True
+        "version": "2.0.0",
+        "processor_type": processor_type,
+        "processor_initialized": _processor_initialized,
+        "processor_available": processor_status,
+        "processor_details": processor_details,
+        "device": device_info,
+        "cuda_available": False,  # MediaPipe usa CPU
+        "ready_for_requests": processor_status
     }
 
 # Root endpoint
@@ -51,7 +166,9 @@ async def health_check():
 async def root():
     return {
         "message": "empatIA Emotion Service",
-        "description": "Serviço de análise emocional facial com OpenFace",
+        "description": f"Serviço de análise emocional facial com {processor_type}",
+        "version": "2.0.0",
+        "processor": processor_type,
         "docs": "/docs"
     }
 
@@ -59,7 +176,7 @@ async def root():
 @app.post("/analyze-facial-expression")
 async def analyze_facial_expression(file: UploadFile = File(...)):
     """
-    Endpoint para análise de expressão facial usando OpenFace
+    Endpoint para análise de expressão facial usando DeepFace
     """
     try:
         logger.info(f"Processing image: {file.filename}")
@@ -85,61 +202,38 @@ async def analyze_facial_expression(file: UploadFile = File(...)):
                 raise HTTPException(status_code=400, detail=f"Erro ao processar imagem: {str(e)}")
         
         try:
-            # Processar com OpenFace
-            au_data = emotion_processor.process_image(temp_file_path)
+            # Processar com DeepFace
+            result = emotion_engine.process_image(temp_file_path)
             
-            if au_data is None:
-                # Fallback para dados mock se OpenFace falhar
-                logger.warning("OpenFace processing failed, using mock data")
-                return {
-                    "emotions": {
-                        "joy": 0.5,
-                        "sadness": 0.1,
-                        "anger": 0.1,
-                        "fear": 0.1,
-                        "surprise": 0.1,
-                        "disgust": 0.1
-                    },
-                    "dominant_emotion": "joy",
-                    "confidence": 0.5,
-                    "status": "mock_data",
-                    "message": "OpenFace não disponível - dados simulados",
-                    "service": "emotion-service",
-                    "filename": file.filename,
-                    "face_detected": False,
-                    "action_units": {}
-                }
+            if result is None:
+                # Retornar erro 422 para nenhuma face detectada (conforme especificação)
+                raise HTTPException(
+                    status_code=422, 
+                    detail="Nenhuma face detectada na imagem. Verifique se a imagem contém uma face claramente visível."
+                )
             
-            # Interpretar emoções a partir das AUs
-            emotions = emotion_processor.get_emotional_interpretation(au_data)
+            # Extrair emoções e emoção dominante do resultado
+            emotions = result.get("emotions", {"neutral": 1.0})
+            dominant_emotion = result.get("dominant_emotion", "neutral")
+            confidence = result.get("confidence", 0.0)
             
-            # Encontrar emoção dominante
-            dominant_emotion = "neutral"
-            max_score = 0.0
-            if emotions:
-                dominant_emotion = max(emotions, key=emotions.get)
-                max_score = emotions[dominant_emotion]
-            
-            # Normalizar emoções para somar 1.0
-            if emotions:
-                total_score = sum(emotions.values())
-                if total_score > 0:
-                    emotions = {k: v/total_score for k, v in emotions.items()}
-                else:
-                    emotions = {"neutral": 1.0}
+            # Normalizar emoções para garantir que somem 1.0
+            total_score = sum(emotions.values())
+            if total_score > 0:
+                emotions = {k: v/total_score for k, v in emotions.items()}
             else:
                 emotions = {"neutral": 1.0}
             
             return {
-                "emotions": emotions,
                 "dominant_emotion": dominant_emotion,
-                "confidence": au_data.get("confidence", max_score),
+                "probabilities": emotions,
+                "emotions": emotions,  # Manter compatibilidade
+                "confidence": confidence,
                 "status": "success",
                 "message": "Análise facial realizada com sucesso",
                 "service": "emotion-service",
                 "filename": file.filename,
-                "face_detected": au_data.get("face_detected", True),
-                "action_units": au_data.get("action_units", {}),
+                "face_detected": result.get("face_detected", True),
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -208,8 +302,8 @@ async def analyze_realtime(data: Dict[str, Any]):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Erro ao decodificar Base64: {str(e)}")
         
-        # Processar diretamente com MediaPipe (sem arquivos temporários)
-        result = emotion_processor.process_image_bytes(image_bytes)
+        # Processar diretamente com DeepFace (sem arquivos temporários)
+        result = emotion_engine.process_image_bytes(image_bytes)
         
         if result is None:
             return {
@@ -268,8 +362,8 @@ async def debug_emotions(data: Dict[str, Any]):
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Erro ao decodificar Base64: {str(e)}")
         
-        # Processar diretamente com MediaPipe (com debug)
-        result = emotion_processor.process_image_bytes(image_bytes)
+        # Processar diretamente com DeepFace (com debug)
+        result = emotion_engine.process_image_bytes(image_bytes)
         
         print(f"[DEBUG] Process result: {result}")
         
@@ -314,10 +408,14 @@ async def debug_emotions(data: Dict[str, Any]):
 async def get_config():
     """Retorna configurações do serviço"""
     return {
-        "openface_path": os.getenv("OPENFACE_MODEL_PATH", "/models/openface"),
+        "processor_type": processor_type,
+        "use_legacy_landmarks": use_legacy,
+        "emotion_model_path": os.getenv("EMOTION_MODEL_PATH"),
         "confidence_threshold": float(os.getenv("EMOTION_CONFIDENCE_THRESHOLD", "0.7")),
         "service_port": os.getenv("EMOTION_SERVICE_PORT", "8003"),
         "debug": os.getenv("DEBUG", "false").lower() == "true",
+        "device": getattr(emotion_engine, 'device', 'cpu'),
+        "cuda_available": False,  # MediaPipe usa CPU
         "shared_data_dir": "/shared_data"
     }
 
@@ -331,7 +429,8 @@ async def get_stats():
         "most_common_emotion": "joy",
         "uptime": "just started",
         "service": "emotion-service",
-        "openface_status": "available"
+        "processor_type": processor_type,
+        "processor_status": "available"
     }
 
 if __name__ == "__main__":

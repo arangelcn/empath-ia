@@ -131,8 +131,15 @@ services:
       - OPENFACE_MODEL_PATH=${OPENFACE_MODEL_PATH:-/models/openface}
       - EMOTION_CONFIDENCE_THRESHOLD=${EMOTION_CONFIDENCE_THRESHOLD:-0.7}
       - HOT_RELOAD=${HOT_RELOAD:-true}
+      # EmotiEffLib específicas
+      - USE_LEGACY_LANDMARKS=${USE_LEGACY_LANDMARKS:-false}
+      - EMOTIEFF_MODEL=${EMOTIEFF_MODEL:-enet_b0_8_best_afew}
+      - TORCH_HOME=/app/models
+      - HF_HOME=/app/models/huggingface
     volumes:
       - ./services/emotion-service/src:/app/src
+      # Volume para modelos pré-treinados
+      - ./data/emotion_models:/app/models
     ports:
       - "127.0.0.1:${EMOTION_SERVICE_PORT:-8003}:8003"
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload", "--log-level", "debug"]
