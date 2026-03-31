@@ -7,7 +7,7 @@ pydantic-settings>=2.0.3,<3.0.0
 # Image processing essentials
 opencv-python-headless==4.8.1.78
 pillow>=10.0.0,<11.0.0
-python-multipart==0.0.6
+python-multipart==0.0.22
 python-dotenv==1.0.0
 
 # DeepFace com dependências (TensorFlow já incluído na imagem base)
