@@ -236,6 +236,8 @@ temp/
 *.key
 *.pem
 secrets/
+# Excepção: módulo Terraform de secrets (código, sem dados sensíveis)
+!infrastructure/terraform/modules/secrets/
 
 # Local environment variables
 .env.local

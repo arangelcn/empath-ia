@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api';
+
 const apiClient = axios.create({
-  baseURL: '/api', // O gateway irá redirecionar
+  baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -342,7 +346,7 @@ export const getUserProgress = async (username) => {
 
 export const getInitialMessage = async (sessionId) => {
   try {
-    const response = await fetch(`/api/chat/initial-message/${sessionId}`, {
+    const response = await fetch(`${API_BASE}/chat/initial-message/${sessionId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

@@ -1,0 +1,99 @@
+name: CI — Build & Validate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: us-central1-docker.pkg.dev
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REPO: empatia-images
+
+jobs:
+  # ---------------------------------------------------------------
+  # 1. Validação Terraform
+  # ---------------------------------------------------------------
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7"
+
+      - name: terraform init (apenas validação local — sem backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform fmt check
+        run: terraform fmt -check -recursive
+
+  # ---------------------------------------------------------------
+  # 2. Build das imagens Docker (sem push — só verifica que compilam)
+  # ---------------------------------------------------------------
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gateway-service
+            context: services/gateway-service
+          - name: ai-service
+            context: services/ai-service
+          - name: avatar-service
+            context: services/avatar-service
+          - name: emotion-service
+            context: services/emotion-service
+          - name: voice-service
+            context: services/voice-service
+          - name: web-ui
+            context: apps/web-ui
+          - name: admin-panel
+            context: apps/admin-panel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          tags: ${{ matrix.name }}:ci-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # ---------------------------------------------------------------
+  # 3. Lint dos manifests Kubernetes
+  # ---------------------------------------------------------------
+  k8s-lint:
+    name: Kubernetes Manifests Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeval
+        run: |
+          wget -q https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+          tar xf kubeval-linux-amd64.tar.gz
+          sudo mv kubeval /usr/local/bin
+
+      - name: Validate K8s manifests
+        run: |
+          find infrastructure/k8s -name "*.yaml" | xargs kubeval --ignore-missing-schemas

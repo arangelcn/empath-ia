@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-service
+  namespace: empatia
+  labels:
+    app: voice-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-service
+  template:
+    metadata:
+      labels:
+        app: voice-service
+    spec:
+      serviceAccountName: empatia-app
+      containers:
+        - name: voice-service
+          image: REGISTRY_URL/voice-service:IMAGE_TAG
+          ports:
+            - containerPort: 8004
+              name: http
+          envFrom:
+            - configMapRef:
+                name: empatia-config
+          env:
+            - name: VOICE_SERVICE_PORT
+              value: "8004"
+            - name: VOICE_SERVICE_BASE_URL
+              value: "https://app.empatia.ai/voice-service"
+            - name: TTS_OUTPUT_DIR
+              value: "/app/output"
+            # Workload Identity fornece credenciais automaticamente via metadata server
+            # Não é necessário montar ficheiro JSON de credenciais
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: ""
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          volumeMounts:
+            - name: tts-output
+              mountPath: /app/output
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8004
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8004
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: tts-output
+          emptyDir: {}  # Ficheiros TTS temporários — sincronizar para GCS se necessário

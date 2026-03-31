@@ -61,6 +61,7 @@ services:
     build:
       context: ./services/gateway-service
       dockerfile: Dockerfile
+      network: host
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
@@ -87,6 +88,7 @@ services:
     build:
       context: ./services/ai-service
       dockerfile: Dockerfile
+      network: host
     ports:  
       - "127.0.0.1:${AI_SERVICE_PORT:-8001}:8001"
     environment:
@@ -107,8 +109,9 @@ services:
 
   avatar-service:
     build:
-      context: ./services/avatar-service 
+      context: ./services/avatar-service
       dockerfile: Dockerfile
+      network: host
     ports:
       - "127.0.0.1:${AVATAR_SERVICE_PORT:-8002}:8002"
     environment:
@@ -125,8 +128,7 @@ services:
     build:
       context: ./services/emotion-service
       dockerfile: Dockerfile
-    # Configuração GPU para Docker CE + NVIDIA Container Toolkit
-    runtime: nvidia
+      network: host
     environment:
       # Configurações NVIDIA para Docker CE
       - NVIDIA_VISIBLE_DEVICES=all
@@ -165,6 +167,7 @@ services:
     build:
       context: ./services/voice-service
       dockerfile: Dockerfile
+      network: host
     container_name: empatia-voice-service-dev
     ports:
       - "127.0.0.1:${VOICE_SERVICE_PORT:-8004}:8004"
@@ -205,6 +208,7 @@ services:
     build:
       context: ./apps/web-ui
       dockerfile: Dockerfile.dev
+      network: host
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
@@ -224,6 +228,7 @@ services:
     build:
       context: ./apps/admin-panel
       dockerfile: Dockerfile.dev
+      network: host
     container_name: empatia-admin-panel-dev
     ports:
       - "127.0.0.1:${ADMIN_PANEL_PORT:-3001}:3000"

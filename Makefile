@@ -1,6 +1,6 @@
 # empatIA - Makefile para automação de desenvolvimento
 
-.PHONY: help dev build deploy-dev deploy-prod test clean setup logs docs migrate cleanup mongo
+.PHONY: help bootstrap dev build deploy-dev deploy-prod test clean setup logs docs migrate cleanup mongo
 
 # Cores para output
 RED=\033[0;31m
@@ -36,6 +36,11 @@ validate: ## Valida estrutura após migração
 	@./scripts/validate_migration.sh
 
 # ===== CONFIGURAÇÃO E DESENVOLVIMENTO =====
+bootstrap: ## Bootstrap da infra GCP (executar uma vez, localmente)
+	@echo "${YELLOW}🚀 Iniciando bootstrap da infraestrutura GCP...${NC}"
+	@chmod +x scripts/bootstrap-gcp.sh
+	@./scripts/bootstrap-gcp.sh
+
 setup: ## Configuração inicial do projeto
 	@echo "${YELLOW}🔧 Configurando projeto...${NC}"
 	@cp .env.example .env 2>/dev/null || echo "Arquivo .env já existe"
@@ -53,17 +58,17 @@ setup: ## Configuração inicial do projeto
 dev: ## Inicia ambiente de desenvolvimento com hot reload
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento com live reload...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.dev.yml up --build
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 dev-detached: ## Inicia ambiente de desenvolvimento em background
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento (background) com live reload...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.dev.yml up --build -d
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
 
 dev-services: ## Inicia apenas os serviços backend (sem web-ui)
 	@echo "${YELLOW}🚀 Iniciando apenas serviços backend...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f $(DOCKER_COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb redis
 
 # ===== COMANDOS MONGODB =====
 mongo-logs: ## Visualiza logs do MongoDB
@@ -107,11 +112,11 @@ mongo-reset: ## Reseta completamente o banco MongoDB
 # ===== BUILD E DEPLOY =====
 build: ## Constrói todas as imagens Docker
 	@echo "${YELLOW}🔨 Construindo imagens Docker...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) build
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build
 
 build-service: ## Constrói imagem de um serviço específico (ex: make build-service SERVICE=ai-service)
 	@echo "${YELLOW}🔨 Construindo serviço $(SERVICE)...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) build $(SERVICE)
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build $(SERVICE)
 
 build-prod: ## Constrói imagens para produção
 	@echo "${YELLOW}🔨 Construindo imagens para produção...${NC}"
@@ -120,7 +125,7 @@ build-prod: ## Constrói imagens para produção
 deploy-dev: build ## Deploy em ambiente de desenvolvimento
 	@echo "${YELLOW}🚀 Fazendo deploy em desenvolvimento...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f $(DOCKER_COMPOSE_DEV) up -d
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) up -d
 
 deploy-prod: build-prod ## Deploy em ambiente de produção
 	@echo "${YELLOW}🚀 Fazendo deploy em produção...${NC}"
@@ -204,14 +209,14 @@ chat-conversations: ## Lista conversas recentes
 # ===== TESTES =====
 test: ## Executa todos os testes
 	@echo "${YELLOW}🧪 Executando testes...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service pytest tests/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service pytest tests/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service pytest tests/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway pytest tests/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service pytest tests/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service pytest tests/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service pytest tests/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway pytest tests/ || true
 
 test-service: ## Executa testes de um serviço específico (ex: make test-service SERVICE=ai-service)
 	@echo "${YELLOW}🧪 Executando testes do $(SERVICE)...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec $(SERVICE) pytest tests/
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec $(SERVICE) pytest tests/
 
 test-integration: ## Executa testes de integração
 	@echo "${YELLOW}🧪 Executando testes de integração...${NC}"
@@ -224,49 +229,49 @@ test-e2e: ## Executa testes end-to-end
 # ===== QUALIDADE DE CÓDIGO =====
 lint: ## Executa linting em todos os serviços
 	@echo "${YELLOW}📝 Executando linting...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service flake8 src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service flake8 src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service flake8 src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway flake8 src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service flake8 src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service flake8 src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service flake8 src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway flake8 src/ || true
 
 format: ## Formata código com black
 	@echo "${YELLOW}🎨 Formatando código...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service black src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service black src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service black src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway black src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service black src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service black src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service black src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway black src/ || true
 
 # ===== LIMPEZA =====
 clean: ## Remove containers, volumes e imagens não utilizadas
 	@echo "${YELLOW}🧹 Limpando containers e volumes...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans
 	@docker system prune -f
 	@echo "${GREEN}✅ Limpeza concluída!${NC}"
 
 clean-all: ## Remove tudo incluindo imagens
 	@echo "${RED}🧹 Limpeza completa (incluindo imagens)...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans --rmi all
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans --rmi all
 	@docker system prune -af
 	@echo "${GREEN}✅ Limpeza completa concluída!${NC}"
 
 # ===== SHELLS E ACESSO =====
 shell-ai: ## Acessa shell do serviço de IA
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service bash
 
 shell-avatar: ## Acessa shell do serviço de avatar
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service bash
 
 shell-emotion: ## Acessa shell do serviço de emoções
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service bash
 
 shell-gateway: ## Acessa shell do gateway
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway bash
 
 shell-ui: ## Acessa shell do web-ui
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec web-ui bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec web-ui bash
 
 shell-mongo: ## Acessa shell do MongoDB
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec mongodb bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec mongodb bash
 
 # ===== DOCUMENTAÇÃO =====
 docs: ## Mostra URLs da documentação
@@ -326,5 +331,78 @@ env-validate: ## Valida configurações do .env
 	@echo " - Admin Panel: ${ADMIN_PANEL_PORT:-3001}"
 	@echo "${GREEN}✅ Validação concluída${NC}"
 
+# ===== GKE / GCP =====
+gke-bootstrap: ## Cria toda a infra GCP (executar UMA VEZ): VPC, GKE, Artifact Registry, Secrets
+	@echo "${YELLOW}🚀 Iniciando bootstrap da infraestrutura GCP...${NC}"
+	@command -v gcloud >/dev/null 2>&1 || (echo "${RED}❌ gcloud CLI não encontrado. Instale em: https://cloud.google.com/sdk/docs/install${NC}" && exit 1)
+	@command -v terraform >/dev/null 2>&1 || (echo "${RED}❌ terraform não encontrado. Instale em: https://developer.hashicorp.com/terraform/install${NC}" && exit 1)
+	@chmod +x scripts/bootstrap-gcp.sh
+	@./scripts/bootstrap-gcp.sh
+
+gke-connect: ## Conecta ao cluster GKE (requer PROJECT_ID e REGION)
+	@test -n "$(PROJECT_ID)" || (echo "${RED}❌ Defina PROJECT_ID: make gke-connect PROJECT_ID=meu-projeto${NC}" && exit 1)
+	@gcloud container clusters get-credentials empatia-cluster --region $(REGION:-us-central1) --project $(PROJECT_ID)
+	@echo "${GREEN}✅ Conectado ao cluster GKE!${NC}"
+
+gke-status: ## Mostra o estado de todos os pods no namespace empatia
+	@echo "${BLUE}📋 Estado dos pods:${NC}"
+	@kubectl get pods -n empatia -o wide
+	@echo ""
+	@echo "${BLUE}📋 Serviços:${NC}"
+	@kubectl get svc -n empatia
+	@echo ""
+	@echo "${BLUE}📋 Ingress:${NC}"
+	@kubectl get ingress -n empatia
+
+gke-logs: ## Logs de um serviço no GKE (ex: make gke-logs SVC=gateway)
+	@test -n "$(SVC)" || (echo "${RED}❌ Especifique o serviço: make gke-logs SVC=gateway${NC}" && exit 1)
+	@kubectl logs -n empatia -l app=$(SVC) --tail=100 -f
+
+gke-restart: ## Reinicia um deployment no GKE (ex: make gke-restart SVC=ai-service)
+	@test -n "$(SVC)" || (echo "${RED}❌ Especifique o serviço: make gke-restart SVC=ai-service${NC}" && exit 1)
+	@kubectl rollout restart deployment/$(SVC) -n empatia
+	@kubectl rollout status deployment/$(SVC) -n empatia --timeout=120s
+
+gke-rollback: ## Faz rollback de um deployment (ex: make gke-rollback SVC=gateway)
+	@test -n "$(SVC)" || (echo "${RED}❌ Especifique o serviço: make gke-rollback SVC=gateway${NC}" && exit 1)
+	@kubectl rollout undo deployment/$(SVC) -n empatia
+
+gke-secrets: ## Sincroniza secrets do GCP Secret Manager para o K8s (requer PROJECT_ID)
+	@test -n "$(PROJECT_ID)" || (echo "${RED}❌ Defina PROJECT_ID: make gke-secrets PROJECT_ID=meu-projeto${NC}" && exit 1)
+	@echo "${YELLOW}🔐 Sincronizando secrets...${NC}"
+	@kubectl apply -f infrastructure/k8s/namespace.yaml
+	@kubectl create secret generic empatia-secrets \
+		--namespace empatia \
+		--from-literal=OPENAI_API_KEY="$$(gcloud secrets versions access latest --secret=empatia-openai-api-key --project=$(PROJECT_ID))" \
+		--from-literal=DID_API_USERNAME="$$(gcloud secrets versions access latest --secret=empatia-did-api-username --project=$(PROJECT_ID))" \
+		--from-literal=DID_API_PASSWORD="$$(gcloud secrets versions access latest --secret=empatia-did-api-password --project=$(PROJECT_ID))" \
+		--from-literal=MONGO_ROOT_PASSWORD="$$(gcloud secrets versions access latest --secret=empatia-mongo-root-password --project=$(PROJECT_ID))" \
+		--from-literal=REDIS_PASSWORD="$$(gcloud secrets versions access latest --secret=empatia-redis-password --project=$(PROJECT_ID))" \
+		--from-literal=JWT_SECRET_KEY="$$(gcloud secrets versions access latest --secret=empatia-jwt-secret-key --project=$(PROJECT_ID))" \
+		--dry-run=client -o yaml | kubectl apply -f -
+	@echo "${GREEN}✅ Secrets sincronizados!${NC}"
+
+gke-deploy-manual: ## Deploy manual no GKE sem pipeline CI/CD (requer PROJECT_ID e IMAGE_TAG)
+	@test -n "$(PROJECT_ID)" || (echo "${RED}❌ Defina PROJECT_ID${NC}" && exit 1)
+	@test -n "$(IMAGE_TAG)" || (echo "${RED}❌ Defina IMAGE_TAG: make gke-deploy-manual IMAGE_TAG=abc12345${NC}" && exit 1)
+	@echo "${YELLOW}🚀 Aplicando manifests no GKE...${NC}"
+	@REGISTRY_URL="us-central1-docker.pkg.dev/$(PROJECT_ID)/empatia-images" && \
+	  for svc in gateway ai-service avatar-service emotion-service voice-service web-ui admin-panel; do \
+	    sed -e "s|REGISTRY_URL|$$REGISTRY_URL|g" -e "s|IMAGE_TAG|$(IMAGE_TAG)|g" \
+	      infrastructure/k8s/$$svc/deployment.yaml | kubectl apply -f -; \
+	    kubectl apply -f infrastructure/k8s/$$svc/service.yaml 2>/dev/null || true; \
+	  done
+	@kubectl apply -f infrastructure/k8s/ingress.yaml
+	@echo "${GREEN}✅ Deploy concluído!${NC}"
+
+tf-plan: ## Executa terraform plan (requer PROJECT_ID)
+	@test -n "$(PROJECT_ID)" || (echo "${RED}❌ Defina PROJECT_ID: make tf-plan PROJECT_ID=meu-projeto${NC}" && exit 1)
+	@cd infrastructure/terraform && terraform plan \
+		-var="project_id=$(PROJECT_ID)" \
+		-var="state_bucket=$(PROJECT_ID)-terraform-state" \
+		-var="openai_api_key=$${OPENAI_API_KEY:-placeholder}" \
+		-var="did_api_username=$${DID_API_USERNAME:-}" \
+		-var="did_api_password=$${DID_API_PASSWORD:-}"
+
 # Default target
-.DEFAULT_GOAL := help 
+.DEFAULT_GOAL := help

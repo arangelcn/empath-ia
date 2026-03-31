@@ -5,10 +5,11 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Instalar dependências do sistema para áudio
-RUN apt-get update && apt-get install -y \
-    libsndfile1 \
-    ffmpeg \
-    curl \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libsndfile1 \
+        ffmpeg \
+        curl \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements.txt

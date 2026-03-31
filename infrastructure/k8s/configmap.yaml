@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: empatia-config
+  namespace: empatia
+data:
+  # URLs internas dos serviços (DNS do cluster)
+  AI_SERVICE_URL: "http://ai-service:8001"
+  AVATAR_SERVICE_URL: "http://avatar-service:8002"
+  EMOTION_SERVICE_URL: "http://emotion-service:8003"
+  VOICE_SERVICE_URL: "http://voice-service:8004"
+
+  # MongoDB — URL montada por cada deployment via env var ref ao secret
+  # (não definida aqui pois ConfigMaps não suportam interpolação de variáveis)
+  DATABASE_NAME: "empatia"
+  MONGO_INITDB_DATABASE: "empatia"
+  MONGO_INITDB_ROOT_USERNAME: "admin"
+
+  # Configurações gerais
+  LOG_LEVEL: "WARNING"
+  DEBUG: "false"
+  NODE_ENV: "production"
+  EMOTION_CONFIDENCE_THRESHOLD: "0.7"
+  OPENFACE_MODEL_PATH: "/models/openface"
+
+  # CORS — substituir pelo domínio real após configurar o Ingress
+  ALLOWED_ORIGINS: "https://app.empatia.ai,https://admin.empatia.ai"
+
+  # Frontend aponta para o gateway via Ingress
+  VITE_API_URL: "https://app.empatia.ai/api"
+  REACT_APP_API_URL: "https://app.empatia.ai/api"
+  BACKEND_URL: "http://gateway:8000"
