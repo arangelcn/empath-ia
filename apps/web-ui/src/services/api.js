@@ -11,6 +11,48 @@ const apiClient = axios.create({
   },
 });
 
+/** Extrai mensagem legível de erros FastAPI/Axios (detail string ou lista de validação). */
+export function formatApiError(error, fallback = 'Ocorreu um erro. Tente novamente.') {
+  const d = error.response?.data?.detail;
+  if (Array.isArray(d)) {
+    return d
+      .map((item) => (typeof item === 'string' ? item : item?.msg || JSON.stringify(item)))
+      .join(' ');
+  }
+  if (typeof d === 'string' && d.trim()) return d;
+  if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+    return 'Não foi possível contactar o servidor. Confirme que a API está a correr e VITE_API_URL.';
+  }
+  if (error.message) return error.message;
+  return fallback;
+}
+
+// Anexa o JWT de sessão em todas as requisições, se disponível
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('empatia_access_token');
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`;
+  }
+  return config;
+});
+
+/**
+ * Autentica com Google enviando o ID Token ao backend para verificação server-side.
+ * @param {string} credential - ID Token JWT emitido pelo Google Identity Services.
+ * @returns {Promise<{access_token: string, user: object}>}
+ */
+export const loginWithGoogle = async (credential) => {
+  try {
+    const response = await apiClient.post('/auth/google', { credential });
+    const { access_token, user } = response.data;
+    localStorage.setItem('empatia_access_token', access_token);
+    return { access_token, user };
+  } catch (error) {
+    console.error('Erro na autenticação Google:', error.response?.data || error.message);
+    throw error;
+  }
+};
+
 /**
  * Envia uma mensagem para o chat e recebe a resposta da IA.
  * @param {string} message - A mensagem do usuário.

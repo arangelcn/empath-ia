@@ -17,6 +17,7 @@ from .services.user_therapeutic_session_service import UserTherapeuticSessionSer
 from .services.user_emotion_service import UserEmotionService
 from .services.prompt_service import PromptService
 from .api.admin import router as admin_router
+from .api.auth import router as auth_router
 
 # Configurar logging
 logging.basicConfig(
@@ -75,7 +76,8 @@ user_therapeutic_session_service = UserTherapeuticSessionService()
 user_emotion_service = UserEmotionService()
 prompt_service = PromptService()
 
-# Incluir rotas de administração
+# Incluir rotas
+app.include_router(auth_router)
 app.include_router(admin_router)
 
 # Eventos de startup e shutdown
