@@ -29,7 +29,7 @@ spec:
             - name: VOICE_SERVICE_PORT
               value: "8004"
             - name: VOICE_SERVICE_BASE_URL
-              value: "https://app.empatia.ai/voice-service"
+              value: "https://api.empat-ia.io/voice-service"
             - name: TTS_OUTPUT_DIR
               value: "/app/output"
             # Workload Identity fornece credenciais automaticamente via metadata server

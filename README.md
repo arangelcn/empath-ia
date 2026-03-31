@@ -875,7 +875,7 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 
 - **Issues**: [GitHub Issues](https://github.com/seu-usuario/empath-ia/issues)
 - **Discussões**: [GitHub Discussions](https://github.com/seu-usuario/empath-ia/discussions)
-- **Email**: suporte@empath-ia.com
+- **Email**: suporte@empat-ia.io
 
 ## 🙏 Agradecimentos
 

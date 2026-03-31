@@ -78,6 +78,19 @@ variable "jwt_secret_key" {
   default     = null
 }
 
+# Domínio e DNS
+variable "domain_name" {
+  description = "Domínio raiz da aplicação (ex: empat-ia.io)"
+  type        = string
+  default     = "empat-ia.io"
+}
+
+variable "ingress_ip" {
+  description = "IP público do Load Balancer do GKE Ingress (obtido após o primeiro deploy)"
+  type        = string
+  default     = ""
+}
+
 # Workload Identity para GitHub Actions
 variable "github_repo" {
   description = "Repositório GitHub no formato owner/repo"

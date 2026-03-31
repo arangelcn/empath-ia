@@ -39,6 +39,31 @@ output "app_data_bucket" {
   value       = google_storage_bucket.app_data.name
 }
 
+output "dns_name_servers" {
+  description = "Name servers do Cloud DNS — configurar no registrador do domínio empat-ia.io"
+  value       = module.dns.name_servers
+}
+
+output "app_url" {
+  description = "URL do frontend principal"
+  value       = "https://app.empat-ia.io"
+}
+
+output "admin_url" {
+  description = "URL do painel de administração"
+  value       = "https://admin.empat-ia.io"
+}
+
+output "api_url" {
+  description = "URL da API (gateway)"
+  value       = "https://api.empat-ia.io"
+}
+
+output "get_ingress_ip_command" {
+  description = "Comando para obter o IP do Ingress após deploy"
+  value       = "kubectl get ingress -n empatia empatia-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
+}
+
 output "gke_connect_command" {
   description = "Comando para conectar ao cluster GKE"
   value       = "gcloud container clusters get-credentials ${module.gke.cluster_name} --region ${var.region} --project ${var.project_id}"

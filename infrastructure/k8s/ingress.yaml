@@ -4,27 +4,44 @@ metadata:
   name: empatia-ingress
   namespace: empatia
   annotations:
-    # GKE Managed Certificate — HTTPS automático (sem custo extra de cert-manager)
+    # GKE Managed Certificate — HTTPS automático via GCP (sem cert-manager)
     networking.gke.io/managed-certificates: empatia-certs
-    # GKE Ingress class (usa Cloud Load Balancer — ~$18/mês, mas único para tudo)
+    # GKE Ingress class (usa Cloud Load Balancer)
     kubernetes.io/ingress.class: "gce"
-    # Redirecionar HTTP → HTTPS
+    # Forçar HTTPS — redireciona HTTP → HTTPS
     kubernetes.io/ingress.allow-http: "false"
-    # Política de backend customizada (opcional: timeout, etc.)
+    # NEG para routing eficiente aos pods
     compute.googleapis.com/neg: '{"ingress": true}'
 spec:
   rules:
     # Frontend principal
-    - host: app.empatia.ai  # SUBSTITUIR pelo seu domínio real
+    - host: app.empat-ia.io
       http:
         paths:
-          - path: /api
+          - path: /
             pathType: Prefix
             backend:
               service:
-                name: gateway
+                name: web-ui
                 port:
-                  number: 8000
+                  number: 3000
+
+    # Painel de administração
+    - host: admin.empat-ia.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-panel
+                port:
+                  number: 3000
+
+    # API Gateway + Voice Service
+    - host: api.empat-ia.io
+      http:
+        paths:
           - path: /voice-service
             pathType: Prefix
             backend:
@@ -36,22 +53,11 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: web-ui
+                name: gateway
                 port:
-                  number: 3000
-    # Painel de administração
-    - host: admin.empatia.ai  # SUBSTITUIR pelo seu subdomínio real
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: admin-panel
-                port:
-                  number: 3000
+                  number: 8000
 ---
-# GKE Managed Certificate — provisiona SSL automaticamente via Let's Encrypt / GCP
+# GKE Managed Certificate — provisiona SSL automaticamente para os 3 subdomínios
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate
 metadata:
@@ -59,5 +65,6 @@ metadata:
   namespace: empatia
 spec:
   domains:
-    - app.empatia.ai    # SUBSTITUIR pelo seu domínio real
-    - admin.empatia.ai  # SUBSTITUIR pelo seu subdomínio real
+    - app.empat-ia.io
+    - admin.empat-ia.io
+    - api.empat-ia.io

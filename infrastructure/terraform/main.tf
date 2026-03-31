@@ -164,6 +164,22 @@ resource "google_service_account_iam_member" "github_wif" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github[0].name}/attribute.repository/${var.github_repo}"
 }
 
+# Módulo: Cloud DNS (zona pública + registros A para os subdomínios)
+# Nota: o ingress_ip é obtido após o primeiro apply do GKE Ingress.
+# Passo 1 → apply sem este módulo para criar o cluster.
+# Passo 2 → obter IP: kubectl get ingress -n empatia empatia-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+# Passo 3 → definir ingress_ip no tfvars e fazer apply novamente.
+module "dns" {
+  source = "./modules/dns"
+
+  project_id  = var.project_id
+  environment = var.environment
+  domain_name = var.domain_name
+  ingress_ip  = var.ingress_ip
+
+  depends_on = [google_project_service.apis]
+}
+
 # Bucket GCS para artefactos de TTS e uploads
 resource "google_storage_bucket" "app_data" {
   name                        = "${var.project_id}-empatia-data"

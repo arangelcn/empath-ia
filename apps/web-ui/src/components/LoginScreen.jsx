@@ -162,7 +162,7 @@ const LoginScreen = ({ onComplete, sessionId }) => {
           </div>
           
           <h1 className="text-3xl md:text-4xl font-heading font-bold text-text-primary dark:text-text-primary-dark mb-4">
-            <span className="text-gradient-therapy">Empath</span>.IA
+            <span className="text-gradient-therapy">Empat</span>.IA
           </h1>
           
           <p className="text-lg text-text-secondary dark:text-text-secondary-dark max-w-md mx-auto reading-spacing">

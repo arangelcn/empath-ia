@@ -23,10 +23,11 @@ data:
   EMOTION_CONFIDENCE_THRESHOLD: "0.7"
   OPENFACE_MODEL_PATH: "/models/openface"
 
-  # CORS — substituir pelo domínio real após configurar o Ingress
-  ALLOWED_ORIGINS: "https://app.empatia.ai,https://admin.empatia.ai"
+  # CORS — frontends permitidos a chamar a API
+  ALLOWED_ORIGINS: "https://app.empat-ia.io,https://admin.empat-ia.io"
 
-  # Frontend aponta para o gateway via Ingress
-  VITE_API_URL: "https://app.empatia.ai/api"
-  REACT_APP_API_URL: "https://app.empatia.ai/api"
+  # Frontend aponta para o gateway via subdomínio api.empat-ia.io
+  VITE_API_URL: "https://api.empat-ia.io"
+  VITE_VOICE_URL: "https://api.empat-ia.io/voice-service"
+  REACT_APP_API_URL: "https://api.empat-ia.io"
   BACKEND_URL: "http://gateway:8000"

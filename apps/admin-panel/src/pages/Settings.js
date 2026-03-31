@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 const Settings = () => {
   const [settings, setSettings] = useState({
     // Configurações gerais
-    systemName: 'Empath IA',
+    systemName: 'Empat.IA',
     systemDescription: 'Sistema de análise emocional em tempo real',
     timezone: 'America/Sao_Paulo',
     language: 'pt-BR',
@@ -136,7 +136,7 @@ const Settings = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Configurações do Sistema</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Configure as opções gerais do sistema Empath IA
+            Configure as opções gerais do sistema Empat.IA
           </p>
         </div>
         <button

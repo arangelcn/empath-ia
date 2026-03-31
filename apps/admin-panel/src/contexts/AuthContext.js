@@ -56,7 +56,7 @@ export function AuthProvider({ children }) {
         id: 1,
         username: 'admin',
         name: 'Administrador',
-        email: 'admin@empath-ia.com',
+        email: 'admin@empat-ia.io',
         role: 'admin'
       };
       dispatch({ type: 'LOGIN', payload: user });

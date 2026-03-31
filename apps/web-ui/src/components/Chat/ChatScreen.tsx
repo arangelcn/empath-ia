@@ -574,7 +574,7 @@ const ChatScreen = ({ username }) => {
             </div>
             <div>
               <h1 className="font-heading font-semibold text-text-primary dark:text-text-primary-dark">
-                <span className="text-gradient-therapy">Empath</span>.IA
+                <span className="text-gradient-therapy">Empat</span>.IA
               </h1>
               <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
                 Seu companheiro terapêutico

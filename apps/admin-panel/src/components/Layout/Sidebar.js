@@ -47,7 +47,7 @@ export default function Sidebar({ open, setOpen }) {
           <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
             <HomeIcon className="w-5 h-5 text-white" />
           </div>
-          <span className="ml-3 text-xl font-semibold text-gray-900">Empath IA</span>
+          <span className="ml-3 text-xl font-semibold text-gray-900">Empat.IA</span>
         </div>
       </div>
       <nav className="flex flex-1 flex-col">

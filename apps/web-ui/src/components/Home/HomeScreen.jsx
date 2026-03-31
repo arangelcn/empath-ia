@@ -223,7 +223,7 @@ const HomeScreen = ({ username, onLogout }) => {
                 <Sparkles className="w-5 h-5 text-white" />
               </div>
               <h1 className="text-xl font-bold text-gray-900 font-manrope">
-                Empath.IA
+                Empat.IA
               </h1>
             </div>
             

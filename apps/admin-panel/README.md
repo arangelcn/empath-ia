@@ -40,7 +40,7 @@ npm start
 4. Abra o navegador em `http://localhost:3001`
 
 ### Credenciais de Acesso (Demo)
-- **Email**: admin@empath-ia.com
+- **Email**: admin@empat-ia.io
 - **Senha**: admin123
 
 ## 📱 Interface
@@ -219,6 +219,6 @@ Este projeto está sob a licença MIT. Veja o arquivo LICENSE para mais detalhes
 ## 📞 Suporte
 
 Para suporte técnico ou dúvidas:
-- Email: support@empath-ia.com
+- Email: support@empat-ia.io
 - Documentação: `/docs`
 - Issues: GitHub Issues 
