@@ -30,8 +30,6 @@ resource "google_container_cluster" "autopilot" {
     workload_pool = "${var.project_id}.svc.id.goog"
   }
 
-  # Desabilitar logs de sistema para reduzir custos (Cloud Logging)
-  # Manter apenas logs de workload em caso de debug
   logging_config {
     enable_components = ["SYSTEM_COMPONENTS", "WORKLOADS"]
   }
@@ -39,16 +37,16 @@ resource "google_container_cluster" "autopilot" {
   monitoring_config {
     enable_components = ["SYSTEM_COMPONENTS"]
     managed_prometheus {
-      enabled = false
+      enabled = true
     }
   }
 
-  # Manutenção em horário de baixo tráfego (reduz disrupções)
+  # Manutenção nocturna todos os dias — garante >=48h em 32 dias (requisito GKE Autopilot)
   maintenance_policy {
     recurring_window {
       start_time = "2024-01-01T03:00:00Z"
       end_time   = "2024-01-01T07:00:00Z"
-      recurrence = "FREQ=WEEKLY;BYDAY=SA,SU"
+      recurrence = "FREQ=DAILY"
     }
   }
 

@@ -5,7 +5,7 @@
 # ============================================================
 
 # ---- Projeto GCP ----
-project_id = "empathia-462921"
+project_id = "empathia-491822"
 region     = "us-central1"
 zone       = "us-central1-a"
 environment = "prod"
@@ -20,7 +20,7 @@ artifact_registry_repo = "empatia-images"
 # Criar o bucket manualmente ANTES de rodar terraform init:
 #   gsutil mb -l us-central1 gs://empathia-462921-terraform-state
 #   gsutil versioning set on gs://empathia-462921-terraform-state
-state_bucket = "empathia-462921-terraform-state"
+state_bucket = "empathia-491822-terraform-state"
 
 # ---- Secrets da aplicação ----
 openai_api_key   = "sk-..."

@@ -1,6 +1,6 @@
 # empatIA - Makefile para automação de desenvolvimento
 
-.PHONY: help dev build deploy-dev deploy-prod test clean setup logs docs migrate cleanup mongo
+.PHONY: help bootstrap dev build deploy-dev deploy-prod test clean setup logs docs migrate cleanup mongo
 
 # Cores para output
 RED=\033[0;31m
@@ -36,6 +36,11 @@ validate: ## Valida estrutura após migração
 	@./scripts/validate_migration.sh
 
 # ===== CONFIGURAÇÃO E DESENVOLVIMENTO =====
+bootstrap: ## Bootstrap da infra GCP (executar uma vez, localmente)
+	@echo "${YELLOW}🚀 Iniciando bootstrap da infraestrutura GCP...${NC}"
+	@chmod +x scripts/bootstrap-gcp.sh
+	@./scripts/bootstrap-gcp.sh
+
 setup: ## Configuração inicial do projeto
 	@echo "${YELLOW}🔧 Configurando projeto...${NC}"
 	@cp .env.example .env 2>/dev/null || echo "Arquivo .env já existe"
@@ -326,5 +331,78 @@ env-validate: ## Valida configurações do .env
 	@echo " - Admin Panel: ${ADMIN_PANEL_PORT:-3001}"
 	@echo "${GREEN}✅ Validação concluída${NC}"
 
+# ===== GKE / GCP =====
+gke-bootstrap: ## Cria toda a infra GCP (executar UMA VEZ): VPC, GKE, Artifact Registry, Secrets
+	@echo "${YELLOW}🚀 Iniciando bootstrap da infraestrutura GCP...${NC}"
+	@command -v gcloud >/dev/null 2>&1 || (echo "${RED}❌ gcloud CLI não encontrado. Instale em: https://cloud.google.com/sdk/docs/install${NC}" && exit 1)
+	@command -v terraform >/dev/null 2>&1 || (echo "${RED}❌ terraform não encontrado. Instale em: https://developer.hashicorp.com/terraform/install${NC}" && exit 1)
+	@chmod +x scripts/bootstrap-gcp.sh
+	@./scripts/bootstrap-gcp.sh
+
+gke-connect: ## Conecta ao cluster GKE (requer PROJECT_ID e REGION)
+	@test -n "$(PROJECT_ID)" || (echo "${RED}❌ Defina PROJECT_ID: make gke-connect PROJECT_ID=meu-projeto${NC}" && exit 1)
+	@gcloud container clusters get-credentials empatia-cluster --region $(REGION:-us-central1) --project $(PROJECT_ID)
+	@echo "${GREEN}✅ Conectado ao cluster GKE!${NC}"
+
+gke-status: ## Mostra o estado de todos os pods no namespace empatia
+	@echo "${BLUE}📋 Estado dos pods:${NC}"
+	@kubectl get pods -n empatia -o wide
+	@echo ""
+	@echo "${BLUE}📋 Serviços:${NC}"
+	@kubectl get svc -n empatia
+	@echo ""
+	@echo "${BLUE}📋 Ingress:${NC}"
+	@kubectl get ingress -n empatia
+
+gke-logs: ## Logs de um serviço no GKE (ex: make gke-logs SVC=gateway)
+	@test -n "$(SVC)" || (echo "${RED}❌ Especifique o serviço: make gke-logs SVC=gateway${NC}" && exit 1)
+	@kubectl logs -n empatia -l app=$(SVC) --tail=100 -f
+
+gke-restart: ## Reinicia um deployment no GKE (ex: make gke-restart SVC=ai-service)
+	@test -n "$(SVC)" || (echo "${RED}❌ Especifique o serviço: make gke-restart SVC=ai-service${NC}" && exit 1)
+	@kubectl rollout restart deployment/$(SVC) -n empatia
+	@kubectl rollout status deployment/$(SVC) -n empatia --timeout=120s
+
+gke-rollback: ## Faz rollback de um deployment (ex: make gke-rollback SVC=gateway)
+	@test -n "$(SVC)" || (echo "${RED}❌ Especifique o serviço: make gke-rollback SVC=gateway${NC}" && exit 1)
+	@kubectl rollout undo deployment/$(SVC) -n empatia
+
+gke-secrets: ## Sincroniza secrets do GCP Secret Manager para o K8s (requer PROJECT_ID)
+	@test -n "$(PROJECT_ID)" || (echo "${RED}❌ Defina PROJECT_ID: make gke-secrets PROJECT_ID=meu-projeto${NC}" && exit 1)
+	@echo "${YELLOW}🔐 Sincronizando secrets...${NC}"
+	@kubectl apply -f infrastructure/k8s/namespace.yaml
+	@kubectl create secret generic empatia-secrets \
+		--namespace empatia \
+		--from-literal=OPENAI_API_KEY="$$(gcloud secrets versions access latest --secret=empatia-openai-api-key --project=$(PROJECT_ID))" \
+		--from-literal=DID_API_USERNAME="$$(gcloud secrets versions access latest --secret=empatia-did-api-username --project=$(PROJECT_ID))" \
+		--from-literal=DID_API_PASSWORD="$$(gcloud secrets versions access latest --secret=empatia-did-api-password --project=$(PROJECT_ID))" \
+		--from-literal=MONGO_ROOT_PASSWORD="$$(gcloud secrets versions access latest --secret=empatia-mongo-root-password --project=$(PROJECT_ID))" \
+		--from-literal=REDIS_PASSWORD="$$(gcloud secrets versions access latest --secret=empatia-redis-password --project=$(PROJECT_ID))" \
+		--from-literal=JWT_SECRET_KEY="$$(gcloud secrets versions access latest --secret=empatia-jwt-secret-key --project=$(PROJECT_ID))" \
+		--dry-run=client -o yaml | kubectl apply -f -
+	@echo "${GREEN}✅ Secrets sincronizados!${NC}"
+
+gke-deploy-manual: ## Deploy manual no GKE sem pipeline CI/CD (requer PROJECT_ID e IMAGE_TAG)
+	@test -n "$(PROJECT_ID)" || (echo "${RED}❌ Defina PROJECT_ID${NC}" && exit 1)
+	@test -n "$(IMAGE_TAG)" || (echo "${RED}❌ Defina IMAGE_TAG: make gke-deploy-manual IMAGE_TAG=abc12345${NC}" && exit 1)
+	@echo "${YELLOW}🚀 Aplicando manifests no GKE...${NC}"
+	@REGISTRY_URL="us-central1-docker.pkg.dev/$(PROJECT_ID)/empatia-images" && \
+	  for svc in gateway ai-service avatar-service emotion-service voice-service web-ui admin-panel; do \
+	    sed -e "s|REGISTRY_URL|$$REGISTRY_URL|g" -e "s|IMAGE_TAG|$(IMAGE_TAG)|g" \
+	      infrastructure/k8s/$$svc/deployment.yaml | kubectl apply -f -; \
+	    kubectl apply -f infrastructure/k8s/$$svc/service.yaml 2>/dev/null || true; \
+	  done
+	@kubectl apply -f infrastructure/k8s/ingress.yaml
+	@echo "${GREEN}✅ Deploy concluído!${NC}"
+
+tf-plan: ## Executa terraform plan (requer PROJECT_ID)
+	@test -n "$(PROJECT_ID)" || (echo "${RED}❌ Defina PROJECT_ID: make tf-plan PROJECT_ID=meu-projeto${NC}" && exit 1)
+	@cd infrastructure/terraform && terraform plan \
+		-var="project_id=$(PROJECT_ID)" \
+		-var="state_bucket=$(PROJECT_ID)-terraform-state" \
+		-var="openai_api_key=$${OPENAI_API_KEY:-placeholder}" \
+		-var="did_api_username=$${DID_API_USERNAME:-}" \
+		-var="did_api_password=$${DID_API_PASSWORD:-}"
+
 # Default target
-.DEFAULT_GOAL := help 
+.DEFAULT_GOAL := help

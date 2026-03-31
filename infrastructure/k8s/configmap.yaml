@@ -10,13 +10,11 @@ data:
   EMOTION_SERVICE_URL: "http://emotion-service:8003"
   VOICE_SERVICE_URL: "http://voice-service:8004"
 
-  # MongoDB — aponta para o StatefulSet interno
-  MONGODB_URL: "mongodb://admin:$(MONGO_ROOT_PASSWORD)@mongodb:27017/empatia?authSource=admin"
+  # MongoDB — URL montada por cada deployment via env var ref ao secret
+  # (não definida aqui pois ConfigMaps não suportam interpolação de variáveis)
   DATABASE_NAME: "empatia"
   MONGO_INITDB_DATABASE: "empatia"
-
-  # Redis — aponta para o Deployment interno
-  REDIS_URL: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+  MONGO_INITDB_ROOT_USERNAME: "admin"
 
   # Configurações gerais
   LOG_LEVEL: "WARNING"

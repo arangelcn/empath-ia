@@ -20,8 +20,8 @@ resource "google_artifact_registry_repository" "images" {
     id     = "delete-untagged"
     action = "DELETE"
     condition {
-      tag_state = "UNTAGGED"
-      older_than = "168h" # 7 dias
+      tag_state  = "UNTAGGED"
+      older_than = "604800s" # 7 dias em segundos
     }
   }
 }

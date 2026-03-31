@@ -98,13 +98,6 @@ resource "google_project_iam_member" "app_secret_accessor" {
   member  = "serviceAccount:${google_service_account.app.email}"
 }
 
-# Permissão para aceder ao Cloud TTS
-resource "google_project_iam_member" "app_tts" {
-  project = var.project_id
-  role    = "roles/cloudtexttospeech.user"
-  member  = "serviceAccount:${google_service_account.app.email}"
-}
-
 # Binding Workload Identity: K8s SA → GCP SA
 resource "google_service_account_iam_member" "workload_identity_app" {
   service_account_id = google_service_account.app.name

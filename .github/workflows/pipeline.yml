@@ -1,0 +1,324 @@
+name: Pipeline — CI/CD
+
+# Disparado em todo PR e push para main.
+# Jobs:
+#   validate — terraform fmt/validate + k8s lint         (sempre, paralelo)
+#   build    — build das 7 imagens Docker (matrix)       (sempre, após validate)
+#   push     — push para Artifact Registry               (só main)
+#   infra    — terraform plan + apply (se há mudanças)   (só main, após push)
+#   deploy   — kubectl apply + rollout status            (só main, após infra)
+#
+# Secrets necessários (configurar após rodar bootstrap.yml):
+#   GCP_PROJECT_ID                 — ID do projeto GCP
+#   GCP_WORKLOAD_IDENTITY_PROVIDER — Output do bootstrap
+#   GCP_SERVICE_ACCOUNT            — Output do bootstrap
+#   OPENAI_API_KEY                 — Para o Secret Manager via Terraform
+#   DID_API_USERNAME               — Para o Secret Manager via Terraform
+#   DID_API_PASSWORD               — Para o Secret Manager via Terraform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: us-central1-docker.pkg.dev
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REPO: empatia-images
+  CLUSTER_NAME: empatia-cluster
+  CLUSTER_REGION: us-central1
+  NAMESPACE: empatia
+  STATE_BUCKET: "${{ secrets.GCP_PROJECT_ID }}-terraform-state"
+
+# ---------------------------------------------------------------
+# VALIDATE — terraform + k8s lint (sempre, sem auth GCP)
+# ---------------------------------------------------------------
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7"
+
+      - name: terraform init (sem backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform fmt check
+        run: terraform fmt -check -recursive
+
+      - name: Install kubeval
+        working-directory: .
+        run: |
+          wget -q https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+          tar xf kubeval-linux-amd64.tar.gz
+          sudo mv kubeval /usr/local/bin
+
+      - name: Validate Kubernetes manifests
+        working-directory: .
+        run: find infrastructure/k8s -name "*.yaml" | xargs kubeval --ignore-missing-schemas
+
+# ---------------------------------------------------------------
+# BUILD — build (+ push em main) de todas as imagens
+# ---------------------------------------------------------------
+  build:
+    name: "Build ${{ matrix.name }}"
+    runs-on: ubuntu-latest
+    needs: validate
+
+    permissions:
+      contents: read
+      id-token: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gateway-service
+            context: services/gateway-service
+          - name: ai-service
+            context: services/ai-service
+          - name: avatar-service
+            context: services/avatar-service
+          - name: emotion-service
+            context: services/emotion-service
+          - name: voice-service
+            context: services/voice-service
+          - name: web-ui
+            context: apps/web-ui
+          - name: admin-panel
+            context: apps/admin-panel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Definir tag da imagem
+        id: meta
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Autenticar no GCP (Workload Identity)
+        if: github.ref == 'refs/heads/main'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar Docker para Artifact Registry
+        if: github.ref == 'refs/heads/main'
+        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }} (PR — sem push)
+        if: github.ref != 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: false
+          tags: ${{ matrix.name }}:ci-${{ steps.meta.outputs.tag }}
+          platforms: linux/amd64
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Build & Push ${{ matrix.name }} (main)
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ matrix.name }}:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ matrix.name }}:latest
+          platforms: linux/amd64
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+# ---------------------------------------------------------------
+# INFRA — terraform plan + apply (só main, idempotente)
+# ---------------------------------------------------------------
+  infra:
+    name: Infrastructure (Terraform)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Definir tag da imagem
+        id: meta
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Autenticar no GCP (Workload Identity)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7"
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ env.STATE_BUCKET }}" \
+            -backend-config="prefix=terraform/state"
+
+      - name: terraform plan
+        id: plan
+        # Captura o exit code manualmente:
+        # 0 = sem mudanças, 1 = erro, 2 = há mudanças
+        # Converte exit 2 em exit 0 para não falhar o step;
+        # exit 1 continua propagando o erro.
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -out=tfplan \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="region=${{ env.CLUSTER_REGION }}" \
+            -var="state_bucket=${{ env.STATE_BUCKET }}" \
+            -var="openai_api_key=${{ secrets.OPENAI_API_KEY }}" \
+            -var="did_api_username=${{ secrets.DID_API_USERNAME }}" \
+            -var="did_api_password=${{ secrets.DID_API_PASSWORD }}" \
+            -var="github_repo=arangelcn/empath-ia"
+          EXIT_CODE=$?
+          echo "exitcode=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          [ $EXIT_CODE -eq 1 ] && exit 1 || exit 0
+
+      - name: terraform apply (só se há mudanças — exit 2)
+        if: steps.plan.outputs.exitcode == '2'
+        run: terraform apply tfplan
+
+      - name: Sem mudanças na infra
+        if: steps.plan.outputs.exitcode == '0'
+        run: echo "Infraestrutura ja esta atualizada, nenhum apply necessario."
+
+# ---------------------------------------------------------------
+# DEPLOY — kubectl apply + rollout (só main, após infra)
+# ---------------------------------------------------------------
+  deploy:
+    name: Deploy to GKE
+    runs-on: ubuntu-latest
+    needs: infra
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Autenticar no GCP (Workload Identity)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configurar kubectl para o cluster GKE
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_REGION }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Sincronizar secrets GCP Secret Manager → K8s Secret
+        run: |
+          kubectl apply -f infrastructure/k8s/namespace.yaml
+
+          kubectl create secret generic empatia-secrets \
+            --namespace ${{ env.NAMESPACE }} \
+            --from-literal=OPENAI_API_KEY="$(gcloud secrets versions access latest --secret=empatia-openai-api-key --project=${{ env.PROJECT_ID }})" \
+            --from-literal=DID_API_USERNAME="$(gcloud secrets versions access latest --secret=empatia-did-api-username --project=${{ env.PROJECT_ID }})" \
+            --from-literal=DID_API_PASSWORD="$(gcloud secrets versions access latest --secret=empatia-did-api-password --project=${{ env.PROJECT_ID }})" \
+            --from-literal=MONGO_ROOT_PASSWORD="$(gcloud secrets versions access latest --secret=empatia-mongo-root-password --project=${{ env.PROJECT_ID }})" \
+            --from-literal=REDIS_PASSWORD="$(gcloud secrets versions access latest --secret=empatia-redis-password --project=${{ env.PROJECT_ID }})" \
+            --from-literal=JWT_SECRET_KEY="$(gcloud secrets versions access latest --secret=empatia-jwt-secret-key --project=${{ env.PROJECT_ID }})" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply — Namespace, ServiceAccount, ConfigMap
+        run: |
+          kubectl apply -f infrastructure/k8s/namespace.yaml
+          sed "s/PROJECT_ID/${{ env.PROJECT_ID }}/g" infrastructure/k8s/serviceaccount.yaml | kubectl apply -f -
+          kubectl apply -f infrastructure/k8s/configmap.yaml
+
+      - name: Apply — MongoDB e Redis
+        run: |
+          kubectl apply -f infrastructure/k8s/mongodb/
+          kubectl apply -f infrastructure/k8s/redis/
+
+      - name: Aguardar MongoDB estar pronto
+        run: |
+          kubectl rollout status statefulset/mongodb \
+            --namespace ${{ env.NAMESPACE }} --timeout=180s
+
+      - name: Substituir tags das imagens nos manifests
+        env:
+          IMAGE_TAG: ${{ needs.infra.outputs.image_tag }}
+          REGISTRY_URL: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}
+        run: |
+          for svc in gateway ai-service avatar-service emotion-service voice-service web-ui admin-panel; do
+            find infrastructure/k8s/$svc -name "deployment.yaml" \
+              -exec sed -i \
+                -e "s|REGISTRY_URL|${REGISTRY_URL}|g" \
+                -e "s|IMAGE_TAG|${IMAGE_TAG}|g" \
+                {} \;
+          done
+
+      - name: Apply — Serviços backend e frontend
+        run: |
+          kubectl apply -f infrastructure/k8s/gateway/
+          kubectl apply -f infrastructure/k8s/ai-service/
+          kubectl apply -f infrastructure/k8s/avatar-service/
+          kubectl apply -f infrastructure/k8s/emotion-service/
+          kubectl apply -f infrastructure/k8s/voice-service/
+          kubectl apply -f infrastructure/k8s/web-ui/
+          kubectl apply -f infrastructure/k8s/admin-panel/
+
+      - name: Apply — Ingress e Certificados
+        run: kubectl apply -f infrastructure/k8s/ingress.yaml
+
+      - name: Verificar rollout de todos os Deployments
+        run: |
+          for dep in gateway ai-service avatar-service emotion-service voice-service web-ui admin-panel; do
+            echo "Verificando rollout: $dep..."
+            kubectl rollout status deployment/$dep \
+              --namespace ${{ env.NAMESPACE }} --timeout=300s
+          done
+
+      - name: Resumo do deploy
+        if: always()
+        run: |
+          echo "=== Pods em execução ==="
+          kubectl get pods -n ${{ env.NAMESPACE }} -o wide
+          echo ""
+          echo "=== Serviços ==="
+          kubectl get svc -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "=== Ingress ==="
+          kubectl get ingress -n ${{ env.NAMESPACE }}
