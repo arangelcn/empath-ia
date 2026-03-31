@@ -125,8 +125,6 @@ services:
     build:
       context: ./services/emotion-service
       dockerfile: Dockerfile
-    # Configuração GPU para Docker CE + NVIDIA Container Toolkit
-    runtime: nvidia
     environment:
       # Configurações NVIDIA para Docker CE
       - NVIDIA_VISIBLE_DEVICES=all

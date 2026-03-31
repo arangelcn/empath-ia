@@ -1,0 +1,17 @@
+{
+  "projects": {
+    "default": "empathia-491822"
+  },
+  "targets": {
+    "empathia-491822": {
+      "hosting": {
+        "web-ui": [
+          "empathia-491822"
+        ],
+        "admin": [
+          "empathia-491822-admin"
+        ]
+      }
+    }
+  }
+}

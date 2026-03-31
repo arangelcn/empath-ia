@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: avatar-service
+  namespace: empatia
+  labels:
+    app: avatar-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: avatar-service
+  template:
+    metadata:
+      labels:
+        app: avatar-service
+    spec:
+      serviceAccountName: empatia-app
+      containers:
+        - name: avatar-service
+          image: REGISTRY_URL/avatar-service:IMAGE_TAG
+          ports:
+            - containerPort: 8002
+              name: http
+          envFrom:
+            - configMapRef:
+                name: empatia-config
+          env:
+            - name: DID_API_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: empatia-secrets
+                  key: DID_API_USERNAME
+            - name: DID_API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: empatia-secrets
+                  key: DID_API_PASSWORD
+            - name: AVATAR_SERVICE_PORT
+              value: "8002"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8002
+            initialDelaySeconds: 10
+            periodSeconds: 10

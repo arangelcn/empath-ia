@@ -53,17 +53,17 @@ setup: ## Configuração inicial do projeto
 dev: ## Inicia ambiente de desenvolvimento com hot reload
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento com live reload...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.dev.yml up --build
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 dev-detached: ## Inicia ambiente de desenvolvimento em background
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento (background) com live reload...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.dev.yml up --build -d
+	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
 
 dev-services: ## Inicia apenas os serviços backend (sem web-ui)
 	@echo "${YELLOW}🚀 Iniciando apenas serviços backend...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f $(DOCKER_COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb redis
 
 # ===== COMANDOS MONGODB =====
 mongo-logs: ## Visualiza logs do MongoDB
@@ -107,11 +107,11 @@ mongo-reset: ## Reseta completamente o banco MongoDB
 # ===== BUILD E DEPLOY =====
 build: ## Constrói todas as imagens Docker
 	@echo "${YELLOW}🔨 Construindo imagens Docker...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) build
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build
 
 build-service: ## Constrói imagem de um serviço específico (ex: make build-service SERVICE=ai-service)
 	@echo "${YELLOW}🔨 Construindo serviço $(SERVICE)...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) build $(SERVICE)
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build $(SERVICE)
 
 build-prod: ## Constrói imagens para produção
 	@echo "${YELLOW}🔨 Construindo imagens para produção...${NC}"
@@ -120,7 +120,7 @@ build-prod: ## Constrói imagens para produção
 deploy-dev: build ## Deploy em ambiente de desenvolvimento
 	@echo "${YELLOW}🚀 Fazendo deploy em desenvolvimento...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f $(DOCKER_COMPOSE_DEV) up -d
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) up -d
 
 deploy-prod: build-prod ## Deploy em ambiente de produção
 	@echo "${YELLOW}🚀 Fazendo deploy em produção...${NC}"
@@ -204,14 +204,14 @@ chat-conversations: ## Lista conversas recentes
 # ===== TESTES =====
 test: ## Executa todos os testes
 	@echo "${YELLOW}🧪 Executando testes...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service pytest tests/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service pytest tests/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service pytest tests/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway pytest tests/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service pytest tests/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service pytest tests/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service pytest tests/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway pytest tests/ || true
 
 test-service: ## Executa testes de um serviço específico (ex: make test-service SERVICE=ai-service)
 	@echo "${YELLOW}🧪 Executando testes do $(SERVICE)...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec $(SERVICE) pytest tests/
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec $(SERVICE) pytest tests/
 
 test-integration: ## Executa testes de integração
 	@echo "${YELLOW}🧪 Executando testes de integração...${NC}"
@@ -224,49 +224,49 @@ test-e2e: ## Executa testes end-to-end
 # ===== QUALIDADE DE CÓDIGO =====
 lint: ## Executa linting em todos os serviços
 	@echo "${YELLOW}📝 Executando linting...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service flake8 src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service flake8 src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service flake8 src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway flake8 src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service flake8 src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service flake8 src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service flake8 src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway flake8 src/ || true
 
 format: ## Formata código com black
 	@echo "${YELLOW}🎨 Formatando código...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service black src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service black src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service black src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway black src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service black src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service black src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service black src/ || true
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway black src/ || true
 
 # ===== LIMPEZA =====
 clean: ## Remove containers, volumes e imagens não utilizadas
 	@echo "${YELLOW}🧹 Limpando containers e volumes...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans
 	@docker system prune -f
 	@echo "${GREEN}✅ Limpeza concluída!${NC}"
 
 clean-all: ## Remove tudo incluindo imagens
 	@echo "${RED}🧹 Limpeza completa (incluindo imagens)...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans --rmi all
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans --rmi all
 	@docker system prune -af
 	@echo "${GREEN}✅ Limpeza completa concluída!${NC}"
 
 # ===== SHELLS E ACESSO =====
 shell-ai: ## Acessa shell do serviço de IA
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service bash
 
 shell-avatar: ## Acessa shell do serviço de avatar
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service bash
 
 shell-emotion: ## Acessa shell do serviço de emoções
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service bash
 
 shell-gateway: ## Acessa shell do gateway
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway bash
 
 shell-ui: ## Acessa shell do web-ui
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec web-ui bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec web-ui bash
 
 shell-mongo: ## Acessa shell do MongoDB
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec mongodb bash
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec mongodb bash
 
 # ===== DOCUMENTAÇÃO =====
 docs: ## Mostra URLs da documentação

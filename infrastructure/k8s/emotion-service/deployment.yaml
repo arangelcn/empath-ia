@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emotion-service
+  namespace: empatia
+  labels:
+    app: emotion-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: emotion-service
+  template:
+    metadata:
+      labels:
+        app: emotion-service
+    spec:
+      serviceAccountName: empatia-app
+      # Spot Pods: tolerância a preempção — reduz custo em ~70%
+      # O emotion-service é tolerante a restart (sem estado persistente)
+      tolerations:
+        - key: "cloud.google.com/gke-spot"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      nodeSelector:
+        cloud.google.com/gke-spot: "true"
+      terminationGracePeriodSeconds: 25
+      containers:
+        - name: emotion-service
+          image: REGISTRY_URL/emotion-service:IMAGE_TAG
+          ports:
+            - containerPort: 8003
+              name: http
+          envFrom:
+            - configMapRef:
+                name: empatia-config
+          env:
+            - name: EMOTION_SERVICE_PORT
+              value: "8003"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "768Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1536Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8003
+            initialDelaySeconds: 60  # TensorFlow demora a carregar
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8003
+            initialDelaySeconds: 45
+            periodSeconds: 15
