@@ -23,6 +23,9 @@ data:
   EMOTION_CONFIDENCE_THRESHOLD: "0.7"
   OPENFACE_MODEL_PATH: "/models/openface"
 
+  # Google OAuth — Client ID (valor público; o mesmo que vai no bundle do frontend)
+  GOOGLE_CLIENT_ID: "65044405357-5rgurqt6q1vt5voedmnr3ht78i06jvaj.apps.googleusercontent.com"
+
   # CORS — frontends permitidos a chamar a API
   ALLOWED_ORIGINS: "https://app.empat-ia.io,https://admin.empat-ia.io"
 
