@@ -85,6 +85,10 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           # Plataforma única — sem ARM no GKE Autopilot padrão
           platforms: linux/amd64
+          build-args: |
+            VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            VITE_API_URL=https://api.empat-ia.io
+            VITE_VOICE_URL=https://api.empat-ia.io
 
   # ---------------------------------------------------------------
   # 2. Deploy no GKE Autopilot
@@ -134,7 +138,7 @@ jobs:
       - name: Apply — Namespace, ServiceAccount, ConfigMap
         run: |
           kubectl apply -f infrastructure/k8s/namespace.yaml
-          kubectl apply -f infrastructure/k8s/serviceaccount.yaml
+          sed "s/PROJECT_ID/${{ env.PROJECT_ID }}/g" infrastructure/k8s/serviceaccount.yaml | kubectl apply -f -
           kubectl apply -f infrastructure/k8s/configmap.yaml
 
       - name: Apply — MongoDB e Redis

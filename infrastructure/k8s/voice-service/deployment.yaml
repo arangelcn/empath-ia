@@ -32,10 +32,8 @@ spec:
               value: "https://api.empat-ia.io/voice-service"
             - name: TTS_OUTPUT_DIR
               value: "/app/output"
-            # Workload Identity fornece credenciais automaticamente via metadata server
-            # Não é necessário montar ficheiro JSON de credenciais
-            - name: GOOGLE_APPLICATION_CREDENTIALS
-              value: ""
+            # Workload Identity fornece credenciais automaticamente via metadata server GKE
+            # GOOGLE_APPLICATION_CREDENTIALS não deve ser definido — ADC usa o metadata server
           resources:
             requests:
               cpu: "100m"

@@ -131,6 +131,10 @@ jobs:
           platforms: linux/amd64
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          build-args: |
+            VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            VITE_API_URL=https://api.empat-ia.io
+            VITE_VOICE_URL=https://api.empat-ia.io
 
       - name: Build & Push ${{ matrix.name }} (main)
         if: github.ref == 'refs/heads/main'
@@ -144,6 +148,10 @@ jobs:
           platforms: linux/amd64
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          build-args: |
+            VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            VITE_API_URL=https://api.empat-ia.io
+            VITE_VOICE_URL=https://api.empat-ia.io
 
 # ---------------------------------------------------------------
 # INFRA — terraform plan + apply (só main, idempotente)
@@ -322,3 +330,6 @@ jobs:
           echo ""
           echo "=== Ingress ==="
           kubectl get ingress -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "=== Certificados Gerenciados ==="
+          kubectl get managedcertificate -n ${{ env.NAMESPACE }}

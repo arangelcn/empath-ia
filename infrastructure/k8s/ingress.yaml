@@ -1,3 +1,16 @@
+---
+# FrontendConfig: redireciona HTTP → HTTPS mantendo a porta 80 aberta
+# (necessário para o provisionamento do GKE Managed Certificate via HTTP-01 challenge)
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: empatia-frontend-config
+  namespace: empatia
+spec:
+  redirectToHttps:
+    enabled: true
+    responseCodeName: MOVED_PERMANENTLY_DEFAULT
+---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,8 +21,8 @@ metadata:
     networking.gke.io/managed-certificates: empatia-certs
     # GKE Ingress class (usa Cloud Load Balancer)
     kubernetes.io/ingress.class: "gce"
-    # Forçar HTTPS — redireciona HTTP → HTTPS
-    kubernetes.io/ingress.allow-http: "false"
+    # Redirect HTTP → HTTPS via FrontendConfig (mantém porta 80 aberta para o cert provisioning)
+    networking.gke.io/v1beta1.FrontendConfig: empatia-frontend-config
     # NEG para routing eficiente aos pods
     compute.googleapis.com/neg: '{"ingress": true}'
 spec:
