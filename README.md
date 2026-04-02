@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/screenshots/landing.png" alt="Empat.IA Landing Page" width="100%"/>
+<img src="docs/screenshots/landing.png" alt="Empat.IA — Plataforma de Terapia Virtual" width="100%"/>
 
 # Empat.IA
 
@@ -14,7 +14,7 @@
 [![GKE](https://img.shields.io/badge/GKE-Autopilot-4285F4?style=flat-square&logo=google-cloud&logoColor=white)](https://cloud.google.com/kubernetes-engine)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-**[🌐 App](https://app.empat-ia.io) · [⚙️ Admin](https://admin.empat-ia.io) · [📖 API Docs](https://api.empat-ia.io/docs)**
+**[🌐 App](https://app.empat-ia.io) · [⚙️ Admin](https://admin.empat-ia.io) · [📖 API Docs](https://api.empat-ia.io/docs) · [🔧 Documentação Técnica](docs/TECHNICAL.md)**
 
 </div>
 
@@ -24,46 +24,83 @@
 
 **Empat.IA** é uma plataforma de apoio terapêutico que combina IA conversacional, análise emocional em tempo real e continuidade entre sessões para criar uma experiência personalizada e progressiva — inspirada na abordagem centrada na pessoa de Carl Rogers.
 
-> *A Empat.IA existe para **potencializar** o trabalho terapêutico, não para substituí-lo.*
+> *A Empat.IA existe para **potencializar** o trabalho terapêutico, não para substituí-lo — ampliando o alcance do terapeuta com inteligência e empatia.*
 
 ---
 
-## Screenshots
+## A Plataforma em Imagens
+
+### Jornada do Usuário
 
 <table>
   <tr>
-    <td align="center">
-      <img src="docs/screenshots/login.png" alt="Tela de Login" width="100%"/>
-      <b>Login com Google</b>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/login.png" alt="Login com Google" width="100%"/>
+      <br/><b>Acesso seguro com Google OAuth</b>
+      <br/><sub>Autenticação com verificação server-side do ID Token</sub>
     </td>
-    <td align="center">
-      <img src="docs/screenshots/admin.png" alt="Painel Admin" width="100%"/>
-      <b>Painel Administrativo</b>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/register.png" alt="Seleção de voz" width="100%"/>
+      <br/><b>Personalização inicial — escolha da voz</b>
+      <br/><sub>Vozes neurais em português brasileiro (Google Cloud TTS)</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/screenshots/home_session.png" alt="Jornada Terapêutica" width="70%"/>
+      <br/><b>Jornada Terapêutica Personalizada</b>
+      <br/><sub>Progresso visual, sessões desbloqueadas sequencialmente e geradas pela IA com base no histórico do usuário</sub>
     </td>
   </tr>
 </table>
 
 ---
 
-## Funcionalidades
+## Sistema de Análise Emocional
 
-### Experiência do Usuário
-- **Sessões terapêuticas progressivas** — desbloqueio sequencial com geração automática via IA
-- **Contexto entre sessões** — a IA lembra o que foi dito, garantindo continuidade terapêutica real
-- **Análise emocional em tempo real** — detecção de emoções via webcam e análise textual
-- **Síntese de voz neural** — vozes naturais em português brasileiro (Google Cloud TTS)
-- **Onboarding estruturado** — perfil completo coletado na sessão inicial (Session-1)
-- **Login seguro com Google** — autenticação OAuth 2.0 com JWT de sessão
+> O Empat.IA combina **detecção facial em tempo real via webcam** com **análise semântica das mensagens** para construir um perfil emocional contínuo ao longo de cada sessão. Esses dados alimentam diretamente a geração das próximas sessões e as respostas da IA — tornando cada interação mais empática e contextualizada.
 
-### Painel Administrativo
-- **Gestão de prompts** — editor para customizar o comportamento da IA sem redeploy
-- **Dashboard em tempo real** — conversas ativas, emoções capturadas, estatísticas de uso
-- **Gerenciamento de usuários** — perfis, históricos e progresso terapêutico
-- **Sessões terapêuticas** — catálogo de templates e sessões personalizadas geradas
+<img src="docs/screenshots/emotion_analytics.png" alt="Analytics de Emoções" width="100%"/>
+
+**O que o sistema detecta e registra:**
+
+| Dado | Fonte | Uso |
+|------|-------|-----|
+| Emoção dominante (alegria, tristeza, ansiedade…) | Webcam (DeepFace + MediaPipe) | Contexto da resposta da IA |
+| Confiança da detecção (0–1) | Visão computacional | Filtragem de dados de baixa qualidade |
+| Sentimento textual | Análise semântica da mensagem | Complementa a detecção facial |
+| Timeline emocional completa | MongoDB (`user_emotions`) | Relatórios e geração de próxima sessão |
+| Tendências ao longo do tempo | Agregação temporal | Dashboard do terapeuta |
+
+O painel acima mostra, ao longo dos últimos 7 dias: **3.542 sessões**, **12.847 emoções detectadas**, **94.2% de taxa de satisfação** — com tendências emocionais, engajamento por horário e distribuição demográfica.
 
 ---
 
-## Arquitetura
+## Painel do Terapeuta
+
+> O **Painel Administrativo** é onde o terapeuta tem controle total sobre a plataforma — sem precisar tocar em código. Ele define os parâmetros das sessões, edita os prompts que guiam a IA, acompanha o progresso de cada usuário e analisa os dados emocionais agregados.
+
+### Gerenciamento de Sessões
+
+<img src="docs/screenshots/session_management.png" alt="Gerenciamento de Sessões" width="100%"/>
+
+O terapeuta visualiza em tempo real todas as sessões de todos os usuários: quais foram **concluídas**, quais estão **em progresso**, quais são **personalizadas** (geradas por IA) vs. **templates** base. Cada sessão mostra o progresso individual e pode ser gerenciada diretamente pelo painel.
+
+### Gerenciamento de Prompts da IA
+
+<img src="docs/screenshots/prompt_managing.png" alt="Gerenciamento de Prompts" width="100%"/>
+
+**Este é o coração da plataforma do ponto de vista clínico.** O terapeuta edita diretamente os prompts que definem como a IA se comporta em cada situação — sem redeploy, sem código:
+
+- **Prompts de sistema** — comportamento base da IA (abordagem Rogers, tom, limites)
+- **Geração de próxima sessão** — instruções para a IA criar sessões personalizadas
+- **Análise de contexto** — como a IA estrutura e resume cada sessão
+- **Fallbacks por emoção** — respostas automáticas para raiva, gratidão, despedida, etc.
+- Cada prompt pode ser **ativado/desativado** individualmente, com versionamento e timestamps
+
+---
+
+## Stack & Arquitetura
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -73,7 +110,7 @@
                        │ HTTPS
 ┌──────────────────────▼──────────────────────────────────┐
 │              API Gateway (FastAPI · Porta 8000)          │
-│  api.empat-ia.io — orquestração, chat, auth, sessões    │
+│  api.empat-ia.io — chat, auth Google+JWT, sessões       │
 └──┬──────────┬──────────┬──────────┬────────────┬────────┘
    │          │          │          │            │
 ┌──▼──┐  ┌───▼───┐  ┌───▼───┐  ┌──▼────┐  ┌───▼────┐
@@ -83,8 +120,6 @@
 OpenAI    GCloud     DeepFace     DID.ai
  GPT       TTS       MediaPipe
 ```
-
-### Stack
 
 | Camada | Tecnologia |
 |--------|-----------|
@@ -97,6 +132,8 @@ OpenAI    GCloud     DeepFace     DID.ai
 | **Banco de dados** | MongoDB 7, Redis 7 |
 | **Infra** | Docker Compose (local), GKE Autopilot (produção), Terraform, GitHub Actions |
 
+> Para detalhes técnicos completos — endpoints, schema MongoDB, variáveis de ambiente, deploy GKE e decisões de arquitetura — consulte a **[Documentação Técnica](docs/TECHNICAL.md)**.
+
 ---
 
 ## Começando
@@ -105,143 +142,48 @@ OpenAI    GCloud     DeepFace     DID.ai
 
 - **Docker** 20.10+ e **Docker Compose** 2.0+
 - Chave de API **OpenAI**
-- **Google OAuth Client ID** (para login)
+- **Google OAuth Client ID** (para login — [como obter](https://console.cloud.google.com/apis/credentials))
 - Credenciais **Google Cloud** (para síntese de voz — opcional)
 
-### Instalação rápida
+### Instalação em 3 passos
 
 ```bash
-# 1. Clone o repositório
-git clone https://github.com/arangelcn/empath-ia.git
-cd empath-ia
+# 1. Clone
+git clone https://github.com/arangelcn/empath-ia.git && cd empath-ia
 
-# 2. Configure as variáveis de ambiente
+# 2. Configure
 cp .env.example .env
-# Edite .env com suas chaves (veja seção Configuração)
+# Edite .env — mínimo necessário: OPENAI_API_KEY e GOOGLE_CLIENT_ID
 
-# 3. Suba todos os serviços
+# 3. Suba
 docker compose up -d
-
-# 4. Acesse
-# Web UI:     http://localhost:7860
-# Admin:      http://localhost:3001
-# API:        http://localhost:8000
-# API Docs:   http://localhost:8000/docs
 ```
 
-### Modo de desenvolvimento (hot reload)
+| URL | Serviço |
+|-----|---------|
+| http://localhost:7860 | Web UI (usuário) |
+| http://localhost:3001 | Admin Panel (terapeuta) |
+| http://localhost:8000/docs | API interativa |
+
+### Desenvolvimento com hot reload
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Mongo Express disponível em http://localhost:8081
 ```
-
-Inclui Mongo Express em `http://localhost:8081`.
 
 ---
 
-## Configuração
-
-Copie `.env.example` para `.env` e preencha as chaves abaixo.
-
-### Obrigatórias
+## Configuração Mínima
 
 ```bash
-# OpenAI
+# .env — campos obrigatórios
 OPENAI_API_KEY=sk-...
-MODEL_NAME=gpt-4o
-
-# Google OAuth (Client ID do console.cloud.google.com)
 GOOGLE_CLIENT_ID=xxxxxxx.apps.googleusercontent.com
-
-# JWT (gere com: openssl rand -hex 32)
-SECRET_KEY=seu_secret_aqui
+SECRET_KEY=$(openssl rand -hex 32)   # JWT de sessão
 ```
 
-### Opcionais
-
-```bash
-# Google Cloud TTS (coloque o JSON em services/voice-service/credentials/)
-CREDENTIALS_JSON=conteudo_do_json_ou_caminho
-
-# DID (avatares animados)
-DID_API_USERNAME=seu_usuario
-DID_API_PASSWORD=sua_senha
-
-# MongoDB (padrão já funciona com docker compose)
-MONGODB_URL=mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin
-```
-
-> **Nota:** `VITE_GOOGLE_CLIENT_ID` é definido automaticamente pelo Docker Compose a partir de `GOOGLE_CLIENT_ID`. Não é necessário duplicar.
-
----
-
-## Serviços e Portas
-
-| Serviço | Porta | URL |
-|---------|-------|-----|
-| Web UI | `7860` | http://localhost:7860 |
-| Admin Panel | `3001` | http://localhost:3001 |
-| Gateway API | `8000` | http://localhost:8000 |
-| AI Service | `8001` | http://localhost:8001 |
-| Emotion Service | `8003` | http://localhost:8003 |
-| Voice Service | `8004` | http://localhost:8004 |
-| MongoDB *(dev)* | `27017` | — |
-| Mongo Express *(dev)* | `8081` | http://localhost:8081 |
-
----
-
-## API — Endpoints Principais
-
-### Autenticação
-
-```
-GET  /api/auth/google/status    → verifica se auth Google está disponível
-POST /api/auth/google           → valida ID Token Google, retorna JWT
-```
-
-### Chat
-
-```
-POST /api/chat/send                         → envia mensagem, recebe resposta IA
-GET  /api/chat/history/{session_id}         → histórico da conversa
-GET  /api/chat/initial-message/{session_id} → mensagem inicial personalizada
-POST /api/chat/finalize/{session_id}        → finaliza sessão e gera contexto
-GET  /api/chat/context/{session_id}         → contexto salvo da sessão
-```
-
-### Usuário e Sessões
-
-```
-GET  /api/user/{username}/sessions                         → lista sessões
-GET  /api/user/{username}/sessions/{session_id}            → detalhe
-POST /api/user/{username}/sessions/{session_id}/start      → inicia
-POST /api/user/{username}/sessions/{session_id}/complete   → conclui
-GET  /api/user/{username}/progress                         → progresso geral
-POST /api/user/{username}/login                            → registra login + cria session-1
-```
-
-### Emoções
-
-```
-GET /api/emotions/{username}           → histórico de emoções
-GET /api/emotions/{username}/summary   → resumo
-GET /api/emotions/{username}/timeline  → linha do tempo
-POST /api/emotion/analyze-realtime     → análise via webcam (base64)
-```
-
-### Prompts (Admin)
-
-```
-GET    /api/prompts                 → lista prompts
-POST   /api/prompts                 → cria prompt
-GET    /api/prompts/{key}           → busca por chave
-PUT    /api/prompts/{key}           → atualiza
-DELETE /api/prompts/{key}           → remove (soft delete)
-GET    /api/prompts/active/{key}    → prompt ativo
-POST   /api/prompts/initialize      → inicializa prompts padrão
-```
-
-Documentação interativa completa: [`http://localhost:8000/docs`](http://localhost:8000/docs)
+Veja o `.env.example` e a [Documentação Técnica](docs/TECHNICAL.md) para todas as variáveis disponíveis.
 
 ---
 
@@ -249,151 +191,63 @@ Documentação interativa completa: [`http://localhost:8000/docs`](http://localh
 
 ```mermaid
 graph LR
-    Login --> Session1["Session 1\n(Onboarding)"]
-    Session1 --> Perfil["Perfil do\nUsuário"]
-    Perfil --> Session2["Session 2\n(Personalizada)"]
-    Session2 -->|"Finaliza"| Contexto["Contexto\nGerado"]
-    Contexto --> Session3["Session 3\n(Auto-gerada\npela IA)"]
-    Session3 -->|"..."| SessionN["Session N"]
+    Login --> S1["Session 1\nOnboarding + Perfil"]
+    S1 -->|"IA gera"| S2["Session 2\nPersonalizada"]
+    S2 -->|"IA gera"| S3["Session 3\nContexto acumulado"]
+    S3 -->|"..."| SN["Session N\nJornada contínua"]
 ```
 
-Cada sessão é gerada automaticamente pela IA com base no perfil do usuário e no contexto da sessão anterior — garantindo continuidade terapêutica real.
+Cada sessão é gerada automaticamente com base no **perfil do usuário** + **contexto da sessão anterior** + **dados emocionais coletados**.
 
 ---
 
-## Banco de Dados
+## Deploy em Produção
 
-O sistema usa **MongoDB** com as seguintes coleções principais:
+O projeto roda em **GKE Autopilot** com deploy automático via GitHub Actions no push para `main`.
 
-| Coleção | Conteúdo |
-|---------|----------|
-| `users` | Perfis, preferências, dados de autenticação Google |
-| `conversations` | Sessões de conversa e metadados |
-| `messages` | Mensagens individuais com URLs de áudio |
-| `session_contexts` | Contextos estruturados gerados pela IA (fonte única) |
-| `user_therapeutic_sessions` | Sessões personalizadas por usuário |
-| `user_emotions` | Dados de análise emocional |
-| `therapeutic_sessions` | Templates de sessões terapêuticas |
-| `prompts` | Prompts do sistema gerenciados pelo admin |
+```
+app.empat-ia.io    → Web UI
+admin.empat-ia.io  → Admin Panel
+api.empat-ia.io    → Gateway API
+```
+
+Veja detalhes de infraestrutura, Terraform e pipeline CI/CD na [Documentação Técnica](docs/TECHNICAL.md).
 
 ---
 
-## Deploy em Produção (GKE)
+## Atualizações Recentes (Abril 2026)
 
-O projeto roda em **Google Kubernetes Engine Autopilot** com deploy automático via GitHub Actions.
-
-**Domínios:**
-- `app.empat-ia.io` — Web UI
-- `admin.empat-ia.io` — Painel Admin
-- `api.empat-ia.io` — API Gateway
-
-**Pipeline:**
-1. Push para `main` → GitHub Actions builda e publica imagens no Artifact Registry
-2. Secrets sincronizados do GCP Secret Manager para K8s Secrets
-3. ConfigMap atualizado (inclui `GOOGLE_CLIENT_ID`)
-4. Rollout dos Deployments no namespace `empatia`
-
-```bash
-# Deploy manual (via workflow_dispatch no GitHub Actions)
-# Ou faça push para a branch main
-
-# Verificar pods em produção (requer kubectl configurado)
-kubectl get pods -n empatia
-```
-
----
-
-## Monitoramento
-
-```bash
-# Health check de todos os serviços
-curl http://localhost:8000/health/all
-
-# Logs do gateway
-docker logs empatia-gateway --follow
-
-# Logs do AI service
-docker logs empatia-ai-service --follow
-```
-
----
-
-## Estrutura do Projeto
-
-```
-empath-ia/
-├── apps/
-│   ├── web-ui/              # Frontend principal (React + Vite)
-│   └── admin-panel/         # Painel administrativo (React + Vite)
-├── services/
-│   ├── gateway-service/     # API Gateway (FastAPI) — ponto central
-│   │   └── src/
-│   │       ├── api/         # Rotas: auth.py, admin.py
-│   │       ├── services/    # chat, user, session, prompt, emotion...
-│   │       └── models/      # database.py
-│   ├── ai-service/          # IA conversacional (OpenAI)
-│   ├── voice-service/       # Text-to-Speech (Google Cloud)
-│   ├── emotion-service/     # Análise facial (DeepFace + MediaPipe)
-│   └── avatar-service/      # Avatares animados (DID.ai)
-├── infrastructure/
-│   ├── k8s/                 # Manifests Kubernetes (GKE)
-│   └── terraform/           # IaC: GCP, GKE, DNS, Secret Manager
-├── docs/
-│   └── screenshots/         # Screenshots da aplicação
-├── .github/workflows/       # CI/CD (deploy.yml, pipeline.yml)
-├── docker-compose.yml        # Stack completa (produção local)
-├── docker-compose.dev.yml    # Overrides de desenvolvimento
-├── .env.example             # Template de variáveis de ambiente
-└── Makefile                 # Atalhos de desenvolvimento
-```
-
----
-
-## Atualizações Recentes
-
-### Abril 2026
-- **Login Google em produção corrigido** — endpoint `GET /api/auth/google/status` e `GOOGLE_CLIENT_ID` agora disponíveis no gateway de produção via ConfigMap do K8s
-- **Correção de proxy Nginx** — reescrita de `audio_url` para servir áudio pelo gateway
-- **Pipeline CI/CD estabilizado** — HTTPS provisionado, certificados gerenciados
-
-### Histórico Anterior
-- Sistema completo de gerenciamento de prompts via Admin Panel
-- SessionContextService com persistência no MongoDB
-- Eliminação de duplicação de contextos (referências em vez de cópia)
-- Integração frontend ↔ backend para finalização de sessões
-- Continuidade terapêutica com contexto entre sessões
-- Desbloqueio gradual e geração automática de sessões
+- **Login Google restaurado em produção** — `GOOGLE_CLIENT_ID` adicionado ao ConfigMap do K8s; endpoint `/api/auth/google/status` deployado corretamente
+- **Correção de áudio no proxy** — `audio_url` reescrita no gateway para servir MP3 via `/api/voice/audio/`
+- **Pipeline CI/CD estabilizado** — HTTPS e certificados gerenciados no GKE Autopilot
+- **Infra Terraform completa** — VPC, GKE, Secret Manager, DNS, Artifact Registry
 
 ---
 
 ## Contribuindo
 
 ```bash
-# Fork → crie sua branch
 git checkout -b feature/minha-feature
-
-# Commit com Conventional Commits
-git commit -m "feat: adicionar nova funcionalidade"
-
+git commit -m "feat: descrição da mudança"   # Conventional Commits
 # Abra um Pull Request para main
 ```
 
-**Padrões:** Python — PEP 8 + Black · JavaScript/TypeScript — ESLint + Prettier
+**Padrões:** Python — PEP 8 + Black · JS/TS — ESLint + Prettier
 
 ---
 
 ## Licença
 
-MIT — veja [LICENSE](LICENSE) para detalhes.
+MIT — veja [LICENSE](LICENSE).
 
 ---
 
 ## Agradecimentos
 
 - **Carl Rogers** — pela abordagem terapêutica centrada na pessoa que inspira o projeto
-- **OpenAI** — GPT para respostas terapêuticas
+- **OpenAI** — GPT para respostas terapêuticas empáticas
 - **Google Cloud** — síntese de voz neural e OAuth
-- **MongoDB** — persistência flexível de dados terapêuticos
+- **MongoDB** — persistência flexível do contexto terapêutico
 
 ---
 
