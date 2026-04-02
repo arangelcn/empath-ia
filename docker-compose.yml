@@ -147,7 +147,7 @@ services:
       - .env
     environment:
       - VOICE_SERVICE_PORT=${VOICE_SERVICE_PORT:-8004}
-      - VOICE_SERVICE_BASE_URL=${VOICE_SERVICE_BASE_URL:-http://localhost:8004}
+      - VOICE_SERVICE_BASE_URL=${VOICE_SERVICE_BASE_URL:-http://voice-service:8004}
       # Configurações Google Cloud Text-to-Speech
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/empathia-462921-28cb9105b799.json
       - TTS_OUTPUT_DIR=/app/output

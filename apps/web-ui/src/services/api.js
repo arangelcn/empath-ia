@@ -37,6 +37,19 @@ apiClient.interceptors.request.use((config) => {
 });
 
 /**
+ * Verifica se a autenticação Google está disponível no servidor.
+ * @returns {Promise<boolean>}
+ */
+export const checkGoogleAuthStatus = async () => {
+  try {
+    const response = await apiClient.get('/auth/google/status');
+    return response.data?.available === true;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Autentica com Google enviando o ID Token ao backend para verificação server-side.
  * @param {string} credential - ID Token JWT emitido pelo Google Identity Services.
  * @returns {Promise<{access_token: string, user: object}>}

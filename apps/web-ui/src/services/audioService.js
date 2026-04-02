@@ -164,9 +164,9 @@ class AudioService {
       const selectedVoice = localStorage.getItem('empatia_selected_voice') || 'pt-BR-Neural2-B'
 
       const requestData = {
-        text: text.substring(0, 1000), // Limite de caracteres
-        voice_name: selectedVoice, // Usar a voz selecionada pelo usuário
-        voice_speed: options.speed || this.defaultSpeed
+        text: text.substring(0, 1000),
+        voice_name: selectedVoice,
+        speaking_rate: options.speed || this.defaultSpeed
       }
 
       console.log('🎤 Solicitando síntese de voz para:', `"${text.substring(0, 50)}..."`)
@@ -480,29 +480,22 @@ class AudioService {
       if (healthResponse.ok) {
         const health = await healthResponse.json()
         console.log('💚 Voice Service Health:', health)
-        
-        if (health.tts_model_loaded) {
-          // Obter informações detalhadas
+
+        const isHealthy = health.status === 'healthy'
+
+        if (isHealthy) {
           await this.initialize()
-          
-          return { 
-            available: true, 
-            modelLoading: false, 
+          return {
+            available: true,
+            modelLoading: false,
             health,
             service: 'direct',
-            version: health.version || '2.0.0'
+            version: health.version || '3.0.0'
           }
         } else {
-          console.warn('⚠️ Voice service online, mas modelo TTS ainda carregando...')
-          
-          // Retry em alguns segundos
-          setTimeout(() => {
-            this.testVoiceService()
-          }, 5000)
-          
-          return { 
-            available: true, 
-            modelLoading: true, 
+          console.warn('⚠️ Voice service retornou status não saudável:', health.status)
+          return {
+            available: false,
             health,
             service: 'direct'
           }

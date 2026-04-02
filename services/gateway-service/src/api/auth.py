@@ -19,10 +19,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-must-be-at-least-32-characters-long!")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  # 7 dias
+
+
+def _get_google_client_id() -> str:
+    """Lê GOOGLE_CLIENT_ID em tempo de execução para suportar injeção tardia de env vars."""
+    return (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
 
 
 class GoogleAuthRequest(BaseModel):
@@ -46,15 +50,25 @@ def _account_username(google_sub: str, email: str | None) -> str:
     return f"google_{google_sub}"
 
 
+@router.get("/google/status")
+async def google_auth_status():
+    """Informa se a autenticação Google está disponível no servidor."""
+    available = bool(_get_google_client_id())
+    if not available:
+        logger.warning("GOOGLE_CLIENT_ID não está configurado — auth Google indisponível.")
+    return {"available": available}
+
+
 @router.post("/google")
 async def google_auth(body: GoogleAuthRequest):
     """
     Recebe o ID Token do Google Identity Services, verifica sua assinatura,
     faz upsert do usuário no MongoDB e retorna um JWT de sessão.
     """
+    GOOGLE_CLIENT_ID = _get_google_client_id()
     if not GOOGLE_CLIENT_ID:
         logger.error("GOOGLE_CLIENT_ID não configurado")
-        raise HTTPException(status_code=500, detail="Autenticação Google não configurada no servidor.")
+        raise HTTPException(status_code=503, detail="Autenticação Google não configurada no servidor.")
 
     # Verificar ID Token com a chave pública do Google (sem segredo compartilhado)
     try:
