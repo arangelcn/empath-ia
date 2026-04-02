@@ -32,9 +32,10 @@ app.add_middleware(
 from .api.openai_routes import router as openai_router
 app.include_router(openai_router)
 
-def generate_therapeutic_response(user_message: str) -> str:
+def generate_therapeutic_response(user_message: str, last_ai_response: str = "") -> str:
     """
-    Gera resposta terapêutica baseada na mensagem do usuário
+    Gera resposta terapêutica de emergência baseada na mensagem do usuário.
+    Evita repetir a última resposta da IA quando possível.
     """
     message_lower = user_message.lower()
     
@@ -46,28 +47,40 @@ def generate_therapeutic_response(user_message: str) -> str:
     gratitude_patterns = ['obrigado', 'obrigada', 'valeu', 'thanks', 'thank you']
     goodbye_patterns = ['tchau', 'bye', 'adeus', 'até logo', 'até mais']
     
-    # Verificar padrões
+    candidates = []
+    
     if any(pattern in message_lower for pattern in greeting_patterns):
-        return "Olá! Sou o Dr. Rogers, seu psicólogo virtual. É um prazer conhecê-lo. Como posso ajudá-lo hoje? Sinta-se à vontade para compartilhar o que está sentindo."
+        candidates = ["Olá! Sou o Dr. Rogers, seu psicólogo virtual. É um prazer conhecê-lo. Como posso ajudá-lo hoje? Sinta-se à vontade para compartilhar o que está sentindo."]
     
     elif any(pattern in message_lower for pattern in sadness_patterns):
-        return "Entendo que você está passando por um momento difícil. É muito corajoso buscar ajuda e compartilhar seus sentimentos. Pode me contar mais sobre o que está sentindo? Lembre-se: você não está sozinho, e é normal ter dias difíceis."
+        candidates = ["Entendo que você está passando por um momento difícil. É muito corajoso buscar ajuda e compartilhar seus sentimentos. Pode me contar mais sobre o que está sentindo?"]
     
     elif any(pattern in message_lower for pattern in anxiety_patterns):
-        return "A ansiedade é algo muito comum e tratável. Vamos trabalhar juntos para encontrar estratégias que funcionem para você. Que situações costumam despertar essa ansiedade? Podemos explorar técnicas de respiração e mindfulness que podem ajudar."
+        candidates = ["A ansiedade é algo muito comum e tratável. Vamos trabalhar juntos para encontrar estratégias que funcionem para você. Que situações costumam despertar essa ansiedade?"]
     
     elif any(pattern in message_lower for pattern in anger_patterns):
-        return "Vejo que você está se sentindo irritado. É importante reconhecer e validar esses sentimentos. Pode me contar o que aconteceu? Às vezes, falar sobre o que nos incomoda pode ajudar a processar melhor essas emoções."
+        candidates = [
+            "Vejo que você está se sentindo irritado. É importante reconhecer e validar esses sentimentos. Pode me contar o que aconteceu?",
+            "Parece que algo te incomodou bastante. Falar sobre isso pode ajudar a processar melhor essas emoções. O que aconteceu?",
+            "Entendo que você está frustrado. Às vezes precisamos de um espaço para expressar o que sentimos. Conte-me mais sobre o que está passando.",
+        ]
     
     elif any(pattern in message_lower for pattern in gratitude_patterns):
-        return "Fico muito feliz em poder ajudar! É um prazer acompanhá-lo nessa jornada de autoconhecimento e bem-estar. Como você está se sentindo agora? Há algo mais que gostaria de conversar?"
+        candidates = ["Fico muito feliz em poder ajudar! É um prazer acompanhá-lo nessa jornada. Como você está se sentindo agora?"]
     
     elif any(pattern in message_lower for pattern in goodbye_patterns):
-        return "Foi um prazer conversar com você hoje. Lembre-se: estou sempre aqui quando precisar de apoio. Cuide-se bem e continue cuidando da sua saúde mental. Até a próxima! 💙"
+        candidates = ["Foi um prazer conversar com você hoje. Cuide-se bem e continue cuidando da sua saúde mental. Até a próxima!"]
     
     else:
-        # Resposta genérica mais terapêutica
-        return f"Obrigado por compartilhar isso comigo. É importante que você tenha confiança para falar sobre seus sentimentos. Pode me contar mais sobre como isso afeta seu dia a dia? Juntos podemos explorar formas de lidar melhor com essa situação."
+        candidates = ["Obrigado por compartilhar isso comigo. Pode me contar mais sobre como isso afeta seu dia a dia? Juntos podemos explorar formas de lidar melhor com essa situação."]
+    
+    # Evitar repetir a última resposta quando há mais de uma opção disponível
+    if last_ai_response and len(candidates) > 1:
+        alternatives = [r for r in candidates if r.strip() != last_ai_response.strip()]
+        if alternatives:
+            return alternatives[0]
+    
+    return candidates[0]
 
 # Health check endpoint
 @app.get("/health")
@@ -265,7 +278,7 @@ async def chat(message: dict):
         logger.error(f"❌ Erro no chat: {e}")
         # Fallback para resposta básica usando OpenAIService
         try:
-            fallback_response = await openai_service._fallback_response(user_message, username)
+            fallback_response = await openai_service._fallback_response(user_message, username, conversation_history)
             return {
                 "response": fallback_response["response"],
                 "service": "ai-service",
@@ -279,7 +292,11 @@ async def chat(message: dict):
         except Exception as fallback_error:
             logger.error(f"❌ Erro no fallback: {fallback_error}")
             # Último recurso - resposta hardcoded
-            response_text = generate_therapeutic_response(user_message)
+            last_ai = ""
+            if conversation_history:
+                ai_msgs = [m.get("content", "") for m in conversation_history if m.get("type") in ("ai", "assistant")]
+                last_ai = ai_msgs[-1] if ai_msgs else ""
+            response_text = generate_therapeutic_response(user_message, last_ai)
             return {
                 "response": response_text,
                 "service": "ai-service",

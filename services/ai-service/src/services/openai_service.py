@@ -791,7 +791,7 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 logger.error(f"❌ Erro inesperado na chamada OpenAI: {e}")
             return None
     
-    async def _fallback_response(self, user_message: str, username: str) -> Dict[str, Any]:
+    async def _fallback_response(self, user_message: str, username: str, conversation_history: Optional[List[Dict]] = None) -> Dict[str, Any]:
         """
         Resposta de fallback quando OpenAI não está disponível
         Busca respostas do banco de dados via PromptClientService
@@ -837,6 +837,16 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                     logger.warning(f"⚠️ Usando resposta de fallback hardcoded: {pattern_type}")
             else:
                 response = self._get_hardcoded_fallback_response("default")
+            
+            # Evitar repetir a última resposta da IA
+            if conversation_history:
+                last_ai_messages = [
+                    msg.get("content", "") for msg in conversation_history
+                    if msg.get("type") in ("ai", "assistant")
+                ]
+                if last_ai_messages and last_ai_messages[-1].strip() == response.strip():
+                    logger.warning(f"⚠️ Fallback evitando repetição para {username} - usando resposta default")
+                    response = self._get_hardcoded_fallback_response("default")
             
             return {
                 "response": response,
