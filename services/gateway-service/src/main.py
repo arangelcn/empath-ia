@@ -850,14 +850,21 @@ async def emotion_analyze_realtime(request: Request):
             raise HTTPException(status_code=503, detail=f"Serviço Emotion indisponível: {str(e)}")
 
 # Proxy para Voice Service - F5-TTS
+def _rewrite_audio_url(data: dict) -> dict:
+    """Reescreve audio_url para usar o proxy do gateway, acessível pelo browser."""
+    audio_url = data.get("audio_url")
+    if audio_url and "/api/v1/audio/" in audio_url:
+        filename = audio_url.split("/api/v1/audio/")[-1]
+        data["audio_url"] = f"/api/voice/audio/{filename}"
+    return data
+
 @app.post("/api/voice/speak")
 async def voice_speak(request: Request):
-    """Text-to-speech através do voice service (LEGADO - usar /synthesize)"""
+    """Text-to-speech através do voice service"""
     body = await request.json()
     
     async with httpx.AsyncClient() as client:
         try:
-            # Redirecionar para o novo endpoint /synthesize
             response = await client.post(
                 f"{SERVICE_URLS['voice']}/api/v1/synthesize",
                 json=body,
@@ -865,7 +872,7 @@ async def voice_speak(request: Request):
             )
             
             if response.status_code == 200:
-                return response.json()
+                return _rewrite_audio_url(response.json())
             else:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
                 
@@ -874,7 +881,7 @@ async def voice_speak(request: Request):
 
 @app.post("/api/voice/synthesize")
 async def voice_synthesize(request: Request):
-    """Text-to-speech com F5-TTS (NOVO)"""
+    """Text-to-speech via voice service"""
     body = await request.json()
     
     async with httpx.AsyncClient() as client:
@@ -886,7 +893,7 @@ async def voice_synthesize(request: Request):
             )
             
             if response.status_code == 200:
-                return response.json()
+                return _rewrite_audio_url(response.json())
             else:
                 raise HTTPException(status_code=response.status_code, detail=response.text)
                 

@@ -39,7 +39,9 @@ server {
     }
     
     location /api {
-        proxy_pass http://gateway:8000;
+        resolver 127.0.0.11 valid=30s;
+        set \$backend http://gateway:8000;
+        proxy_pass \$backend;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';

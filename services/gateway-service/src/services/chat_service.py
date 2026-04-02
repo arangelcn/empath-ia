@@ -558,8 +558,8 @@ class ChatService:
                     f"http://localhost:8000/api/voice/speak",
                     json={
                         "text": text,
-                        "voice": voice,
-                        "speed": 1.1 if is_voice_mode else 1.0  # ✅ NOVO: Velocidade ligeiramente aumentada para VoiceMode
+                        "voice_name": voice,
+                        "speaking_rate": 1.1 if is_voice_mode else 1.0
                     },
                     headers={"Content-Type": "application/json"}
                 )
