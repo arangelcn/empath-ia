@@ -179,6 +179,9 @@ logs: ## Visualiza logs de todos os serviços
 logs-ai: ## Logs apenas do serviço de IA
 	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f ai-service
 
+cuda-check: ## Verifica se o ai-service enxerga CUDA e llama.cpp tem GPU offload
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service sh -lc 'nvidia-smi && python -c "from llama_cpp import llama_cpp as lib; print(\"llama_supports_gpu_offload\", lib.llama_supports_gpu_offload())"'
+
 logs-avatar: ## Logs apenas do serviço de avatar
 	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f avatar-service
 

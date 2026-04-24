@@ -1,8 +1,10 @@
 """Local GGUF model runtime for the AI service."""
 
 import asyncio
+import fnmatch
 import logging
 import os
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -16,6 +18,8 @@ class LocalLLMService:
         self.repo_id = os.getenv("LOCAL_MODEL_REPO_ID", "ggml-org/gemma-4-E4B-it-GGUF")
         self.include_pattern = os.getenv("LOCAL_MODEL_INCLUDE", "gemma-4-E4B-it-Q4_K_M.gguf")
         self.model_dir = Path(os.getenv("LOCAL_MODEL_DIR", "/models/local-llm"))
+        self.import_dir = Path(os.getenv("LOCAL_MODEL_IMPORT_DIR", "/host-lmstudio-models"))
+        self.import_pattern = os.getenv("LOCAL_MODEL_IMPORT_PATTERN", self.include_pattern)
         self.model_path = self._resolve_model_path()
         self.model_name = os.getenv("LOCAL_LLM_MODEL", self.model_path.name if self.model_path else "gemma4:e4b")
         self.chat_format = os.getenv("LOCAL_LLM_CHAT_FORMAT", "").strip()
@@ -47,16 +51,86 @@ class LocalLLMService:
             or None
         )
 
+    def _format_bytes(self, size: int) -> str:
+        value = float(size)
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if value < 1024 or unit == "TB":
+                return f"{value:.1f} {unit}" if unit != "B" else f"{size} B"
+            value /= 1024
+        return f"{size} B"
+
+    def _find_import_model(self) -> Optional[Path]:
+        if not self.import_dir.is_dir():
+            logger.info("Local model import directory not found: %s", self.import_dir)
+            return None
+
+        patterns = [self.import_pattern, self.include_pattern, "*.gguf"]
+        candidates: List[Path] = []
+        for pattern in patterns:
+            matches = sorted(
+                path
+                for path in self.import_dir.rglob("*.gguf")
+                if fnmatch.fnmatch(path.name, pattern) or fnmatch.fnmatch(str(path), pattern)
+            )
+            candidates.extend(matches)
+
+        unique_candidates = list(dict.fromkeys(candidates))
+        if not unique_candidates:
+            logger.info(
+                "No importable local GGUF model found in %s using pattern %s",
+                self.import_dir,
+                self.import_pattern,
+            )
+            return None
+
+        return unique_candidates[0]
+
+    def _copy_import_model_if_available(self) -> bool:
+        source = self._find_import_model()
+        if source is None:
+            return False
+
+        self.model_dir.mkdir(parents=True, exist_ok=True)
+        destination = self.model_dir / source.name
+        if source.resolve() == destination.resolve():
+            self.model_path = destination
+            logger.info("Local LLM model already points to import source: %s", destination)
+            return True
+
+        size = source.stat().st_size
+        temp_destination = destination.with_suffix(destination.suffix + ".tmp")
+        logger.info(
+            "📦 Copying local LLM model from LM Studio: source=%s target=%s size=%s",
+            source,
+            destination,
+            self._format_bytes(size),
+        )
+        shutil.copy2(source, temp_destination)
+        temp_destination.replace(destination)
+        self.model_path = self._resolve_model_path()
+        logger.info("📦 Local LLM model copied: %s", self.model_path or destination)
+        return self.is_available()
+
     def ensure_model_available(self, download_if_missing: bool, required: bool) -> bool:
-        """Ensure a GGUF model exists locally, optionally downloading it at runtime."""
+        """Ensure a GGUF model exists locally, importing it before downloading."""
         if self.is_available():
             logger.info("Local LLM model already available: %s", self.model_path)
             return True
 
+        try:
+            if self._copy_import_model_if_available():
+                return True
+        except Exception as exc:
+            logger.warning(
+                "Could not import local LLM model from %s: %s. Runtime will try Hugging Face download.",
+                self.import_dir,
+                exc,
+            )
+
         if not download_if_missing:
             message = (
                 "Local LLM model file was not found and runtime download is disabled. "
-                "Set ENABLE_LOCAL_LLM=true or provide LOCAL_LLM_MODEL_PATH."
+                "Set LOCAL_LLM_MODEL_PATH, mount LOCAL_MODEL_IMPORT_DIR, or enable runtime download."
             )
             if required:
                 raise RuntimeError(message)
@@ -133,6 +207,8 @@ class LocalLLMService:
             "model_repo_id": self.repo_id,
             "model_include": self.include_pattern,
             "model_dir": str(self.model_dir),
+            "model_import_dir": str(self.import_dir),
+            "model_import_pattern": self.import_pattern,
             "chat_format": self.chat_format or "auto",
             "n_ctx": self.n_ctx,
             "n_gpu_layers": self.n_gpu_layers,
