@@ -11,6 +11,7 @@ This roadmap is grounded in the current application:
 - Voice output through text-to-speech.
 - Admin panel for prompts, users, sessions, conversations, analytics, and service health.
 - Persistent memory in MongoDB through users, messages, conversations, session contexts, user sessions, emotions, and prompts.
+- A future local-first LLM runtime where the main assistant model is served by Empat.IA infrastructure, for example Gemma or another locally hosted model.
 
 The learning source in `docs/learning/_OceanofPDF.com_AI_Agents_in_Action_-_Micheal_Lanham (1).pdf` should be used after understanding the app and planning the steps of action.
 
@@ -39,6 +40,42 @@ The assistant should avoid:
 - Claims of being a therapist, doctor, or emergency service.
 - Overconfident medical statements.
 
+## Local Model Strategy
+
+Empat.IA should move toward a local-model-first architecture. The main mental health assistant should run on a model served by the project owner, such as Gemma or another self-hosted LLM. External hosted APIs can remain optional for development, comparison, or emergency fallback, but they should not be the product default.
+
+Target principles:
+
+- Own the runtime: serve the model locally or in private infrastructure.
+- Keep the AI service as the model abstraction layer.
+- Prefer an OpenAI-compatible local inference endpoint when possible, so the current `OpenAIService` can evolve instead of being replaced.
+- Track model identity explicitly: provider, model name, model version, quantization, context window, serving backend, and prompt version.
+- Evaluate every candidate model before promotion.
+- Never assume a model is safe because it runs locally. Safety still requires prompts, risk classifiers, tests, monitoring, and review.
+- Keep private user data inside controlled infrastructure whenever possible.
+
+Candidate local serving options:
+
+| Option | Use case |
+|---|---|
+| Gemma served locally | Main candidate for a self-hosted assistant model. |
+| Ollama | Fast local development and model switching. |
+| llama.cpp | Lightweight CPU/GPU inference and quantized models. |
+| vLLM | Higher-throughput serving when GPU infrastructure is available. |
+| LM Studio | Manual local experimentation and early model comparison. |
+
+Configuration direction:
+
+```env
+LLM_PROVIDER=local
+LOCAL_LLM_BASE_URL=http://localhost:11434/v1
+LOCAL_LLM_MODEL=gemma
+LOCAL_LLM_TIMEOUT_SECONDS=60
+LLM_FALLBACK_PROVIDER=none
+```
+
+The exact model name should match the local serving backend. For example, Ollama, LM Studio, vLLM, and llama.cpp may expose different model identifiers.
+
 ## Current Architecture Fit
 
 | Current capability | Medical mental health direction |
@@ -52,6 +89,7 @@ The assistant should avoid:
 | Admin prompt management | Add safety prompts, review prompts, and evaluation status. |
 | Admin conversations | Add review workflow for high-risk sessions. |
 | MCP migration plan | Expose safe app tools/resources for future agent workflows. |
+| AI service | Evolve from OpenAI-specific orchestration into a provider-agnostic local-model-first LLM gateway. |
 
 ## Phase 1: Safety And Identity
 
@@ -79,6 +117,43 @@ Suggested files:
 - `services/ai-service/src/services/openai_service.py`
 - `services/gateway-service/src/services/chat_service.py`
 - `tests/evaluation/mental_health_safety_cases.jsonl`
+
+Local model requirement:
+
+- Run the same safety cases against the local model before using it as the default assistant model.
+- Keep temperature and max-token defaults conservative for safety-critical mental health support.
+- Record failed cases by model/version so the team can compare Gemma or other candidates objectively.
+
+## Phase 1.5: Local LLM Runtime
+
+Goal: make Empat.IA run on a self-hosted model as the default model path.
+
+Actions:
+
+- Add a provider abstraction in the AI service:
+  - `local`
+  - `openai_compatible`
+  - `fallback`
+- Support a configurable local base URL and model name.
+- Keep chat-completions-style request/response contracts where possible.
+- Add a `/openai/status` or equivalent status response that reports:
+  - active provider
+  - model name
+  - model version when available
+  - base URL host only, not secrets
+  - timeout settings
+  - fallback provider
+- Add local model health checks to gateway/system status.
+- Add documentation for serving Gemma or another local model in development.
+
+Suggested files:
+
+- `services/ai-service/src/services/openai_service.py`
+- `services/ai-service/src/api/openai_routes.py`
+- `services/ai-service/README.md`
+- `.env.example`
+- `docker-compose.dev.yml`
+- `docs/TECHNICAL.md`
 
 ## Phase 2: Session Continuity For Mental Health
 
@@ -111,13 +186,13 @@ Suggested files:
 
 ## Phase 3: LLMOps Evaluation
 
-Goal: stop relying only on manual prompt intuition.
+Goal: stop relying only on manual prompt intuition and make local model selection measurable.
 
 Actions:
 
 - Create a regression dataset for mental health conversations.
 - Add prompt/version metadata to AI responses.
-- Track model, prompt key, prompt version, latency, token usage, provider, and fallback usage.
+- Track provider, model name, model version, quantization, serving backend, prompt key, prompt version, latency, token usage or token estimate, and fallback usage.
 - Add evaluation rubrics:
   - empathy
   - safety
@@ -126,6 +201,8 @@ Actions:
   - Portuguese clarity
   - grounding when knowledge is used
 - Create a local evaluation runner.
+- Compare local model candidates before promotion.
+- Save evaluation results by model and prompt version.
 
 Suggested files:
 
@@ -133,6 +210,11 @@ Suggested files:
 - `scripts/`
 - `services/ai-service/src/services/openai_service.py`
 - `services/gateway-service/src/services/chat_service.py`
+
+Local model promotion rule:
+
+- A local model can become the default only after it passes the mental health safety dataset and basic response-quality rubrics.
+- If a local model fails crisis or medication cases, it must stay behind a development flag.
 
 ## Phase 4: Knowledge And RAG
 
@@ -159,6 +241,7 @@ Suggested architecture:
 - Keep the gateway as API boundary.
 - Add retrieval under AI service or a dedicated knowledge service.
 - Later expose knowledge resources through MCP.
+- Keep retrieval model-agnostic so local LLMs and future model candidates can use the same approved knowledge layer.
 
 ## Phase 5: Voice Conversation
 
@@ -222,7 +305,8 @@ Use the book and the project together.
 | Memory | RAG and session memory | Improve session contexts and approved knowledge retrieval. |
 | Evaluation | Rubrics and grounding | Build safety and quality evaluation datasets. |
 | Planning | Feedback loops | Use admin review and evaluations to improve prompts. |
-| LLMOps | Prompt/model tracking | Track prompt versions, model usage, latency, and fallback rate. |
+| Local LLMs | Self-hosted model serving | Serve Gemma or another local model through the AI service. |
+| LLMOps | Prompt/model tracking | Track prompt versions, local model usage, latency, evaluation score, and fallback rate. |
 | MLOps | Emotion model monitoring | Track confidence, no-face rate, and model limitations. |
 
 ## First Concrete Implementation Slice
@@ -231,8 +315,10 @@ Start small:
 
 1. Update prompt identity and boundaries.
 2. Add mental health safety evaluation cases.
-3. Add risk metadata shape to the AI response path.
-4. Store risk metadata with messages.
-5. Show high-risk conversations in the admin panel.
+3. Add local model configuration to the AI service.
+4. Run the safety cases against the selected local model.
+5. Add risk metadata shape to the AI response path.
+6. Store risk metadata with messages.
+7. Show high-risk conversations in the admin panel.
 
 This first slice improves product safety, creates an LLMOps foundation, and keeps the work aligned with the current app architecture.
