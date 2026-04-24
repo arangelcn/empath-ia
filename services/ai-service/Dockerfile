@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -7,7 +8,7 @@ ARG LOCAL_MODEL_REPO_ID=google/gemma-3-4b-it-qat-q4_0-gguf
 ARG LOCAL_MODEL_INCLUDE=*.gguf
 ARG LOCAL_MODEL_DIR=/models/local-llm
 ARG LLAMA_CPP_PIP_EXTRA_ARGS=
-ARG LOCAL_MODEL_DOWNLOAD_REQUIRED=false
+ARG LOCAL_MODEL_DOWNLOAD_REQUIRED=true
 ARG HF_TOKEN=
 
 ENV LOCAL_MODEL_DIR=${LOCAL_MODEL_DIR}
@@ -20,7 +21,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Mantido atrás de ENABLE_LOCAL_LLM para não quebrar builds sem token/licença do modelo.
 COPY requirements-local-llm.txt .
 COPY scripts/ ./scripts/
-RUN if [ "$ENABLE_LOCAL_LLM" = "true" ]; then \
+RUN --mount=type=secret,id=hf_token,required=false \
+    if [ "$ENABLE_LOCAL_LLM" = "true" ]; then \
+        HF_TOKEN_VALUE="$(cat /run/secrets/hf_token 2>/dev/null || printf '%s' "$HF_TOKEN")"; \
         apt-get update && apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
@@ -32,7 +35,7 @@ RUN if [ "$ENABLE_LOCAL_LLM" = "true" ]; then \
         && (LOCAL_MODEL_REPO_ID="${LOCAL_MODEL_REPO_ID}" \
             LOCAL_MODEL_INCLUDE="${LOCAL_MODEL_INCLUDE}" \
             LOCAL_MODEL_DIR="${LOCAL_MODEL_DIR}" \
-            HF_TOKEN="${HF_TOKEN}" \
+            HF_TOKEN="${HF_TOKEN_VALUE}" \
             python scripts/download_local_model.py \
             || if [ "$LOCAL_MODEL_DOWNLOAD_REQUIRED" = "true" ]; then exit 1; else echo "WARNING: local model download failed; runtime can fall back to OpenAI"; fi); \
     fi

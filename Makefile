@@ -134,6 +134,11 @@ build-service: ## Constrói imagem de um serviço específico (ex: make build-se
 	@echo "${YELLOW}🔨 Construindo serviço $(SERVICE)...${NC}"
 	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build $(SERVICE)
 
+build-ai-local: ## Constrói o ai-service exigindo download do modelo local GGUF
+	@echo "${YELLOW}🔨 Construindo ai-service com modelo local obrigatório...${NC}"
+	@test -n "$${HF_TOKEN:-$${HUGGING_FACE_TOKEN:-$${HUGGIN_FACE_TOKEN:-}}}" || (echo "${RED}❌ Configure HF_TOKEN com acesso ao repositório Gemma antes do build.${NC}" && exit 1)
+	@ENABLE_LOCAL_LLM=true LOCAL_MODEL_DOWNLOAD_REQUIRED=true docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build --no-cache ai-service
+
 build-prod: ## Constrói imagens para produção
 	@echo "${YELLOW}🔨 Construindo imagens para produção...${NC}"
 	@docker compose -f $(DOCKER_COMPOSE_PROD) build

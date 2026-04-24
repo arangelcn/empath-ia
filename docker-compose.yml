@@ -67,8 +67,10 @@ services:
         LOCAL_MODEL_INCLUDE: ${LOCAL_MODEL_INCLUDE:-*.gguf}
         LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
         LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
-        LOCAL_MODEL_DOWNLOAD_REQUIRED: ${LOCAL_MODEL_DOWNLOAD_REQUIRED:-false}
-        HF_TOKEN: ${HF_TOKEN:-}
+        LOCAL_MODEL_DOWNLOAD_REQUIRED: ${LOCAL_MODEL_DOWNLOAD_REQUIRED:-true}
+        HF_TOKEN: ${HF_TOKEN:-${HUGGING_FACE_TOKEN:-${HUGGIN_FACE_TOKEN:-}}}
+      secrets:
+        - hf_token
     container_name: empatia-ai-service
     env_file:
       - .env
@@ -277,3 +279,7 @@ volumes:
   redis_data:
   postgres_data:
   voice_cache:  # Cache para modelos TTS
+
+secrets:
+  hf_token:
+    environment: HF_TOKEN
