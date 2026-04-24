@@ -35,7 +35,95 @@ class LocalLLMService:
         return gguf_files[0] if gguf_files else None
 
     def is_available(self) -> bool:
+        if self.model_path is None:
+            self.model_path = self._resolve_model_path()
         return self.model_path is not None and self.model_path.is_file()
+
+    def _hf_token(self) -> Optional[str]:
+        return (
+            os.getenv("HF_TOKEN")
+            or os.getenv("HUGGING_FACE_TOKEN")
+            or os.getenv("HUGGIN_FACE_TOKEN")
+            or None
+        )
+
+    def ensure_model_available(self, download_if_missing: bool, required: bool) -> bool:
+        """Ensure a GGUF model exists locally, optionally downloading it at runtime."""
+        if self.is_available():
+            logger.info("Local LLM model already available: %s", self.model_path)
+            return True
+
+        if not download_if_missing:
+            message = (
+                "Local LLM model file was not found and runtime download is disabled. "
+                "Set ENABLE_LOCAL_LLM=true or provide LOCAL_LLM_MODEL_PATH."
+            )
+            if required:
+                raise RuntimeError(message)
+            logger.warning(message)
+            return False
+
+        self.model_dir.mkdir(parents=True, exist_ok=True)
+        token = self._hf_token()
+        logger.info("⬇️ Local LLM download starting")
+        logger.info(
+            "⬇️ Local LLM download details: repo=%s include=%s target=%s token=%s required=%s",
+            self.repo_id,
+            self.include_pattern,
+            self.model_dir,
+            "configured" if token else "not configured",
+            required,
+        )
+        logger.info("⬇️ Hugging Face download progress will be printed below while the GGUF is fetched")
+
+        try:
+            from huggingface_hub import snapshot_download
+            from huggingface_hub.errors import GatedRepoError
+        except ImportError as exc:
+            message = (
+                "huggingface_hub is not installed. Build the AI service with ENABLE_LOCAL_LLM=true "
+                "to enable runtime model downloads."
+            )
+            if required:
+                raise RuntimeError(message) from exc
+            logger.warning("%s Runtime can fall back to another provider.", message)
+            return False
+
+        try:
+            snapshot_download(
+                repo_id=self.repo_id,
+                allow_patterns=[self.include_pattern],
+                local_dir=str(self.model_dir),
+                local_dir_use_symlinks=False,
+                token=token,
+            )
+        except GatedRepoError as exc:
+            message = (
+                "Cannot download the configured gated Hugging Face model. "
+                f"Request and accept access for {self.repo_id}, then restart ai-service. "
+                "You can also set LOCAL_MODEL_REPO_ID to an accessible GGUF repository."
+            )
+            if required:
+                raise RuntimeError(message) from exc
+            logger.warning("%s Runtime will fall back to another provider.", message)
+            return False
+        except Exception as exc:
+            message = f"Local LLM model download failed: {exc}"
+            if required:
+                raise RuntimeError(message) from exc
+            logger.warning("%s Runtime will fall back to another provider.", message)
+            return False
+
+        self.model_path = self._resolve_model_path()
+        if not self.is_available():
+            message = f"No GGUF files found after download in {self.model_dir}"
+            if required:
+                raise RuntimeError(message)
+            logger.warning(message)
+            return False
+
+        logger.info("Local LLM model downloaded: %s", self.model_path)
+        return True
 
     def status(self) -> Dict[str, object]:
         return {

@@ -1,20 +1,33 @@
-"""Download a local GGUF model during the AI service image build."""
+"""Download a local GGUF model for the AI service runtime."""
 
 import os
 from pathlib import Path
 
-from huggingface_hub import snapshot_download
 from huggingface_hub.errors import GatedRepoError
+from huggingface_hub import snapshot_download
+
+
+DEFAULT_REPO_ID = "ggml-org/gemma-4-E4B-it-GGUF"
+DEFAULT_INCLUDE = "gemma-4-E4B-it-Q4_K_M.gguf"
+
+
+def get_hf_token() -> str | None:
+    """Return the first configured Hugging Face token alias."""
+    return (
+        os.environ.get("HF_TOKEN")
+        or os.environ.get("HUGGING_FACE_TOKEN")
+        or os.environ.get("HUGGIN_FACE_TOKEN")
+        or None
+    )
 
 
 def main() -> None:
     repo_id = os.environ.get(
-        "LOCAL_MODEL_REPO_ID",
-        "google/gemma-3-4b-it-qat-q4_0-gguf",
+        "LOCAL_MODEL_REPO_ID", DEFAULT_REPO_ID
     )
-    include = os.environ.get("LOCAL_MODEL_INCLUDE", "*.gguf")
+    include = os.environ.get("LOCAL_MODEL_INCLUDE", DEFAULT_INCLUDE)
     local_dir = Path(os.environ.get("LOCAL_MODEL_DIR", "/models/local-llm"))
-    token = os.environ.get("HF_TOKEN") or None
+    token = get_hf_token()
 
     local_dir.mkdir(parents=True, exist_ok=True)
 
@@ -34,7 +47,7 @@ def main() -> None:
     except GatedRepoError as exc:
         raise RuntimeError(
             "Cannot download the configured gated Hugging Face model. "
-            f"Request and accept access for {repo_id}, then rebuild ai-service. "
+            f"Request and accept access for {repo_id}, then restart ai-service. "
             "You can also set LOCAL_MODEL_REPO_ID to an accessible GGUF repository."
         ) from exc
 

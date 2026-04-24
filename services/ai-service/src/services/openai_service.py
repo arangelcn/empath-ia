@@ -5,6 +5,7 @@ Responsável por gerenciar conversas terapêuticas com GPT
 
 import os
 import logging
+import asyncio
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 import json
@@ -83,6 +84,21 @@ class OpenAIService:
         # ✅ NOVO: Inicializar cache de contexto
         logger.info(f"✅ Cache de contexto inicializado - Max size: {self.cache_max_size}, TTL: {self.cache_ttl}s")
         logger.info(f"✅ Session tracking: {'Habilitado' if self.session_tracking_enabled else 'Desabilitado'}")
+
+    async def ensure_local_model_ready(self) -> bool:
+        """Download the local GGUF at startup if local mode is configured and the file is missing."""
+        if "local" not in self._provider_order() or self.local_llm is None:
+            return False
+
+        download_enabled = os.getenv("ENABLE_LOCAL_LLM", "true").lower() == "true"
+        required = os.getenv("LOCAL_MODEL_DOWNLOAD_REQUIRED", "true").lower() == "true"
+        ready = await asyncio.to_thread(
+            self.local_llm.ensure_model_available,
+            download_enabled,
+            required,
+        )
+        self._log_startup_llm_mode()
+        return ready
 
     def _active_provider(self) -> str:
         """Return the provider that will be attempted first at runtime."""

@@ -44,7 +44,7 @@ Notas:
 - O build local pode demorar porque instala `llama-cpp-python` e baixa o GGUF.
 - Para usar GPU dentro do Docker, o host precisa ter NVIDIA Container Toolkit configurado.
 - Se o modelo local não carregar, o serviço tenta OpenAI quando `LLM_FALLBACK_PROVIDER=openai`.
-- Se o download do modelo falhar, `LOCAL_MODEL_DOWNLOAD_REQUIRED=false` permite concluir o build e usar OpenAI em runtime.
+- Se o download do modelo falhar, `LOCAL_MODEL_DOWNLOAD_REQUIRED=false` permite iniciar o serviço e usar OpenAI em runtime.
 - Para builds rápidos sem modelo local, use `ENABLE_LOCAL_LLM=false` e `LLM_PROVIDER=openai`.
 
 ## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**

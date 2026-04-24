@@ -67,7 +67,6 @@ services:
         LOCAL_MODEL_INCLUDE: ${LOCAL_MODEL_INCLUDE:-gemma-4-E4B-it-Q4_K_M.gguf}
         LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
         LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
-        LOCAL_MODEL_DOWNLOAD_REQUIRED: ${LOCAL_MODEL_DOWNLOAD_REQUIRED:-true}
       secrets:
         - hf_token
         - hugging_face_token
@@ -80,6 +79,7 @@ services:
       - MODEL_NAME=${MODEL_NAME:-gpt-4o}
       - LLM_PROVIDER=${LLM_PROVIDER:-local}
       - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-openai}
+      - LOCAL_MODEL_DOWNLOAD_REQUIRED=${LOCAL_MODEL_DOWNLOAD_REQUIRED:-false}
       - LOCAL_MODEL_DIR=${LOCAL_MODEL_DIR:-/models/local-llm}
       - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-gemma4:e4b}
       - LOCAL_LLM_MODEL_PATH=${LOCAL_LLM_MODEL_PATH:-}
@@ -97,6 +97,7 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     volumes:
       - ./services/ai-service:/app
+      - local_llm_models:${LOCAL_MODEL_DIR:-/models/local-llm}
     ports:
       - "${AI_SERVICE_PORT:-8001}:8001"
     depends_on:
@@ -279,6 +280,7 @@ volumes:
   mongodb_data:
   redis_data:
   postgres_data:
+  local_llm_models:
   voice_cache:  # Cache para modelos TTS
 
 secrets:

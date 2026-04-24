@@ -95,13 +95,16 @@ services:
         LOCAL_MODEL_INCLUDE: ${LOCAL_MODEL_INCLUDE:-gemma-4-E4B-it-Q4_K_M.gguf}
         LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
         LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
-        LOCAL_MODEL_DOWNLOAD_REQUIRED: ${LOCAL_MODEL_DOWNLOAD_REQUIRED:-true}
       secrets: !override
         - hf_token
         - hugging_face_token
         - huggin_face_token
     ports: !override
       - "127.0.0.1:${AI_SERVICE_PORT:-8001}:8001"
+    volumes: !override
+      - ./services/ai-service:/app
+      - ./services/ai-service/src:/app/src
+      - local_llm_models_dev:${LOCAL_MODEL_DIR:-/models/local-llm}
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
@@ -109,6 +112,7 @@ services:
       - MODEL_NAME=${MODEL_NAME:-gpt-4o}
       - LLM_PROVIDER=${LLM_PROVIDER:-local}
       - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-openai}
+      - LOCAL_MODEL_DOWNLOAD_REQUIRED=${LOCAL_MODEL_DOWNLOAD_REQUIRED:-false}
       - LOCAL_MODEL_DIR=${LOCAL_MODEL_DIR:-/models/local-llm}
       - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-gemma4:e4b}
       - LOCAL_LLM_MODEL_PATH=${LOCAL_LLM_MODEL_PATH:-}
@@ -276,6 +280,7 @@ services:
 # Volumes para dados persistentes
 volumes:
   mongodb_data_dev:
+  local_llm_models_dev:
   redis_data_dev:
   postgres_data_dev:
   # Novos volumes para o voice-service

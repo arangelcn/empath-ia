@@ -112,6 +112,10 @@ token_economy_service = None  # Será inicializado na startup
 @app.on_event("startup")
 async def startup_event():
     """Inicializar nova arquitetura MongoDB + Redis na startup"""
+    await openai_service.ensure_local_model_ready()
+    from .api import openai_routes
+    await openai_routes.openai_service.ensure_local_model_ready()
+
     try:
         from .services.token_economy_service import TokenEconomyService
         token_economy_service = TokenEconomyService()
