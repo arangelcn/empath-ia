@@ -253,29 +253,36 @@ async def get_openai_status():
 @router.post("/test")
 async def test_openai_connection():
     """
-    Teste simples de conexão com OpenAI
+    Teste simples de conexão com a cadeia LLM configurada
     """
     try:
         # Teste com mensagem simples
         test_message = "Olá, como você está?"
         result = await openai_service.generate_therapeutic_response(
             user_message=test_message,
-            session_id="test"
+            session_id="test",
+            username="test"
         )
+        service_status = openai_service.get_service_status()
         
         return {
             "status": "success",
             "test_message": test_message,
             "result": result,
-            "openai_available": openai_service.is_available()
+            "openai_available": service_status["openai_available"],
+            "local_available": service_status["local_available"],
+            "primary_provider": service_status["primary_provider"],
+            "fallback_provider": service_status["fallback_provider"]
         }
         
     except Exception as e:
         logger.error(f"❌ Erro no teste OpenAI: {e}")
+        service_status = openai_service.get_service_status()
         return {
             "status": "error",
             "error": str(e),
-            "openai_available": openai_service.is_available()
+            "openai_available": service_status["openai_available"],
+            "local_available": service_status["local_available"]
         }
 
 @router.post("/generate-session-context")

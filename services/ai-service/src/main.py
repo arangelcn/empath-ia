@@ -316,10 +316,17 @@ async def get_config():
     
     return {
         "openai_configured": openai_status["openai_configured"],
-        "model": openai_status["model"],
+        "model": openai_status["active_model"],
+        "active_model": openai_status["active_model"],
+        "primary_provider": openai_status["primary_provider"],
+        "fallback_provider": openai_status["fallback_provider"],
+        "provider_order": openai_status["provider_order"],
+        "local_available": openai_status["local_available"],
+        "openai_available": openai_status["openai_available"],
+        "local_model_path": openai_status["local_model_path"],
         "service_port": os.getenv("AI_SERVICE_PORT", "8001"),
         "debug": os.getenv("DEBUG", "false").lower() == "true",
-        "provider": "openai" if openai_status["openai_configured"] else "fallback"
+        "provider": openai_status["primary_provider"]
     }
 
 if __name__ == "__main__":

@@ -12,7 +12,9 @@ Configuração recomendada inicial para notebook com GPU de 6GB:
 
 ```env
 LLM_PROVIDER=local
+LLM_FALLBACK_PROVIDER=openai
 ENABLE_LOCAL_LLM=true
+LOCAL_MODEL_DOWNLOAD_REQUIRED=false
 LOCAL_MODEL_REPO_ID=google/gemma-3-4b-it-qat-q4_0-gguf
 LOCAL_MODEL_INCLUDE=*.gguf
 LOCAL_MODEL_DIR=/models/local-llm
@@ -43,8 +45,10 @@ Notas:
 - As dependências opcionais ficam em `requirements-local-llm.txt` e só são instaladas quando `ENABLE_LOCAL_LLM=true`.
 - O build local pode demorar porque instala `llama-cpp-python` e baixa o GGUF.
 - Para usar GPU dentro do Docker, o host precisa ter NVIDIA Container Toolkit configurado.
-- Se o modelo local não carregar, o serviço usa o fallback empático existente.
-- Para builds rápidos sem modelo local, mantenha `ENABLE_LOCAL_LLM=false` e `LLM_PROVIDER=openai`.
+- Se o modelo local não carregar, o serviço tenta OpenAI quando `LLM_FALLBACK_PROVIDER=openai`.
+- Se o download do modelo falhar, `LOCAL_MODEL_DOWNLOAD_REQUIRED=false` permite concluir o build e usar OpenAI em runtime.
+- Para produção estrita, use `LOCAL_MODEL_DOWNLOAD_REQUIRED=true`.
+- Para builds rápidos sem modelo local, use `ENABLE_LOCAL_LLM=false` e mantenha `LLM_PROVIDER=local` para testar o fallback OpenAI.
 
 ## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**
 

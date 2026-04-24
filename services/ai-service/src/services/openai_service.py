@@ -34,11 +34,14 @@ class OpenAIService:
     
     def __init__(self):
         """Inicializar serviço OpenAI"""
-        self.provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        self.primary_provider = os.getenv("LLM_PROVIDER", "local").lower()
+        self.fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "openai").lower()
+        self.provider = self.primary_provider
         self.api_key = os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("MODEL_NAME", "gpt-4o")
-        self.max_tokens = int(os.getenv("MAX_TOKENS", "1000"))
-        self.temperature = float(os.getenv("TEMPERATURE", "0.7"))
+        self.openai_model = os.getenv("MODEL_NAME", "gpt-4o")
+        self.model = self.openai_model
+        self.max_tokens = int(os.getenv("MAX_TOKENS", "700"))
+        self.temperature = float(os.getenv("TEMPERATURE", "0.3"))
         
         # Configurações de contexto
         self.max_history_messages = int(os.getenv("MAX_HISTORY_MESSAGES", "6"))  # Últimas 6 mensagens
@@ -55,19 +58,18 @@ class OpenAIService:
         
         # ✅ NOVO: Serviço de prompts do banco de dados
         self.prompt_client = PromptClientService()
-        self.local_llm = LocalLLMService() if self.provider == "local" else None
+        self.local_llm = LocalLLMService() if "local" in self._provider_order() else None
+        self.client = None
         
-        # Verificar configuração
-        if self.provider == "local":
-            self.client = None
-            if self.local_llm and self.local_llm.is_available():
-                self.model = self.local_llm.model_name
-                logger.info(f"✅ Local LLM configurado: {self.local_llm.status()}")
-            else:
-                logger.warning("⚠️ LLM_PROVIDER=local, mas nenhum modelo local foi encontrado")
-        elif not self.api_key or not OPENAI_AVAILABLE:
+        # Verificar configuração do modelo local
+        if self.local_llm and self.local_llm.is_available():
+            logger.info(f"✅ Local LLM configurado: {self.local_llm.status()}")
+        elif "local" in self._provider_order():
+            logger.warning("⚠️ Provedor local configurado, mas nenhum modelo local foi encontrado")
+
+        # Verificar configuração OpenAI de forma independente para fallback
+        if not self.api_key or not OPENAI_AVAILABLE:
             logger.warning("⚠️ OPENAI_API_KEY não configurada ou OpenAI não disponível - usando modo fallback")
-            self.client = None
         else:
             try:
                 self.client = OpenAI(api_key=self.api_key)
@@ -81,10 +83,27 @@ class OpenAIService:
         logger.info(f"✅ Session tracking: {'Habilitado' if self.session_tracking_enabled else 'Desabilitado'}")
     
     def is_available(self) -> bool:
-        """Verificar se o serviço OpenAI está disponível"""
-        if self.provider == "local":
+        """Verificar se algum provedor LLM configurado está disponível."""
+        return any(self._provider_available(provider) for provider in self._provider_order())
+
+    def _provider_order(self) -> List[str]:
+        """Retornar a cadeia de provedores sem duplicatas."""
+        providers = [self.primary_provider]
+        if self.fallback_provider and self.fallback_provider not in ["none", "disabled"]:
+            providers.append(self.fallback_provider)
+
+        ordered = []
+        for provider in providers:
+            if provider and provider not in ordered:
+                ordered.append(provider)
+        return ordered
+
+    def _provider_available(self, provider: str) -> bool:
+        if provider == "local":
             return self.local_llm is not None and self.local_llm.is_available()
-        return self.client is not None and self.api_key is not None
+        if provider == "openai":
+            return self.client is not None and self.api_key is not None and OPENAI_AVAILABLE
+        return False
     
     def _validate_session_ownership(self, session_id: str, username: str) -> bool:
         """
@@ -698,15 +717,6 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             # ✅ NOVO: Rastrear início da sessão
             self._track_user_session(username, session_id, "session_start")
             
-            # Verificar disponibilidade
-            if not self.is_available():
-                logger.warning("⚠️ OpenAI não disponível - usando fallback")
-                # ✅ NOVO: Rastrear fallback
-                self._track_user_session(username, session_id, "fallback_used")
-                return await self._fallback_response(user_message, username)
-            
-            logger.info(f"✅ Provedor LLM disponível ({self.provider}) - gerando resposta com modelo {self.model}")
-            
             # Criar contexto da conversa com isolamento por usuário
             messages = await self._create_conversation_context(
                 session_id, 
@@ -719,15 +729,18 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             )
             
             # Fazer chamada para o provedor LLM configurado
-            logger.info(f"📡 Enviando requisição para provedor {self.provider} com {len(messages)} mensagens")
+            logger.info(f"📡 Enviando requisição para cadeia de provedores {self._provider_order()} com {len(messages)} mensagens")
             
             # ✅ NOVO: Rastrear mensagem do usuário
             self._track_user_session(username, session_id, "message")
             
-            response = await self._call_llm(messages)
+            llm_result = await self._call_llm(messages)
             
-            if response:
-                logger.info(f"✅ Resposta recebida do provedor {self.provider}: {response[:100]}{'...' if len(response) > 100 else ''}")
+            if llm_result:
+                response = llm_result["content"]
+                provider = llm_result["provider"]
+                model = llm_result["model"]
+                logger.info(f"✅ Resposta recebida do provedor {provider}: {response[:100]}{'...' if len(response) > 100 else ''}")
                 
                 # ✅ NOVO: Rastrear resposta bem-sucedida
                 self._track_user_session(username, session_id, "response_success")
@@ -737,30 +750,63 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 
                 return {
                     "response": response,
-                    "model": self.model,
+                    "model": model,
                     "session_id": session_id,
                     "username": username,  # ✅ NOVO: Incluir username na resposta
                     "timestamp": datetime.now().isoformat(),
-                    "provider": self.provider,
+                    "provider": provider,
                     "success": True
                 }
             else:
-                logger.error("❌ Falha ao obter resposta da OpenAI")
+                logger.error("❌ Falha ao obter resposta dos provedores LLM")
                 # ✅ NOVO: Rastrear falha
                 self._track_user_session(username, session_id, "response_failure")
+                self._track_user_session(username, session_id, "fallback_used")
                 return await self._fallback_response(user_message, username)
                 
         except Exception as e:
             logger.error(f"❌ Erro ao gerar resposta terapêutica: {e}")
             return await self._fallback_response(user_message, username)
     
-    async def _call_llm(self, messages: List[Dict]) -> Optional[str]:
-        """Fazer chamada para o provedor LLM configurado."""
-        if self.provider == "local":
-            return await self._call_local_llm(messages)
-        return await self._call_openai(messages)
+    async def _call_llm(
+        self,
+        messages: List[Dict],
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> Optional[Dict[str, str]]:
+        """Fazer chamada para a cadeia local -> OpenAI -> fallback template."""
+        for provider in self._provider_order():
+            if not self._provider_available(provider):
+                logger.warning(f"⚠️ Provedor {provider} indisponível; tentando próximo")
+                continue
 
-    async def _call_local_llm(self, messages: List[Dict]) -> Optional[str]:
+            if provider == "local":
+                content = await self._call_local_llm(messages, max_tokens, temperature)
+                model = self.local_llm.model_name if self.local_llm else "local"
+            elif provider == "openai":
+                content = await self._call_openai(messages, max_tokens, temperature)
+                model = self.openai_model
+            else:
+                logger.warning(f"⚠️ Provedor desconhecido ignorado: {provider}")
+                continue
+
+            if content:
+                return {
+                    "content": content,
+                    "provider": provider,
+                    "model": model,
+                }
+
+            logger.warning(f"⚠️ Provedor {provider} não retornou conteúdo; tentando próximo")
+
+        return None
+
+    async def _call_local_llm(
+        self,
+        messages: List[Dict],
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> Optional[str]:
         """Fazer chamada para o modelo local carregado no AI Service."""
         if not self.local_llm or not self.local_llm.is_available():
             logger.warning("⚠️ Modelo local não disponível")
@@ -775,8 +821,8 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
 
             response = await self.local_llm.generate(
                 messages=messages,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
+                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature if temperature is not None else self.temperature,
             )
 
             if response:
@@ -791,7 +837,12 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             logger.error(f"❌ ERRO na chamada LLM local: {e}")
             return None
 
-    async def _call_openai(self, messages: List[Dict]) -> Optional[str]:
+    async def _call_openai(
+        self,
+        messages: List[Dict],
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> Optional[str]:
         """
         Fazer chamada para API da OpenAI
         """
@@ -802,9 +853,9 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         try:
             # 🔍 Log detalhado da chamada OpenAI
             logger.info(f"🤖 CHAMADA PARA API OPENAI:")
-            logger.info(f"   Modelo: {self.model}")
-            logger.info(f"   Max Tokens: {self.max_tokens}")
-            logger.info(f"   Temperatura: {self.temperature}")
+            logger.info(f"   Modelo: {self.openai_model}")
+            logger.info(f"   Max Tokens: {max_tokens or self.max_tokens}")
+            logger.info(f"   Temperatura: {temperature if temperature is not None else self.temperature}")
             logger.info(f"   Número de mensagens: {len(messages)}")
             
             # Log do sistema prompt (mais detalhado se necessário)
@@ -813,10 +864,10 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 logger.info(f"🎯 SYSTEM PROMPT (primeiros 500 chars): {system_content[:500]}{'...' if len(system_content) > 500 else ''}")
             
             response = self.client.chat.completions.create(
-                model=self.model,
+                model=self.openai_model,
                 messages=messages,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
+                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature if temperature is not None else self.temperature,
                 timeout=30
             )
             
@@ -943,13 +994,21 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         Retornar status do serviço OpenAI
         """
         return {
-            "openai_configured": self.is_available(),
-            "provider": self.provider,
-            "model": self.model,
+            "openai_configured": self.client is not None,
+            "provider": self.primary_provider,
+            "primary_provider": self.primary_provider,
+            "fallback_provider": self.fallback_provider,
+            "provider_order": self._provider_order(),
+            "model": self.local_llm.model_name if self.local_llm and self.local_llm.is_available() else self.openai_model,
+            "active_model": self.local_llm.model_name if self.local_llm and self.local_llm.is_available() else self.openai_model,
+            "openai_model": self.openai_model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "api_key_present": bool(self.api_key),
+            "local_available": self._provider_available("local"),
+            "openai_available": self._provider_available("openai"),
             "local_llm": self.local_llm.status() if self.local_llm else None,
+            "local_model_path": str(self.local_llm.model_path) if self.local_llm and self.local_llm.model_path else None,
             "context_optimization": {
                 "max_history_messages": self.max_history_messages,
                 "max_context_tokens": self.max_context_tokens,
@@ -1006,19 +1065,18 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 IMPORTANTE: Retorne apenas o JSON, sem texto adicional.
                 """
             
-            # Gerar contexto com OpenAI
-            if self.is_available():
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": "Você é um especialista em análise de conversas terapêuticas. Sempre responda em JSON válido."},
-                        {"role": "user", "content": context_prompt}
-                    ],
-                    max_tokens=1000,
-                    temperature=0.3
-                )
-                
-                result = response.choices[0].message.content
+            # Gerar contexto com cadeia local -> OpenAI
+            llm_result = await self._call_llm(
+                [
+                    {"role": "system", "content": "Você é um especialista em análise de conversas terapêuticas. Sempre responda em JSON válido."},
+                    {"role": "user", "content": context_prompt}
+                ],
+                max_tokens=1000,
+                temperature=0.3,
+            )
+
+            if llm_result:
+                result = llm_result["content"]
                 
                 # Tentar parsear JSON
                 try:
@@ -1037,7 +1095,7 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                     return self._create_fallback_context(result, emotion_summary)
                     
             else:
-                # Fallback quando OpenAI não está disponível
+                # Fallback quando nenhum provedor LLM está disponível
                 return self._create_fallback_context(conversation_text, emotion_summary)
                 
         except Exception as e:
@@ -1122,7 +1180,7 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             # Criar prompt para gerar a próxima sessão
             session_prompt = await self._create_next_session_prompt(user_profile, session_context, current_session_id)
             
-            # Tentar gerar com OpenAI
+            # Tentar gerar com cadeia local -> OpenAI
             if self.is_available():
                 try:
                     messages = [
@@ -1130,7 +1188,9 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                         {"role": "user", "content": session_prompt}
                     ]
                     
-                    ai_response = await self._call_openai(messages)
+                    llm_result = await self._call_llm(messages)
+                    ai_response = llm_result["content"] if llm_result else None
+                    provider = llm_result["provider"] if llm_result else "fallback"
                     
                     if ai_response:
                         # Parsear resposta JSON
@@ -1148,18 +1208,18 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                                 next_session_data.update({
                                     "generated_at": datetime.now().isoformat(),
                                     "based_on_session": current_session_id,
-                                    "generation_method": "openai",
+                                    "generation_method": provider,
                                     "personalized": True
                                 })
                                 
-                                logger.info(f"✅ Próxima sessão gerada com OpenAI para {current_session_id}")
+                                logger.info(f"✅ Próxima sessão gerada com {provider} para {current_session_id}")
                                 return next_session_data
                                 
                         except json.JSONDecodeError as e:
                             logger.warning(f"⚠️ Erro ao parsear resposta JSON do OpenAI: {e}")
                             
                 except Exception as e:
-                    logger.warning(f"⚠️ Erro ao chamar OpenAI para próxima sessão: {e}")
+                    logger.warning(f"⚠️ Erro ao chamar cadeia LLM para próxima sessão: {e}")
             
             # Fallback: criar sessão baseada em template
             logger.info(f"🔄 Usando fallback para gerar próxima sessão de {current_session_id}")
