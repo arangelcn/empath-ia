@@ -4,6 +4,47 @@
 
 O **AI Service** é responsável por gerenciar conversas terapêuticas com GPT e **gerar contextos estruturados de sessões**, implementando uma arquitetura otimizada que usa **MongoDB como repositório principal** e **Redis apenas para otimização de performance**, proporcionando significativa **economia de tokens OpenAI** através da reutilização de contextos existentes.
 
+## 🧠 Local LLM no build do AI Service
+
+O AI Service pode servir um modelo GGUF local dentro do próprio container usando `llama-cpp-python`. O download do modelo acontece no build da imagem quando `ENABLE_LOCAL_LLM=true`.
+
+Configuração recomendada inicial para notebook com GPU de 6GB:
+
+```env
+LLM_PROVIDER=local
+ENABLE_LOCAL_LLM=true
+LOCAL_MODEL_REPO_ID=google/gemma-3-4b-it-qat-q4_0-gguf
+LOCAL_MODEL_INCLUDE=*.gguf
+LOCAL_MODEL_DIR=/models/local-llm
+LOCAL_LLM_MODEL=gemma3:4b
+LOCAL_LLM_CHAT_FORMAT=gemma
+LOCAL_LLM_N_CTX=8192
+LOCAL_LLM_N_GPU_LAYERS=-1
+LOCAL_LLM_N_THREADS=8
+TEMPERATURE=0.3
+MAX_TOKENS=700
+```
+
+Gemma no Hugging Face pode exigir aceite dos termos e token:
+
+```env
+HF_TOKEN=hf_...
+```
+
+Build:
+
+```bash
+docker compose build ai-service
+docker compose up ai-service
+```
+
+Notas:
+
+- O build local pode demorar porque instala `llama-cpp-python` e baixa o GGUF.
+- Para usar GPU dentro do Docker, o host precisa ter NVIDIA Container Toolkit configurado.
+- Se o modelo local não carregar, o serviço usa o fallback empático existente.
+- Para builds rápidos sem modelo local, mantenha `ENABLE_LOCAL_LLM=false` e `LLM_PROVIDER=openai`.
+
 ## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**
 
 ### ✅ **SessionContextService - Totalmente Funcional**

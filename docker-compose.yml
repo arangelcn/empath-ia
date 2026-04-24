@@ -59,13 +59,30 @@ services:
 
   # AI Service - OpenAI e Psicólogo Rogers
   ai-service:
-    build: ./services/ai-service
+    build:
+      context: ./services/ai-service
+      args:
+        ENABLE_LOCAL_LLM: ${ENABLE_LOCAL_LLM:-false}
+        LOCAL_MODEL_REPO_ID: ${LOCAL_MODEL_REPO_ID:-google/gemma-3-4b-it-qat-q4_0-gguf}
+        LOCAL_MODEL_INCLUDE: ${LOCAL_MODEL_INCLUDE:-*.gguf}
+        LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
+        LLAMA_CPP_PYTHON_VERSION: ${LLAMA_CPP_PYTHON_VERSION:-0.3.7}
+        LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
+        HF_TOKEN: ${HF_TOKEN:-}
     container_name: empatia-ai-service
     env_file:
       - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - MODEL_NAME=${MODEL_NAME:-gpt-4o}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LOCAL_MODEL_DIR=${LOCAL_MODEL_DIR:-/models/local-llm}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-gemma3:4b}
+      - LOCAL_LLM_MODEL_PATH=${LOCAL_LLM_MODEL_PATH:-}
+      - LOCAL_LLM_CHAT_FORMAT=${LOCAL_LLM_CHAT_FORMAT:-gemma}
+      - LOCAL_LLM_N_CTX=${LOCAL_LLM_N_CTX:-8192}
+      - LOCAL_LLM_N_GPU_LAYERS=${LOCAL_LLM_N_GPU_LAYERS:--1}
+      - LOCAL_LLM_N_THREADS=${LOCAL_LLM_N_THREADS:-8}
       - AI_SERVICE_PORT=${AI_SERVICE_PORT:-8001}
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}

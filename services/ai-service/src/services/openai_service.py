@@ -21,6 +21,7 @@ except ImportError:
 
 # Import PromptClientService
 from .prompt_client_service import PromptClientService
+from .local_llm_service import LocalLLMService
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ class OpenAIService:
     
     def __init__(self):
         """Inicializar serviço OpenAI"""
+        self.provider = os.getenv("LLM_PROVIDER", "openai").lower()
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.model = os.getenv("MODEL_NAME", "gpt-4o")
         self.max_tokens = int(os.getenv("MAX_TOKENS", "1000"))
@@ -53,9 +55,17 @@ class OpenAIService:
         
         # ✅ NOVO: Serviço de prompts do banco de dados
         self.prompt_client = PromptClientService()
+        self.local_llm = LocalLLMService() if self.provider == "local" else None
         
         # Verificar configuração
-        if not self.api_key or not OPENAI_AVAILABLE:
+        if self.provider == "local":
+            self.client = None
+            if self.local_llm and self.local_llm.is_available():
+                self.model = self.local_llm.model_name
+                logger.info(f"✅ Local LLM configurado: {self.local_llm.status()}")
+            else:
+                logger.warning("⚠️ LLM_PROVIDER=local, mas nenhum modelo local foi encontrado")
+        elif not self.api_key or not OPENAI_AVAILABLE:
             logger.warning("⚠️ OPENAI_API_KEY não configurada ou OpenAI não disponível - usando modo fallback")
             self.client = None
         else:
@@ -72,6 +82,8 @@ class OpenAIService:
     
     def is_available(self) -> bool:
         """Verificar se o serviço OpenAI está disponível"""
+        if self.provider == "local":
+            return self.local_llm is not None and self.local_llm.is_available()
         return self.client is not None and self.api_key is not None
     
     def _validate_session_ownership(self, session_id: str, username: str) -> bool:
@@ -693,7 +705,7 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 self._track_user_session(username, session_id, "fallback_used")
                 return await self._fallback_response(user_message, username)
             
-            logger.info(f"✅ OpenAI disponível - gerando resposta com modelo {self.model}")
+            logger.info(f"✅ Provedor LLM disponível ({self.provider}) - gerando resposta com modelo {self.model}")
             
             # Criar contexto da conversa com isolamento por usuário
             messages = await self._create_conversation_context(
@@ -706,16 +718,16 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 previous_session_context  # ✅ NOVO: Passar contexto da sessão anterior
             )
             
-            # Fazer chamada para OpenAI
-            logger.info(f"📡 Enviando requisição para OpenAI com {len(messages)} mensagens")
+            # Fazer chamada para o provedor LLM configurado
+            logger.info(f"📡 Enviando requisição para provedor {self.provider} com {len(messages)} mensagens")
             
             # ✅ NOVO: Rastrear mensagem do usuário
             self._track_user_session(username, session_id, "message")
             
-            response = await self._call_openai(messages)
+            response = await self._call_llm(messages)
             
             if response:
-                logger.info(f"✅ Resposta recebida da OpenAI: {response[:100]}{'...' if len(response) > 100 else ''}")
+                logger.info(f"✅ Resposta recebida do provedor {self.provider}: {response[:100]}{'...' if len(response) > 100 else ''}")
                 
                 # ✅ NOVO: Rastrear resposta bem-sucedida
                 self._track_user_session(username, session_id, "response_success")
@@ -729,7 +741,7 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                     "session_id": session_id,
                     "username": username,  # ✅ NOVO: Incluir username na resposta
                     "timestamp": datetime.now().isoformat(),
-                    "provider": "openai",
+                    "provider": self.provider,
                     "success": True
                 }
             else:
@@ -742,6 +754,43 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             logger.error(f"❌ Erro ao gerar resposta terapêutica: {e}")
             return await self._fallback_response(user_message, username)
     
+    async def _call_llm(self, messages: List[Dict]) -> Optional[str]:
+        """Fazer chamada para o provedor LLM configurado."""
+        if self.provider == "local":
+            return await self._call_local_llm(messages)
+        return await self._call_openai(messages)
+
+    async def _call_local_llm(self, messages: List[Dict]) -> Optional[str]:
+        """Fazer chamada para o modelo local carregado no AI Service."""
+        if not self.local_llm or not self.local_llm.is_available():
+            logger.warning("⚠️ Modelo local não disponível")
+            return None
+
+        try:
+            logger.info("🤖 CHAMADA PARA LLM LOCAL:")
+            logger.info(f"   Modelo: {self.local_llm.model_name}")
+            logger.info(f"   Max Tokens: {self.max_tokens}")
+            logger.info(f"   Temperatura: {self.temperature}")
+            logger.info(f"   Config: {self.local_llm.status()}")
+
+            response = await self.local_llm.generate(
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
+
+            if response:
+                logger.info("✅ SUCESSO na chamada LLM local")
+                logger.info(f"🤖 Resposta local (primeiros 200 chars): {response[:200]}{'...' if len(response) > 200 else ''}")
+                return response
+
+            logger.warning("⚠️ LLM local retornou resposta vazia")
+            return None
+
+        except Exception as e:
+            logger.error(f"❌ ERRO na chamada LLM local: {e}")
+            return None
+
     async def _call_openai(self, messages: List[Dict]) -> Optional[str]:
         """
         Fazer chamada para API da OpenAI
@@ -895,10 +944,12 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         """
         return {
             "openai_configured": self.is_available(),
+            "provider": self.provider,
             "model": self.model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "api_key_present": bool(self.api_key),
+            "local_llm": self.local_llm.status() if self.local_llm else None,
             "context_optimization": {
                 "max_history_messages": self.max_history_messages,
                 "max_context_tokens": self.max_context_tokens,
