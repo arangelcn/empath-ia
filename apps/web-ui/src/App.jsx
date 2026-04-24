@@ -4,7 +4,6 @@ import ChatScreen from './components/Chat/ChatScreen.tsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import HomeScreen from './components/Home/HomeScreen.jsx';
 import LandingScreen from './components/LandingScreen.jsx';
-import ComingSoonScreen from './components/ComingSoonScreen.jsx';
 import { Brain, Loader2 } from 'lucide-react';
 import { getUserStatus } from './services/api.js';
 
@@ -101,7 +100,12 @@ function AppRoutes() {
       {!isOnboarded && (
         <>
           <Route path="/" element={<LandingScreen />} />
-          <Route path="/login" element={<ComingSoonScreen />} />
+          <Route path="/login" element={
+            <LoginScreen
+              onComplete={handleLoginComplete}
+              sessionId={sessionId}
+            />
+          } />
           <Route path="/*" element={<Navigate to="/" replace />} />
         </>
       )}
