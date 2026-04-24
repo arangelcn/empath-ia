@@ -12,6 +12,7 @@ NC=\033[0m # No Color
 # Configurações
 PROJECT_NAME=empatia
 DOCKER_COMPOSE_DEV=docker-compose.dev.yml
+DOCKER_COMPOSE_HOST=docker-compose.host.yml
 DOCKER_COMPOSE_PROD=config/docker-compose.prod.yml
 
 help: ## Mostra esta ajuda
@@ -64,6 +65,21 @@ dev-detached: ## Inicia ambiente de desenvolvimento em background
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento (background) com live reload...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
 	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
+
+dev-host: ## Inicia ambiente dev usando host network (sem bridge/veth)
+	@echo "${YELLOW}🚀 Iniciando ambiente dev com host network...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build
+
+dev-host-detached: ## Inicia ambiente dev em background usando host network
+	@echo "${YELLOW}🚀 Iniciando ambiente dev com host network (background)...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build -d
+
+reset-host-runtime: ## Recria MongoDB/Redis e sobe stack dev em host network
+	@echo "${RED}⚠️  Recriando runtime local com MongoDB/Redis limpos...${NC}"
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) down --remove-orphans -v
+	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build -d
 
 dev-services: ## Inicia apenas os serviços backend (sem web-ui)
 	@echo "${YELLOW}🚀 Iniciando apenas serviços backend...${NC}"
