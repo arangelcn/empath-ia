@@ -82,6 +82,8 @@ The user wants to learn English while building the project.
 
 ## Publish Workflow
 
-- When Codex completes code or documentation changes, commit the changes Codex made and push them to `origin/main`.
+- When Codex starts work in a new context, create a new branch from `main` before editing files.
+- Use Conventional Commits for all commit messages, for example `docs: update Codex workflow`.
+- When Codex completes code or documentation changes, commit the changes Codex made, merge them back to `main`, and push `main` to `origin/main`.
 - Do not include unrelated user changes in commits.
 - If the working tree contains unrelated modified or untracked files, leave them alone and only publish the files changed for the current task.
