@@ -54,5 +54,5 @@ resource "google_container_cluster" "autopilot" {
     channel = "REGULAR"
   }
 
-  deletion_protection = var.environment == "prod"
+  deletion_protection = false
 }
