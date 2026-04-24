@@ -1,0 +1,83 @@
+# Host-network runtime overlay for local development.
+#
+# Use this when Docker bridge/veth networking or embedded DNS is unstable.
+# Services communicate through 127.0.0.1 on the host network, so Compose
+# service DNS names like "mongodb" and "redis" are intentionally avoided.
+services:
+  mongodb:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+
+  mongo-express:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=127.0.0.1
+      - ME_CONFIG_MONGODB_PORT=27017
+
+  redis:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+
+  gateway:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    environment:
+      - AI_SERVICE_URL=http://127.0.0.1:8001
+      - AVATAR_SERVICE_URL=http://127.0.0.1:8002
+      - EMOTION_SERVICE_URL=http://127.0.0.1:8003
+      - VOICE_SERVICE_URL=http://127.0.0.1:8004
+      - MONGODB_URL=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin
+      - REDIS_URL=redis://127.0.0.1:6379
+      - ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3001
+
+  ai-service:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    environment:
+      - MONGODB_URI=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin
+      - REDIS_URL=redis://127.0.0.1:6379
+      - GATEWAY_SERVICE_URL=http://127.0.0.1:8000
+
+  avatar-service:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+
+  emotion-service:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+
+  voice-service:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    environment:
+      - VOICE_SERVICE_BASE_URL=http://localhost:8004
+
+  web-ui:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - BACKEND_URL=http://127.0.0.1:8000
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "7860"]
+
+  admin-panel:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_EMOTION_SERVICE_URL=http://localhost:8003
+      - VITE_VOICE_SERVICE_URL=http://localhost:8004
+      - VITE_AI_SERVICE_URL=http://localhost:8001
+      - VITE_AVATAR_SERVICE_URL=http://localhost:8002
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3001"]
