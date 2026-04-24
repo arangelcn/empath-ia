@@ -39,7 +39,7 @@ When planning or implementing features, preserve this mental-health-support iden
 - `docs/CONVENTIONS.md` for coding patterns.
 - `docs/MCP_MIGRATION_PLAN.md` when exposing app capabilities as AI tools/resources.
 - `docs/todos/TODOVOICECONVERSATION.md` when working on voice mode.
-- `docs/learning/_OceanofPDF.com_AI_Agents_in_Action_-_Micheal_Lanham (1).pdf` for agent concepts, but only after understanding the app context.
+- `docs/learning/_OceanofPDF.com_AI_Agents_in_Action_-_Micheal_Lanham (1).pdf` for agent concepts, but only after understanding and planning the steps of action.
 
 ## Critical Application Rules
 
