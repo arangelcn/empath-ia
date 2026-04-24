@@ -9,7 +9,6 @@ ARG LOCAL_MODEL_INCLUDE=*.gguf
 ARG LOCAL_MODEL_DIR=/models/local-llm
 ARG LLAMA_CPP_PIP_EXTRA_ARGS=
 ARG LOCAL_MODEL_DOWNLOAD_REQUIRED=true
-ARG HF_TOKEN=
 
 ENV LOCAL_MODEL_DIR=${LOCAL_MODEL_DIR}
 
@@ -22,8 +21,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY requirements-local-llm.txt .
 COPY scripts/ ./scripts/
 RUN --mount=type=secret,id=hf_token,required=false \
+    --mount=type=secret,id=hugging_face_token,required=false \
+    --mount=type=secret,id=huggin_face_token,required=false \
     if [ "$ENABLE_LOCAL_LLM" = "true" ]; then \
-        HF_TOKEN_VALUE="$(cat /run/secrets/hf_token 2>/dev/null || printf '%s' "$HF_TOKEN")"; \
+        HF_TOKEN_VALUE=""; \
+        for HF_TOKEN_SECRET_FILE in /run/secrets/hf_token /run/secrets/hugging_face_token /run/secrets/huggin_face_token; do \
+            if [ -z "$HF_TOKEN_VALUE" ] && [ -s "$HF_TOKEN_SECRET_FILE" ]; then \
+                HF_TOKEN_VALUE="$(cat "$HF_TOKEN_SECRET_FILE")"; \
+            fi; \
+        done; \
         apt-get update && apt-get install -y --no-install-recommends \
             build-essential \
             cmake \

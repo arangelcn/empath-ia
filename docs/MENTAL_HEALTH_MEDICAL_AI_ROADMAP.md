@@ -312,7 +312,7 @@ Use the book and the project together.
 ## First Concrete Implementation Slice
 
 Start small:
-
+So
 1. Update prompt identity and boundaries.
 2. Add mental health safety evaluation cases.
 3. Add local model configuration to the AI service.

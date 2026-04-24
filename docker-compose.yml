@@ -68,9 +68,10 @@ services:
         LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
         LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
         LOCAL_MODEL_DOWNLOAD_REQUIRED: ${LOCAL_MODEL_DOWNLOAD_REQUIRED:-true}
-        HF_TOKEN: ${HF_TOKEN:-${HUGGING_FACE_TOKEN:-${HUGGIN_FACE_TOKEN:-}}}
       secrets:
         - hf_token
+        - hugging_face_token
+        - huggin_face_token
     container_name: empatia-ai-service
     env_file:
       - .env
@@ -283,3 +284,7 @@ volumes:
 secrets:
   hf_token:
     environment: HF_TOKEN
+  hugging_face_token:
+    environment: HUGGING_FACE_TOKEN
+  huggin_face_token:
+    environment: HUGGIN_FACE_TOKEN

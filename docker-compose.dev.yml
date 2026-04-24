@@ -74,7 +74,7 @@ services:
     volumes:
       - ./data/tts_output:/app/tts_output
       - ./services/gateway-service/src:/app/src
-    ports:
+    ports: !override
       - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug"]
     depends_on:
@@ -96,10 +96,11 @@ services:
         LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
         LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
         LOCAL_MODEL_DOWNLOAD_REQUIRED: ${LOCAL_MODEL_DOWNLOAD_REQUIRED:-true}
-        HF_TOKEN: ${HF_TOKEN:-${HUGGING_FACE_TOKEN:-${HUGGIN_FACE_TOKEN:-}}}
-      secrets:
+      secrets: !override
         - hf_token
-    ports:  
+        - hugging_face_token
+        - huggin_face_token
+    ports: !override
       - "127.0.0.1:${AI_SERVICE_PORT:-8001}:8001"
     environment:
       - DEBUG=${DEBUG:-true}
@@ -178,7 +179,7 @@ services:
       - ./services/emotion-service/src:/app/src
       # Volume para modelos pré-treinados
       - ./data/emotion_models:/app/models
-    ports:
+    ports: !override
       - "127.0.0.1:${EMOTION_SERVICE_PORT:-8003}:8003"
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload", "--log-level", "debug"]
     networks:
@@ -190,7 +191,7 @@ services:
       dockerfile: Dockerfile
       network: host
     container_name: empatia-voice-service-dev
-    ports:
+    ports: !override
       - "127.0.0.1:${VOICE_SERVICE_PORT:-8004}:8004"
     environment:
       # Configurações básicas
@@ -239,7 +240,7 @@ services:
     volumes:
       - ./apps/web-ui/src:/app/src
       - ./apps/web-ui/public:/app/public
-    ports:
+    ports: !override
       - "127.0.0.1:${WEB_UI_PORT:-7860}:3000"
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     networks:
@@ -251,7 +252,7 @@ services:
       dockerfile: Dockerfile.dev
       network: host
     container_name: empatia-admin-panel-dev
-    ports:
+    ports: !override
       - "127.0.0.1:${ADMIN_PANEL_PORT:-3001}:3000"
     environment:
       - NODE_ENV=development
@@ -290,3 +291,7 @@ networks:
 secrets:
   hf_token:
     environment: HF_TOKEN
+  hugging_face_token:
+    environment: HUGGING_FACE_TOKEN
+  huggin_face_token:
+    environment: HUGGIN_FACE_TOKEN

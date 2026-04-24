@@ -59,32 +59,32 @@ setup: ## Configuração inicial do projeto
 dev: ## Inicia ambiente de desenvolvimento com hot reload
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento com live reload...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 dev-detached: ## Inicia ambiente de desenvolvimento em background
 	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento (background) com live reload...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
+	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
 
 dev-host: ## Inicia ambiente dev usando host network (sem bridge/veth)
 	@echo "${YELLOW}🚀 Iniciando ambiente dev com host network...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build
+	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build
 
 dev-host-detached: ## Inicia ambiente dev em background usando host network
 	@echo "${YELLOW}🚀 Iniciando ambiente dev com host network (background)...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build -d
+	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build -d
 
 reset-host-runtime: ## Recria MongoDB/Redis e sobe stack dev em host network
 	@echo "${RED}⚠️  Recriando runtime local com MongoDB/Redis limpos...${NC}"
 	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) down --remove-orphans -v
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build -d
+	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build -d
 
 dev-services: ## Inicia apenas os serviços backend (sem web-ui)
 	@echo "${YELLOW}🚀 Iniciando apenas serviços backend...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb redis
+	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb redis
 
 # ===== COMANDOS MONGODB =====
 mongo-logs: ## Visualiza logs do MongoDB
@@ -128,16 +128,18 @@ mongo-reset: ## Reseta completamente o banco MongoDB
 # ===== BUILD E DEPLOY =====
 build: ## Constrói todas as imagens Docker
 	@echo "${YELLOW}🔨 Construindo imagens Docker...${NC}"
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build
+	@set -a; [ ! -f .env ] || . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build
 
 build-service: ## Constrói imagem de um serviço específico (ex: make build-service SERVICE=ai-service)
 	@echo "${YELLOW}🔨 Construindo serviço $(SERVICE)...${NC}"
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build $(SERVICE)
+	@set -a; [ ! -f .env ] || . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build $(SERVICE)
 
 build-ai-local: ## Constrói o ai-service exigindo download do modelo local GGUF
 	@echo "${YELLOW}🔨 Construindo ai-service com modelo local obrigatório...${NC}"
-	@test -n "$${HF_TOKEN:-$${HUGGING_FACE_TOKEN:-$${HUGGIN_FACE_TOKEN:-}}}" || (echo "${RED}❌ Configure HF_TOKEN com acesso ao repositório Gemma antes do build.${NC}" && exit 1)
-	@ENABLE_LOCAL_LLM=true LOCAL_MODEL_DOWNLOAD_REQUIRED=true docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build --no-cache ai-service
+	@set -a; [ ! -f .env ] || . ./.env; set +a; \
+	token="$${HF_TOKEN:-$${HUGGING_FACE_TOKEN:-$${HUGGIN_FACE_TOKEN:-}}}"; \
+	test -n "$$token" || (echo "${RED}❌ Configure HF_TOKEN com acesso ao repositório Gemma antes do build.${NC}" && exit 1); \
+	HF_TOKEN="$$token" ENABLE_LOCAL_LLM=true LOCAL_MODEL_DOWNLOAD_REQUIRED=true docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build --no-cache ai-service
 
 build-prod: ## Constrói imagens para produção
 	@echo "${YELLOW}🔨 Construindo imagens para produção...${NC}"

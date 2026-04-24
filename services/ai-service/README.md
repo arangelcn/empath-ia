@@ -6,15 +6,13 @@ O **AI Service** é responsável por gerenciar conversas terapêuticas com GPT e
 
 ## 🧠 Local LLM no build do AI Service
 
-O AI Service pode servir um modelo GGUF local dentro do próprio container usando `llama-cpp-python`. O download do modelo acontece no build da imagem quando `ENABLE_LOCAL_LLM=true`.
+O AI Service pode servir um modelo GGUF local dentro do próprio container usando `llama-cpp-python`. Por padrão, o ambiente de desenvolvimento baixa o modelo no build da imagem quando `ENABLE_LOCAL_LLM=true`.
 
 Configuração recomendada inicial para notebook com GPU de 6GB:
 
 ```env
 LLM_PROVIDER=local
-LLM_FALLBACK_PROVIDER=openai
 ENABLE_LOCAL_LLM=true
-LOCAL_MODEL_DOWNLOAD_REQUIRED=false
 LOCAL_MODEL_REPO_ID=google/gemma-3-4b-it-qat-q4_0-gguf
 LOCAL_MODEL_INCLUDE=*.gguf
 LOCAL_MODEL_DIR=/models/local-llm
@@ -36,7 +34,7 @@ HF_TOKEN=hf_...
 Build:
 
 ```bash
-docker compose build ai-service
+make build-ai-local
 docker compose up ai-service
 ```
 
@@ -47,8 +45,7 @@ Notas:
 - Para usar GPU dentro do Docker, o host precisa ter NVIDIA Container Toolkit configurado.
 - Se o modelo local não carregar, o serviço tenta OpenAI quando `LLM_FALLBACK_PROVIDER=openai`.
 - Se o download do modelo falhar, `LOCAL_MODEL_DOWNLOAD_REQUIRED=false` permite concluir o build e usar OpenAI em runtime.
-- Para produção estrita, use `LOCAL_MODEL_DOWNLOAD_REQUIRED=true`.
-- Para builds rápidos sem modelo local, use `ENABLE_LOCAL_LLM=false` e mantenha `LLM_PROVIDER=local` para testar o fallback OpenAI.
+- Para builds rápidos sem modelo local, use `ENABLE_LOCAL_LLM=false` e `LLM_PROVIDER=openai`.
 
 ## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**
 
