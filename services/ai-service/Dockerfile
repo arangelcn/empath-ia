@@ -5,6 +5,9 @@ WORKDIR /app
 
 ARG ENABLE_LOCAL_LLM=false
 ARG LOCAL_MODEL_DIR=/models/local-llm
+ARG LLAMA_CPP_CUDA=false
+ARG LLAMA_CPP_VERSION=0.3.7
+ARG LLAMA_CPP_CUDA_WHEEL_INDEX=https://abetlen.github.io/llama-cpp-python/whl/cu124
 ARG LLAMA_CPP_PIP_EXTRA_ARGS=
 
 ENV LOCAL_MODEL_DIR=${LOCAL_MODEL_DIR}
@@ -23,9 +26,17 @@ RUN if [ "$ENABLE_LOCAL_LLM" = "true" ]; then \
             cmake \
             git \
         && rm -rf /var/lib/apt/lists/* \
-        && pip install --no-cache-dir \
-            ${LLAMA_CPP_PIP_EXTRA_ARGS} \
-            -r requirements-local-llm.txt; \
+        && if [ "$LLAMA_CPP_CUDA" = "true" ]; then \
+            pip install --no-cache-dir "huggingface_hub[cli]>=0.26.0" \
+            && pip install --no-cache-dir --force-reinstall \
+                ${LLAMA_CPP_PIP_EXTRA_ARGS} \
+                --extra-index-url "$LLAMA_CPP_CUDA_WHEEL_INDEX" \
+                "llama-cpp-python==$LLAMA_CPP_VERSION"; \
+        else \
+            pip install --no-cache-dir \
+                ${LLAMA_CPP_PIP_EXTRA_ARGS} \
+                -r requirements-local-llm.txt; \
+        fi; \
     fi
 
 # Copiar código

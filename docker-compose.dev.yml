@@ -94,6 +94,9 @@ services:
         LOCAL_MODEL_REPO_ID: ${LOCAL_MODEL_REPO_ID:-ggml-org/gemma-4-E4B-it-GGUF}
         LOCAL_MODEL_INCLUDE: ${LOCAL_MODEL_INCLUDE:-gemma-4-E4B-it-Q4_K_M.gguf}
         LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
+        LLAMA_CPP_CUDA: ${LLAMA_CPP_CUDA:-true}
+        LLAMA_CPP_VERSION: ${LLAMA_CPP_VERSION:-0.3.7}
+        LLAMA_CPP_CUDA_WHEEL_INDEX: ${LLAMA_CPP_CUDA_WHEEL_INDEX:-https://abetlen.github.io/llama-cpp-python/whl/cu124}
         LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
       secrets: !override
         - hf_token
@@ -120,6 +123,8 @@ services:
       - LOCAL_LLM_N_CTX=${LOCAL_LLM_N_CTX:-8192}
       - LOCAL_LLM_N_GPU_LAYERS=${LOCAL_LLM_N_GPU_LAYERS:--1}
       - LOCAL_LLM_N_THREADS=${LOCAL_LLM_N_THREADS:-8}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - MAX_TOKENS=${MAX_TOKENS:-700}
       - HOT_RELOAD=${HOT_RELOAD:-true}
@@ -127,6 +132,7 @@ services:
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--log-level", "debug"]
+    gpus: !override ${AI_SERVICE_GPUS:-all}
     depends_on:
       - mongodb
       - redis
