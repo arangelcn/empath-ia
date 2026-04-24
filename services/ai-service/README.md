@@ -13,11 +13,11 @@ Configuração recomendada inicial para notebook com GPU de 6GB:
 ```env
 LLM_PROVIDER=local
 ENABLE_LOCAL_LLM=true
-LOCAL_MODEL_REPO_ID=google/gemma-3-4b-it-qat-q4_0-gguf
-LOCAL_MODEL_INCLUDE=*.gguf
+LOCAL_MODEL_REPO_ID=ggml-org/gemma-4-E4B-it-GGUF
+LOCAL_MODEL_INCLUDE=gemma-4-E4B-it-Q4_K_M.gguf
 LOCAL_MODEL_DIR=/models/local-llm
-LOCAL_LLM_MODEL=gemma3:4b
-LOCAL_LLM_CHAT_FORMAT=gemma
+LOCAL_LLM_MODEL=gemma4:e4b
+LOCAL_LLM_CHAT_FORMAT=
 LOCAL_LLM_N_CTX=8192
 LOCAL_LLM_N_GPU_LAYERS=-1
 LOCAL_LLM_N_THREADS=8

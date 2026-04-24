@@ -77,10 +77,63 @@ class OpenAIService:
             except Exception as e:
                 logger.error(f"❌ Erro ao inicializar cliente OpenAI: {e}")
                 self.client = None
+
+        self._log_startup_llm_mode()
                 
         # ✅ NOVO: Inicializar cache de contexto
         logger.info(f"✅ Cache de contexto inicializado - Max size: {self.cache_max_size}, TTL: {self.cache_ttl}s")
         logger.info(f"✅ Session tracking: {'Habilitado' if self.session_tracking_enabled else 'Desabilitado'}")
+
+    def _active_provider(self) -> str:
+        """Return the provider that will be attempted first at runtime."""
+        for provider in self._provider_order():
+            if self._provider_available(provider):
+                return provider
+        return "fallback_template"
+
+    def _active_mode_label(self) -> str:
+        active_provider = self._active_provider()
+        if active_provider == "local":
+            return "GEMMA_LOCAL"
+        if active_provider == "openai":
+            return "OPENAI_FALLBACK" if self.primary_provider == "local" else "OPENAI"
+        return "TEMPLATE_FALLBACK"
+
+    def _log_startup_llm_mode(self) -> None:
+        """Log the configured and active LLM mode during service startup."""
+        provider_order = " -> ".join(self._provider_order()) or "none"
+        local_status = self.local_llm.status() if self.local_llm else None
+        active_provider = self._active_provider()
+        active_model = (
+            self.local_llm.model_name
+            if active_provider == "local" and self.local_llm
+            else self.openai_model
+            if active_provider == "openai"
+            else "hardcoded-therapeutic-template"
+        )
+
+        logger.info("🤖 AI Service LLM startup mode: %s", self._active_mode_label())
+        logger.info(
+            "🤖 LLM provider chain: primary=%s, fallback=%s, order=%s, active=%s",
+            self.primary_provider,
+            self.fallback_provider,
+            provider_order,
+            active_provider,
+        )
+        logger.info("🤖 Active LLM model: %s", active_model)
+
+        if local_status:
+            logger.info(
+                "🤖 Gemma local status: available=%s, model=%s, path=%s, repo=%s, include=%s, chat_format=%s",
+                local_status["available"],
+                local_status["model_name"],
+                local_status["model_path"],
+                local_status["model_repo_id"],
+                local_status["model_include"],
+                local_status["chat_format"],
+            )
+        if active_provider == "fallback_template":
+            logger.warning("⚠️ Nenhum provider LLM configurado está disponível; usando fallback terapêutico hardcoded")
     
     def is_available(self) -> bool:
         """Verificar se algum provedor LLM configurado está disponível."""
@@ -996,6 +1049,8 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         return {
             "openai_configured": self.client is not None,
             "provider": self.primary_provider,
+            "active_provider": self._active_provider(),
+            "active_mode": self._active_mode_label(),
             "primary_provider": self.primary_provider,
             "fallback_provider": self.fallback_provider,
             "provider_order": self._provider_order(),

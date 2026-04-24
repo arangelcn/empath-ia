@@ -13,9 +13,12 @@ class LocalLLMService:
     """Lazy loader for a locally served GGUF model using llama.cpp."""
 
     def __init__(self) -> None:
+        self.repo_id = os.getenv("LOCAL_MODEL_REPO_ID", "ggml-org/gemma-4-E4B-it-GGUF")
+        self.include_pattern = os.getenv("LOCAL_MODEL_INCLUDE", "gemma-4-E4B-it-Q4_K_M.gguf")
+        self.model_dir = Path(os.getenv("LOCAL_MODEL_DIR", "/models/local-llm"))
         self.model_path = self._resolve_model_path()
-        self.model_name = os.getenv("LOCAL_LLM_MODEL", self.model_path.name if self.model_path else "local-llm")
-        self.chat_format = os.getenv("LOCAL_LLM_CHAT_FORMAT", "gemma")
+        self.model_name = os.getenv("LOCAL_LLM_MODEL", self.model_path.name if self.model_path else "gemma4:e4b")
+        self.chat_format = os.getenv("LOCAL_LLM_CHAT_FORMAT", "").strip()
         self.n_ctx = int(os.getenv("LOCAL_LLM_N_CTX", "8192"))
         self.n_gpu_layers = int(os.getenv("LOCAL_LLM_N_GPU_LAYERS", "-1"))
         self.n_threads = int(os.getenv("LOCAL_LLM_N_THREADS", str(os.cpu_count() or 4)))
@@ -28,8 +31,7 @@ class LocalLLMService:
             path = Path(configured_path)
             return path if path.is_file() else None
 
-        model_dir = Path(os.getenv("LOCAL_MODEL_DIR", "/models/local-llm"))
-        gguf_files = sorted(model_dir.rglob("*.gguf"))
+        gguf_files = sorted(self.model_dir.rglob("*.gguf"))
         return gguf_files[0] if gguf_files else None
 
     def is_available(self) -> bool:
@@ -40,7 +42,10 @@ class LocalLLMService:
             "available": self.is_available(),
             "model_name": self.model_name,
             "model_path": str(self.model_path) if self.model_path else None,
-            "chat_format": self.chat_format,
+            "model_repo_id": self.repo_id,
+            "model_include": self.include_pattern,
+            "model_dir": str(self.model_dir),
+            "chat_format": self.chat_format or "auto",
             "n_ctx": self.n_ctx,
             "n_gpu_layers": self.n_gpu_layers,
             "n_threads": self.n_threads,
@@ -63,14 +68,16 @@ class LocalLLMService:
             ) from exc
 
         logger.info("Loading local LLM model: %s", self.model_path)
-        self._llm = Llama(
-            model_path=str(self.model_path),
-            n_ctx=self.n_ctx,
-            n_gpu_layers=self.n_gpu_layers,
-            n_threads=self.n_threads,
-            chat_format=self.chat_format,
-            verbose=self.verbose,
-        )
+        llama_kwargs = {
+            "model_path": str(self.model_path),
+            "n_ctx": self.n_ctx,
+            "n_gpu_layers": self.n_gpu_layers,
+            "n_threads": self.n_threads,
+            "verbose": self.verbose,
+        }
+        if self.chat_format:
+            llama_kwargs["chat_format"] = self.chat_format
+        self._llm = Llama(**llama_kwargs)
         return self._llm
 
     async def generate(
