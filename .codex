@@ -1,0 +1,4 @@
+Project workflow instruction:
+- When Codex completes code or documentation changes, commit the changes Codex made and push them to `origin/main`.
+- Do not include unrelated user changes in commits.
+- If the working tree contains unrelated modified or untracked files, leave them alone and only publish the files changed for the current task.
