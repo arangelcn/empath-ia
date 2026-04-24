@@ -95,8 +95,10 @@ services:
         LOCAL_MODEL_INCLUDE: ${LOCAL_MODEL_INCLUDE:-*.gguf}
         LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
         LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
-        LOCAL_MODEL_DOWNLOAD_REQUIRED: ${LOCAL_MODEL_DOWNLOAD_REQUIRED:-false}
-        HF_TOKEN: ${HF_TOKEN:-}
+        LOCAL_MODEL_DOWNLOAD_REQUIRED: ${LOCAL_MODEL_DOWNLOAD_REQUIRED:-true}
+        HF_TOKEN: ${HF_TOKEN:-${HUGGING_FACE_TOKEN:-${HUGGIN_FACE_TOKEN:-}}}
+      secrets:
+        - hf_token
     ports:  
       - "127.0.0.1:${AI_SERVICE_PORT:-8001}:8001"
     environment:
@@ -284,3 +286,7 @@ volumes:
 networks:
   empatia-network:
     driver: bridge 
+
+secrets:
+  hf_token:
+    environment: HF_TOKEN
