@@ -1,0 +1,2 @@
+llama-cpp-python==0.3.7
+huggingface_hub[cli]>=0.26.0

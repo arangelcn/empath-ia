@@ -40,6 +40,7 @@ docker compose up ai-service
 
 Notas:
 
+- As dependências opcionais ficam em `requirements-local-llm.txt` e só são instaladas quando `ENABLE_LOCAL_LLM=true`.
 - O build local pode demorar porque instala `llama-cpp-python` e baixa o GGUF.
 - Para usar GPU dentro do Docker, o host precisa ter NVIDIA Container Toolkit configurado.
 - Se o modelo local não carregar, o serviço usa o fallback empático existente.

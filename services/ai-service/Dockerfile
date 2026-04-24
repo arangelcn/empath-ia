@@ -6,7 +6,6 @@ ARG ENABLE_LOCAL_LLM=false
 ARG LOCAL_MODEL_REPO_ID=google/gemma-3-4b-it-qat-q4_0-gguf
 ARG LOCAL_MODEL_INCLUDE=*.gguf
 ARG LOCAL_MODEL_DIR=/models/local-llm
-ARG LLAMA_CPP_PYTHON_VERSION=0.3.7
 ARG LLAMA_CPP_PIP_EXTRA_ARGS=
 ARG HF_TOKEN=
 
@@ -18,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Dependências opcionais para servir um modelo GGUF local dentro do AI Service.
 # Mantido atrás de ENABLE_LOCAL_LLM para não quebrar builds sem token/licença do modelo.
+COPY requirements-local-llm.txt .
 COPY scripts/ ./scripts/
 RUN if [ "$ENABLE_LOCAL_LLM" = "true" ]; then \
         apt-get update && apt-get install -y --no-install-recommends \
@@ -27,8 +27,7 @@ RUN if [ "$ENABLE_LOCAL_LLM" = "true" ]; then \
         && rm -rf /var/lib/apt/lists/* \
         && pip install --no-cache-dir \
             ${LLAMA_CPP_PIP_EXTRA_ARGS} \
-            "llama-cpp-python==${LLAMA_CPP_PYTHON_VERSION}" \
-            "huggingface_hub[cli]>=0.26.0" \
+            -r requirements-local-llm.txt \
         && LOCAL_MODEL_REPO_ID="${LOCAL_MODEL_REPO_ID}" \
            LOCAL_MODEL_INCLUDE="${LOCAL_MODEL_INCLUDE}" \
            LOCAL_MODEL_DIR="${LOCAL_MODEL_DIR}" \

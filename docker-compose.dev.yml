@@ -94,7 +94,6 @@ services:
         LOCAL_MODEL_REPO_ID: ${LOCAL_MODEL_REPO_ID:-google/gemma-3-4b-it-qat-q4_0-gguf}
         LOCAL_MODEL_INCLUDE: ${LOCAL_MODEL_INCLUDE:-*.gguf}
         LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
-        LLAMA_CPP_PYTHON_VERSION: ${LLAMA_CPP_PYTHON_VERSION:-0.3.7}
         LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
         HF_TOKEN: ${HF_TOKEN:-}
     ports:  
