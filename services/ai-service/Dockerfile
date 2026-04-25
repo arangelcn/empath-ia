@@ -8,7 +8,8 @@ ARG ENABLE_LOCAL_LLM=false
 ARG LOCAL_MODEL_DIR=/models/local-llm
 ARG LLAMA_CPP_CUDA=false
 ARG LLAMA_CPP_VERSION=0.3.7
-ARG LLAMA_CPP_CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=86"
+ARG LLAMA_CPP_CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=86 -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=OFF"
+ARG CMAKE_BUILD_PARALLEL_LEVEL=2
 ARG LLAMA_CPP_PIP_EXTRA_ARGS=
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -29,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-venv \
     && ln -sf /usr/bin/python3 /usr/local/bin/python \
     && ln -sf /usr/bin/pip3 /usr/local/bin/pip \
+    && ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements e instalar dependências Python
@@ -43,7 +45,7 @@ COPY scripts/ ./scripts/
 RUN if [ "$ENABLE_LOCAL_LLM" = "true" ]; then \
         if [ "$LLAMA_CPP_CUDA" = "true" ]; then \
             pip install "huggingface_hub[cli]>=0.26.0" \
-            && CMAKE_ARGS="$LLAMA_CPP_CMAKE_ARGS" FORCE_CMAKE=1 \
+            && CMAKE_ARGS="$LLAMA_CPP_CMAKE_ARGS" FORCE_CMAKE=1 CMAKE_BUILD_PARALLEL_LEVEL="$CMAKE_BUILD_PARALLEL_LEVEL" \
                 pip install --force-reinstall --no-binary llama-cpp-python \
                 ${LLAMA_CPP_PIP_EXTRA_ARGS} \
                 "llama-cpp-python==$LLAMA_CPP_VERSION"; \
