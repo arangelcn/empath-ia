@@ -189,10 +189,10 @@ const LoginScreen = ({ onComplete, sessionId }) => {
                       key={voice.id}
                       onClick={() => setSelectedVoice(voice.id)}
                       className={`
-                        w-full p-3 rounded-xl border-2 transition-all duration-200 text-left hover:scale-102
+                        w-full p-3 rounded-lg border transition-all duration-150 text-left
                         ${selectedVoice === voice.id
-                          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 shadow-therapy-medium'
-                          : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 bg-white dark:bg-gray-800'
+                          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 shadow-sm'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-primary-300 hover:bg-gray-50 dark:hover:border-primary-600 bg-white dark:bg-gray-800 dark:hover:bg-gray-800/80'
                         }
                       `}
                     >
@@ -224,7 +224,7 @@ const LoginScreen = ({ onComplete, sessionId }) => {
                   className="w-full"
                   size="lg"
                 >
-                  {isLoading ? 'Configurando...' : 'Começar minha jornada'}
+                  {isLoading ? 'Configurando...' : 'Começar'}
                 </Button>
               </div>
             )}

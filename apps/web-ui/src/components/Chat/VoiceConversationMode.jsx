@@ -242,7 +242,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
           </p>
           <button
             onClick={handleClose}
-            className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+            className="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-primary-700"
           >
             Entendi
           </button>
@@ -262,10 +262,10 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
         {/* Botão fechar */}
         <button
           onClick={handleClose}
-          className="absolute top-6 right-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all duration-200 group"
+          className="absolute right-6 top-6 rounded-lg bg-white/10 p-3 text-white transition-colors duration-150 hover:bg-white/20"
           title="Fechar modo de voz"
         >
-          <X className="w-6 h-6 group-hover:rotate-90 transition-transform duration-200" />
+          <X className="h-5 w-5" />
         </button>
 
         {/* Título e status */}
@@ -310,12 +310,12 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
           <div 
             className={`relative w-32 h-32 rounded-full bg-gradient-to-br shadow-2xl flex items-center justify-center transition-all duration-500 ${
               isPlaying
-                ? 'scale-105 shadow-green-400/50 from-green-400 to-green-600'
+                ? 'scale-[1.02] shadow-green-400/50 from-green-400 to-green-600'
                 : isListening 
                   ? 'scale-100 shadow-blue-400/50 from-blue-400 to-blue-600' 
-                  : isProcessing 
-                    ? 'scale-110 shadow-purple-400/50 from-purple-400 to-purple-600' 
-                    : 'scale-95 shadow-gray-400/30 from-blue-400 to-blue-600'
+                : isProcessing 
+                    ? 'scale-[1.03] shadow-purple-400/50 from-purple-400 to-purple-600' 
+                    : 'scale-[0.98] shadow-gray-400/30 from-blue-400 to-blue-600'
             }`}
           >
             {/* Ícone central */}

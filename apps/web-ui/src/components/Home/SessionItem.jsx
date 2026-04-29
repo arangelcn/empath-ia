@@ -31,7 +31,7 @@ const SessionItem = ({ id, title, description, completed, onAccess }) => {
           
           <button
             onClick={() => onAccess(id)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors duration-200 text-sm font-medium"
+            className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-primary-700"
           >
             <span>Acessar Sessão</span>
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

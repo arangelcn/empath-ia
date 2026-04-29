@@ -184,7 +184,7 @@ const VoiceSettings = ({ onClose, className = '' }) => {
       {/* Botão Toggle */}
       <button 
         onClick={toggleSettings}
-        className="mb-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors duration-200 flex items-center gap-2"
+        className="mb-4 flex min-h-[42px] items-center gap-2 rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-primary-700"
       >
         <span>🎤</span>
         Configurações de Voz
@@ -289,21 +289,21 @@ const VoiceSettings = ({ onClose, className = '' }) => {
             <button
               onClick={testCurrentVoice}
               disabled={changingModel}
-              className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+              className="min-h-[42px] flex-1 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               🎤 Testar Voz Atual
             </button>
             <button
               onClick={loadConfiguration}
               disabled={changingModel}
-              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+              className="min-h-[42px] rounded-lg bg-gray-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               🔄 Atualizar
             </button>
             {onClose && (
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors duration-200"
+                className="min-h-[42px] rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-red-700"
               >
                 ✖️ Fechar
               </button>

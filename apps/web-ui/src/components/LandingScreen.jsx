@@ -158,8 +158,8 @@ function FeatureCard({ icon: Icon, title, description, color, delay }) {
     <RevealSection delay={delay}>
       <motion.div
         className="relative p-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm overflow-hidden group cursor-default"
-        whileHover={{ y: -6, scale: 1.02 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        whileHover={{ y: -2 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
         onHoverStart={() => setHovered(true)}
         onHoverEnd={() => setHovered(false)}
       >
@@ -201,7 +201,7 @@ function StepCard({ number, title, description, delay }) {
               background: 'linear-gradient(135deg, #4A90E2, #6ED2E8)',
               boxShadow: '0 0 20px rgba(74,144,226,0.4)',
             }}
-            whileHover={{ scale: 1.15 }}
+            whileHover={{ y: -1 }}
           >
             {number}
           </motion.div>
@@ -292,10 +292,10 @@ export default function LandingScreen() {
           </div>
           <motion.button
             onClick={() => navigate('/login')}
-            className="px-5 py-2 rounded-xl text-sm font-semibold text-white"
+            className="rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm"
             style={{ background: 'linear-gradient(135deg, #4A90E2, #6ED2E8)' }}
-            whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(74,144,226,0.5)' }}
-            whileTap={{ scale: 0.97 }}
+            whileHover={{ y: -1, boxShadow: '0 8px 22px rgba(74,144,226,0.28)' }}
+            whileTap={{ y: 0 }}
           >
             Entrar
           </motion.button>
@@ -467,10 +467,10 @@ export default function LandingScreen() {
           >
             <motion.button
               onClick={() => navigate('/login')}
-              className="px-8 py-4 rounded-2xl text-base font-semibold text-white"
+              className="rounded-xl px-7 py-3.5 text-base font-semibold text-white shadow-sm"
               style={{ background: 'linear-gradient(135deg, #4A90E2 0%, #6ED2E8 50%, #B28DFF 100%)' }}
-              whileHover={{ scale: 1.04, boxShadow: '0 0 40px rgba(74,144,226,0.5)' }}
-              whileTap={{ scale: 0.97 }}
+              whileHover={{ y: -1, boxShadow: '0 12px 30px rgba(74,144,226,0.28)' }}
+              whileTap={{ y: 0 }}
             >
               <span className="flex items-center gap-2">
                 Ir para o App
@@ -485,9 +485,9 @@ export default function LandingScreen() {
 
             <motion.button
               onClick={() => scrollToSection('features')}
-              className="px-8 py-4 rounded-2xl text-base font-semibold text-slate-300 border border-white/15 hover:border-white/30 hover:text-white transition-all"
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
+              className="rounded-xl border border-white/15 px-7 py-3.5 text-base font-semibold text-slate-300 transition-all hover:border-white/30 hover:bg-white/5 hover:text-white"
+              whileHover={{ y: -1 }}
+              whileTap={{ y: 0 }}
             >
               Saiba mais
             </motion.button>
@@ -687,7 +687,7 @@ export default function LandingScreen() {
                   <motion.button
                     onClick={() => navigate('/login')}
                     className="inline-flex items-center gap-2 text-primary-400 font-semibold hover:text-primary-300 transition-colors"
-                    whileHover={{ x: 4 }}
+                    whileHover={{ x: 2 }}
                   >
                     Experimentar agora <ArrowRight size={16} />
                   </motion.button>
@@ -708,7 +708,7 @@ export default function LandingScreen() {
                       whileInView={{ opacity: 1, scale: 1 }}
                       transition={{ delay: i * 0.07 }}
                       viewport={{ once: true }}
-                      whileHover={{ scale: 1.04, borderColor: `${t.color}50` }}
+                      whileHover={{ y: -1, borderColor: `${t.color}50` }}
                     >
                       <div className="text-sm font-bold text-white font-heading">{t.name}</div>
                       <div className="text-xs mt-0.5" style={{ color: t.color }}>{t.desc}</div>
@@ -753,10 +753,10 @@ export default function LandingScreen() {
             </p>
             <motion.button
               onClick={() => navigate('/login')}
-              className="group px-10 py-4 rounded-2xl text-lg font-bold text-white inline-flex items-center gap-3"
+              className="group inline-flex items-center gap-3 rounded-xl px-8 py-3.5 text-base font-semibold text-white shadow-sm"
               style={{ background: 'linear-gradient(135deg, #4A90E2 0%, #6ED2E8 50%, #B28DFF 100%)' }}
-              whileHover={{ scale: 1.05, boxShadow: '0 0 50px rgba(74,144,226,0.5)' }}
-              whileTap={{ scale: 0.97 }}
+              whileHover={{ y: -1, boxShadow: '0 12px 30px rgba(74,144,226,0.28)' }}
+              whileTap={{ y: 0 }}
             >
               Ir para o App
               <motion.span
@@ -851,7 +851,7 @@ export default function LandingScreen() {
           <motion.button
             onClick={() => navigate('/login')}
             className="text-xs text-primary-400 font-medium hover:text-primary-300 flex items-center gap-1 transition-colors"
-            whileHover={{ x: 2 }}
+            whileHover={{ x: 1 }}
           >
             Acessar o App <ArrowRight size={12} />
           </motion.button>

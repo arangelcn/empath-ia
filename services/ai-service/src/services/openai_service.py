@@ -63,7 +63,7 @@ class OpenAIService:
         self.client = None
         
         # Verificar configuração do modelo local
-        if self.local_llm and self.local_llm.is_available():
+        if self.local_llm and self.local_llm.has_model_file():
             logger.info(f"✅ Local LLM configurado: {self.local_llm.status()}")
         elif "local" in self._provider_order():
             logger.warning("⚠️ Provedor local configurado, mas nenhum modelo local foi encontrado")
@@ -140,13 +140,16 @@ class OpenAIService:
 
         if local_status:
             logger.info(
-                "🤖 Gemma local status: available=%s, model=%s, path=%s, repo=%s, include=%s, chat_format=%s",
+                "🤖 Gemma local status: available=%s, file_available=%s, runtime_loadable=%s, model=%s, path=%s, repo=%s, include=%s, chat_format=%s, load_error=%s",
                 local_status["available"],
+                local_status["file_available"],
+                local_status["runtime_loadable"],
                 local_status["model_name"],
                 local_status["model_path"],
                 local_status["model_repo_id"],
                 local_status["model_include"],
                 local_status["chat_format"],
+                local_status["load_error"],
             )
         if active_provider == "fallback_template":
             logger.warning("⚠️ Nenhum provider LLM configurado está disponível; usando fallback terapêutico hardcoded")
@@ -879,6 +882,8 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         """Fazer chamada para o modelo local carregado no AI Service."""
         if not self.local_llm or not self.local_llm.is_available():
             logger.warning("⚠️ Modelo local não disponível")
+            if self.local_llm and self.local_llm.load_error:
+                logger.warning(f"⚠️ Último erro de carga do modelo local: {self.local_llm.load_error}")
             return None
 
         try:
@@ -1070,13 +1075,16 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             "primary_provider": self.primary_provider,
             "fallback_provider": self.fallback_provider,
             "provider_order": self._provider_order(),
-            "model": self.local_llm.model_name if self.local_llm and self.local_llm.is_available() else self.openai_model,
-            "active_model": self.local_llm.model_name if self.local_llm and self.local_llm.is_available() else self.openai_model,
+            "model": self.local_llm.model_name if self._active_provider() == "local" and self.local_llm else self.openai_model,
+            "active_model": self.local_llm.model_name if self._active_provider() == "local" and self.local_llm else self.openai_model,
             "openai_model": self.openai_model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "api_key_present": bool(self.api_key),
             "local_available": self._provider_available("local"),
+            "local_file_available": self.local_llm.has_model_file() if self.local_llm else False,
+            "local_runtime_loadable": self.local_llm.runtime_loadable() if self.local_llm else False,
+            "local_load_error": self.local_llm.load_error if self.local_llm else None,
             "openai_available": self._provider_available("openai"),
             "local_llm": self.local_llm.status() if self.local_llm else None,
             "local_model_path": str(self.local_llm.model_path) if self.local_llm and self.local_llm.model_path else None,

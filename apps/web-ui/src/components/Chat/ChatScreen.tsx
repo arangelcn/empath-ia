@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Heart, LogOut, Send, Target, Mic } from 'lucide-react';
+import { Bot, CheckCircle2, ChevronLeft, Heart, Mic, Send, Sparkles, Target, X } from 'lucide-react';
 import { sendMessage, getChatHistory, getTherapeuticSession, getInitialMessage } from '../../services/api.js';
 import Button from '../Common/Button.jsx';
 import Loading from '../Common/Loading.jsx';
@@ -29,42 +29,149 @@ const MessageBubble = ({ message, isTyping = false }) => {
   const isUser = message.type === 'user';
   
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-      <div className={`max-w-[80%] px-4 py-3 rounded-2xl shadow-therapy-soft text-sm transition-all duration-200
-        ${isUser 
-          ? 'bg-blue-500 text-white rounded-br-md hover:shadow-lg' 
-          : 'bg-white dark:bg-dark-surface border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-md hover:shadow-lg'
-        }
-      `}>
-        {isTyping ? (
-          <div className="flex items-center gap-2">
-            <div className="flex space-x-1">
-              <div className="w-2 h-2 bg-current rounded-full animate-pulse"></div>
-              <div className="w-2 h-2 bg-current rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-              <div className="w-2 h-2 bg-current rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-            </div>
-            <span className="text-xs opacity-70">Digitando...</span>
+    <div className={`group flex w-full animate-fade-in ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div className={`flex max-w-[94%] gap-3 sm:max-w-[86%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+        <div
+          className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border shadow-sm
+            ${isUser
+              ? 'border-primary-200 bg-primary-50 text-primary-600 dark:border-primary-700/60 dark:bg-primary-900/30 dark:text-primary-200'
+              : 'border-gray-200 bg-white text-primary-500 dark:border-gray-700 dark:bg-dark-surface dark:text-secondary-300'
+            }
+          `}
+          aria-hidden="true"
+        >
+          {isUser ? (
+            <span className="text-xs font-semibold">{(message.authorName || 'Você').charAt(0).toUpperCase()}</span>
+          ) : (
+            <Bot className="h-4 w-4" strokeWidth={2} />
+          )}
+        </div>
+
+        <div className={`flex min-w-0 flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+          <span className="mb-1 px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 dark:text-gray-500">
+            {isUser ? 'Você' : 'Empat.IA'}
+          </span>
+          <div className={`rounded-2xl px-4 py-3 text-[15px] leading-7 transition-all duration-200
+            ${isUser 
+              ? 'rounded-tr-md bg-primary-600 text-white shadow-sm shadow-primary-500/20' 
+              : 'rounded-tl-md border border-gray-200/80 bg-white text-gray-900 shadow-sm dark:border-gray-700/80 dark:bg-dark-surface dark:text-gray-100'
+            }
+          `}>
+            {isTyping ? (
+              <div className="flex items-center gap-3 text-gray-500 dark:text-gray-300">
+                <div className="flex space-x-1.5">
+                  <div className="h-2 w-2 rounded-full bg-current animate-pulse"></div>
+                  <div className="h-2 w-2 rounded-full bg-current animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                  <div className="h-2 w-2 rounded-full bg-current animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                </div>
+                <span className="text-xs font-medium">Digitando...</span>
+              </div>
+            ) : (
+              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            )}
           </div>
-        ) : (
-          <p className="leading-relaxed reading-spacing">{message.content}</p>
-        )}
+        </div>
       </div>
     </div>
   );
 };
 
-const ChatScreen = ({ username }) => {
+const EmptyConversation = ({ sessionTitle }) => (
+  <div className="mx-auto flex max-w-xl flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+    <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full border border-primary-100 bg-white text-primary-500 shadow-sm dark:border-primary-800/60 dark:bg-dark-surface">
+      <Sparkles className="h-6 w-6" strokeWidth={2} />
+    </div>
+    <h2 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+      {sessionTitle || 'Vamos começar com calma'}
+    </h2>
+    <p className="mt-3 text-sm leading-6 text-text-secondary dark:text-text-secondary-dark">
+      Respire um instante. Sem pressa.
+    </p>
+  </div>
+);
+
+const ChatComposer = ({
+  inputRef,
+  inputValue,
+  isLoading,
+  onChange,
+  onKeyDown,
+  onSubmit,
+  onVoiceModeToggle,
+}) => {
+  const canSend = inputValue.trim().length > 0 && !isLoading;
+
+  return (
+    <div className="border-t border-gray-200/80 bg-background-light/95 px-4 py-4 backdrop-blur-xl dark:border-gray-800 dark:bg-background-dark/95">
+      <form
+        className="chat-composer mx-auto flex max-w-4xl items-end gap-2 rounded-[1.35rem] border border-gray-200 bg-white p-2 shadow-lg shadow-primary-900/5 transition-colors dark:border-gray-700 dark:bg-dark-surface dark:shadow-black/20"
+        onSubmit={e => {
+          e.preventDefault();
+          if (canSend) {
+            onSubmit();
+            requestAnimationFrame(() => {
+              if (inputRef.current) {
+                inputRef.current.style.height = '44px';
+              }
+            });
+          }
+        }}
+      >
+        <textarea
+          ref={inputRef}
+          className="max-h-40 min-h-[44px] flex-1 resize-none overflow-y-auto rounded-2xl border-0 bg-transparent px-3 py-3 text-[15px] leading-6 text-text-primary placeholder:text-gray-400 focus:ring-0 dark:text-text-primary-dark dark:placeholder:text-gray-500"
+          rows={1}
+          placeholder="Mensagem para Empat.IA"
+          value={inputValue}
+          onChange={e => {
+            onChange(e.target.value);
+            e.currentTarget.style.height = '44px';
+            e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
+          }}
+          onKeyDown={onKeyDown}
+          disabled={isLoading}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-lg"
+          onClick={onVoiceModeToggle}
+          disabled={isLoading}
+          className="shrink-0 text-gray-500 hover:bg-gray-100 hover:text-primary-600 dark:text-gray-300 dark:hover:bg-gray-800"
+          title="Modo de voz"
+        >
+          <Mic className="h-5 w-5" />
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          size="icon-lg"
+          disabled={!canSend}
+          className="shrink-0 rounded-full bg-primary-600 shadow-none hover:bg-primary-700"
+          title="Enviar mensagem"
+        >
+          <Send className="h-5 w-5" />
+        </Button>
+      </form>
+      <p className="mx-auto mt-2 max-w-4xl px-3 text-center text-[11px] text-gray-400 dark:text-gray-500">
+        Empat.IA pode cometer erros. Use a conversa como apoio, não como substituto de cuidado profissional.
+      </p>
+    </div>
+  );
+};
+
+const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
   const { sessionId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { playAudio } = useAudioPlayer();
   
   // Usar sessionId da URL
-  const currentSessionId = sessionId;
+  const currentSessionId = sessionId || fallbackSessionId;
   
   // Obter informações da sessão do state (passado pelo navigate)
   const sessionInfo = location.state || {};
-  const { sessionTitle, userSession } = sessionInfo;
+  const { sessionTitle } = sessionInfo;
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -348,6 +455,11 @@ const ChatScreen = ({ username }) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          inputRef.current.style.height = '44px';
+        }
+      });
     }
   };
 
@@ -561,47 +673,63 @@ const ChatScreen = ({ username }) => {
     );
   };
 
+  const displaySessionTitle = sessionTitle || sessionObjective?.title || 'Sessão terapêutica';
+  const displaySessionSubtitle = sessionObjective?.subtitle || `Conversando com ${username || 'você'}`;
+
   return (
-    <div className="min-h-screen flex flex-col bg-background-light dark:bg-background-dark transition-colors duration-300">
+    <div className="flex h-screen flex-col overflow-hidden bg-background-light text-text-primary transition-colors duration-300 dark:bg-background-dark dark:text-text-primary-dark">
       {/* Header */}
-      <div className="relative z-10 bg-white/95 dark:bg-dark-surface/95 backdrop-blur-xl border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="avatar-therapy-calm p-1">
-              <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center">
-                <Heart className="w-5 h-5 text-primary-500" strokeWidth={2} />
-              </div>
-            </div>
-            <div>
-              <h1 className="font-heading font-semibold text-text-primary dark:text-text-primary-dark">
-                <span className="text-gradient-therapy">Empat</span>.IA
-              </h1>
-              <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-                Seu companheiro terapêutico
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <EmotionBadge emotion={currentEmotion} />
-            {showFinalizeButton && !isConversationEnded && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={finalizeSession}
-                disabled={isFinalizing}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão'}
-              </Button>
-            )}
+      <div className="relative z-10 border-b border-gray-200/80 bg-white/90 px-4 py-3 backdrop-blur-xl dark:border-gray-800 dark:bg-dark-surface/90">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => navigate('/home')}
-              title="Sair da sessão"
+              title="Voltar"
+              className="shrink-0 text-gray-500 hover:text-primary-600 dark:text-gray-300"
             >
-              <LogOut className="w-5 h-5" />
+              <ChevronLeft className="h-5 w-5" />
             </Button>
+            <div className="avatar-therapy-calm hidden p-1 sm:block">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
+                <Heart className="h-5 w-5 text-primary-500" strokeWidth={2} />
+              </div>
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate font-heading text-base font-semibold text-text-primary dark:text-text-primary-dark">
+                {displaySessionTitle}
+              </h1>
+              <p className="truncate text-xs text-text-secondary dark:text-text-secondary-dark">
+                {displaySessionSubtitle}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <EmotionBadge emotion={currentEmotion} />
+            {showFinalizeButton && !isConversationEnded && (
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={finalizeSession}
+                  disabled={isFinalizing}
+                  className="hidden bg-green-600 text-white hover:bg-green-700 sm:inline-flex"
+                >
+                  {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão'}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="icon"
+                  onClick={finalizeSession}
+                  disabled={isFinalizing}
+                  className="bg-green-600 text-white hover:bg-green-700 sm:hidden"
+                  title="Finalizar sessão"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -617,32 +745,33 @@ const ChatScreen = ({ username }) => {
 
       {/* Objetivo da Sessão */}
       {sessionObjective && showObjective && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-blue-200 dark:border-blue-800 px-4 py-3">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <Target className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  <h3 className="font-medium text-blue-900 dark:text-blue-100">
+        <div className="border-b border-primary-100 bg-primary-50/70 px-4 py-3 dark:border-primary-900/50 dark:bg-primary-900/15">
+          <div className="mx-auto max-w-4xl">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <Target className="h-4 w-4 shrink-0 text-primary-600 dark:text-primary-300" />
+                  <h3 className="truncate text-sm font-semibold text-primary-900 dark:text-primary-100">
                     {sessionObjective.title}
                   </h3>
                 </div>
                 {sessionObjective.subtitle && (
-                  <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
+                  <p className="mb-1 text-sm text-primary-700 dark:text-primary-200">
                     {sessionObjective.subtitle}
                   </p>
                 )}
-                <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed">
+                <p className="text-sm leading-6 text-primary-800 dark:text-primary-100/90">
                   <strong>Objetivo:</strong> {sessionObjective.objective}
                 </p>
               </div>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon"
                 onClick={() => setShowObjective(false)}
-                className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                className="shrink-0 text-primary-600 hover:bg-primary-100 hover:text-primary-800 dark:text-primary-200 dark:hover:bg-primary-900/40"
+                title="Ocultar objetivo"
               >
-                ✕
+                <X className="h-4 w-4" />
               </Button>
             </div>
           </div>
@@ -650,16 +779,20 @@ const ChatScreen = ({ username }) => {
       )}
 
       {/* Área de mensagens */}
-      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full px-2 sm:px-0 py-4 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-4">
         {isLoadingHistory ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex h-full items-center justify-center">
             <Loading size="lg" text="Carregando conversa..." />
           </div>
         ) : (
-          <div className="flex-1 flex flex-col gap-4 pb-4">
-            {messages.map((msg, idx) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
+          <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-5 py-6">
+            {messages.length === 0 && !isLoading ? (
+              <EmptyConversation sessionTitle={displaySessionTitle} />
+            ) : (
+              messages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))
+            )}
             {isLoading && <MessageBubble message={{ id: 'typing', type: 'ai', content: '' }} isTyping />}
             <div ref={messagesEndRef} />
           </div>
@@ -667,42 +800,15 @@ const ChatScreen = ({ username }) => {
       </div>
 
       {/* Input fixo no rodapé */}
-      <div className="w-full max-w-4xl mx-auto px-2 sm:px-0 pb-4 sticky bottom-0 z-20 bg-background-light dark:bg-background-dark">
-        <form
-          className="flex items-center gap-2 bg-white dark:bg-dark-surface border border-gray-200 dark:border-gray-700 rounded-2xl shadow-md px-4 py-2"
-          onSubmit={e => { e.preventDefault(); handleSendMessage(); }}
-        >
-          <textarea
-            ref={inputRef}
-            className="flex-1 resize-none bg-transparent outline-none text-sm text-text-primary dark:text-text-primary-dark placeholder-gray-400 py-2"
-            rows={1}
-            placeholder="Digite sua mensagem..."
-            value={inputValue}
-            onChange={e => setInputValue(e.target.value)}
-            onKeyDown={handleKeyPress}
-            disabled={isLoading}
-          />
-          <Button
-            type="button"
-            variant="primary"
-            size="icon-lg"
-            onClick={handleVoiceModeToggle}
-            disabled={isLoading}
-            className="mr-2"
-            title="Modo de Voz"
-          >
-            <Mic className="w-5 h-5 md:w-6 md:h-6" />
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            size="icon-lg"
-            disabled={isLoading || !inputValue.trim()}
-          >
-            <Send className="w-5 h-5 md:w-6 md:h-6" />
-          </Button>
-        </form>
-      </div>
+      <ChatComposer
+        inputRef={inputRef}
+        inputValue={inputValue}
+        isLoading={isLoading}
+        onChange={setInputValue}
+        onKeyDown={handleKeyPress}
+        onSubmit={handleSendMessage}
+        onVoiceModeToggle={handleVoiceModeToggle}
+      />
       
       {/* Modal de resumo da sessão */}
       <SessionSummaryModal />

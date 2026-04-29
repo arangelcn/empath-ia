@@ -137,7 +137,7 @@ const SessionCard = ({
         {canInteract && (
           <div className="pt-2">
             <button
-              className={`w-full px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg text-white ${
+              className={`flex min-h-[42px] w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors duration-150 ${
                 isCompleted ? 'bg-emerald-500 hover:bg-emerald-600' : 
                 isCurrent ? 'bg-orange-500 hover:bg-orange-600' : 
                 'bg-primary-500 hover:bg-primary-600'

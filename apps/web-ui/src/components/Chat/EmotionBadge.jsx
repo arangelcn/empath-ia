@@ -27,7 +27,7 @@ const EmotionBadge = ({ emotion, isDetecting = false }) => {
         relative overflow-hidden rounded-full p-0.5 
         bg-gradient-to-r ${config.color} 
         shadow-sm transform transition-all duration-300 
-        ${isDetecting ? 'animate-pulse' : 'hover:scale-105'}
+        ${isDetecting ? 'animate-pulse' : 'hover:shadow-md'}
       `}>
         <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1.5 min-w-[80px]">
           {/* Emoji da emoção */}

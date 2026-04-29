@@ -271,9 +271,9 @@ export default function ComingSoonScreen() {
         >
           <motion.button
             onClick={() => navigate('/')}
-            className="flex items-center justify-center gap-2 w-full px-6 py-3 rounded-xl text-sm font-semibold text-slate-300 border border-white/15 hover:border-white/30 hover:text-white transition-all"
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/15 px-5 py-2.5 text-sm font-semibold text-slate-300 transition-all hover:border-white/30 hover:bg-white/5 hover:text-white"
+            whileHover={{ y: -1 }}
+            whileTap={{ y: 0 }}
           >
             <ArrowLeft size={15} />
             Voltar ao início
@@ -283,10 +283,10 @@ export default function ComingSoonScreen() {
             href="https://github.com/arangelcn/empath-ia"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full px-6 py-3 rounded-xl text-sm font-semibold text-white"
+            className="flex w-full items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm"
             style={{ background: 'linear-gradient(135deg, #4A90E2, #6ED2E8)' }}
-            whileHover={{ scale: 1.04, boxShadow: '0 0 25px rgba(74,144,226,0.45)' }}
-            whileTap={{ scale: 0.97 }}
+            whileHover={{ y: -1, boxShadow: '0 8px 22px rgba(74,144,226,0.28)' }}
+            whileTap={{ y: 0 }}
           >
             <Github size={15} />
             Ver no GitHub

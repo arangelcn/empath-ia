@@ -198,7 +198,7 @@ const HomeScreen = ({ username, onLogout }) => {
           <p className="text-red-600 mb-4">{error}</p>
           <button
             onClick={loadSessions}
-            className="px-6 py-4 md:px-4 md:py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors min-h-[52px] md:min-h-[44px] text-base md:text-sm font-medium"
+            className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-primary-700"
           >
             Tentar novamente
           </button>
@@ -230,16 +230,16 @@ const HomeScreen = ({ username, onLogout }) => {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => navigate('/settings')}
-                className="p-3 md:p-2 text-gray-500 hover:text-primary-600 transition-colors min-h-[44px] flex items-center justify-center"
+                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-primary-600"
               >
-                <Settings className="w-6 h-6 md:w-5 md:h-5" />
+                <Settings className="h-5 w-5" />
               </button>
               
               <button
                 onClick={onLogout}
-                className="p-3 md:p-2 text-gray-500 hover:text-red-600 transition-colors min-h-[44px] flex items-center justify-center"
+                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-gray-500 transition-colors duration-150 hover:bg-red-50 hover:text-red-600"
               >
-                <LogOut className="w-6 h-6 md:w-5 md:h-5" />
+                <LogOut className="h-5 w-5" />
               </button>
             </div>
           </div>
@@ -332,10 +332,10 @@ const HomeScreen = ({ username, onLogout }) => {
               
               <button
                 onClick={loadSessions}
-                className="p-3 md:p-2 text-gray-500 hover:text-primary-600 transition-colors min-h-[44px] flex items-center justify-center"
+                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-primary-600"
                 title="Atualizar sessões"
               >
-                <RefreshCw className="w-6 h-6 md:w-5 md:h-5" />
+                <RefreshCw className="h-5 w-5" />
               </button>
             </div>
 
@@ -466,7 +466,7 @@ const HomeScreen = ({ username, onLogout }) => {
                                     e.stopPropagation();
                                     handleSessionSelect(session);
                                   }}
-                                  className="px-6 py-3 md:px-6 md:py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg bg-green-500 hover:bg-green-600 text-white hover:scale-105 min-h-[48px] w-full sm:w-auto"
+                                  className="flex min-h-[42px] w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-green-700 sm:w-auto"
                                 >
                                   <Eye className="w-4 h-4" />
                                   <span className="sm:hidden">Ver conversa</span>
@@ -480,10 +480,10 @@ const HomeScreen = ({ username, onLogout }) => {
                                   }}
                                   disabled={startingSession === session.session_id}
                                   className={`
-                                    px-6 py-3 rounded-xl font-bold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg text-white hover:scale-105 min-h-[48px] w-full sm:w-auto
+                                    flex min-h-[42px] w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors duration-150 sm:w-auto
                                     ${isCurrent ? 
                                       'bg-orange-500 hover:bg-orange-600' :
-                                      'bg-blue-500 hover:bg-blue-600'
+                                      'bg-primary-600 hover:bg-primary-700'
                                     }
                                     ${startingSession === session.session_id ? 'opacity-70 cursor-not-allowed' : ''}
                                   `}
@@ -500,7 +500,7 @@ const HomeScreen = ({ username, onLogout }) => {
                               ) : (
                                 <button
                                   disabled
-                                  className="px-6 py-3 bg-gray-300 text-gray-600 rounded-xl font-bold text-sm cursor-not-allowed opacity-60 min-h-[48px] w-full sm:w-auto"
+                                  className="min-h-[42px] w-full rounded-lg bg-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-500 opacity-70 sm:w-auto"
                                 >
                                   Bloqueada
                                 </button>

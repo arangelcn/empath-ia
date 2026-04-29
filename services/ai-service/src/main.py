@@ -29,8 +29,8 @@ app.add_middleware(
 )
 
 # Incluir rotas do OpenAI
-from .api.openai_routes import router as openai_router
-app.include_router(openai_router)
+from .api import openai_routes
+app.include_router(openai_routes.router)
 
 def generate_therapeutic_response(user_message: str, last_ai_response: str = "") -> str:
     """
@@ -101,11 +101,8 @@ async def root():
         "docs": "/docs"
     }
 
-# Importar serviços
-from .services.openai_service import OpenAIService
-
 # Inicializar serviços
-openai_service = OpenAIService()
+openai_service = openai_routes.openai_service
 token_economy_service = None  # Será inicializado na startup
 
 # Evento de startup para inicializar nova arquitetura
@@ -113,8 +110,6 @@ token_economy_service = None  # Será inicializado na startup
 async def startup_event():
     """Inicializar nova arquitetura MongoDB + Redis na startup"""
     await openai_service.ensure_local_model_ready()
-    from .api import openai_routes
-    await openai_routes.openai_service.ensure_local_model_ready()
 
     try:
         from .services.token_economy_service import TokenEconomyService
@@ -322,15 +317,21 @@ async def get_config():
         "openai_configured": openai_status["openai_configured"],
         "model": openai_status["active_model"],
         "active_model": openai_status["active_model"],
+        "active_provider": openai_status["active_provider"],
+        "active_mode": openai_status["active_mode"],
         "primary_provider": openai_status["primary_provider"],
         "fallback_provider": openai_status["fallback_provider"],
         "provider_order": openai_status["provider_order"],
         "local_available": openai_status["local_available"],
+        "local_file_available": openai_status["local_file_available"],
+        "local_runtime_loadable": openai_status["local_runtime_loadable"],
+        "local_load_error": openai_status["local_load_error"],
         "openai_available": openai_status["openai_available"],
         "local_model_path": openai_status["local_model_path"],
+        "local_llm": openai_status["local_llm"],
         "service_port": os.getenv("AI_SERVICE_PORT", "8001"),
         "debug": os.getenv("DEBUG", "false").lower() == "true",
-        "provider": openai_status["primary_provider"]
+        "provider": openai_status["active_provider"]
     }
 
 if __name__ == "__main__":

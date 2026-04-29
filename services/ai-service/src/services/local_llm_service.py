@@ -28,6 +28,8 @@ class LocalLLMService:
         self.n_threads = int(os.getenv("LOCAL_LLM_N_THREADS", str(os.cpu_count() or 4)))
         self.verbose = os.getenv("LOCAL_LLM_VERBOSE", "false").lower() == "true"
         self._llm = None
+        self._load_error: Optional[str] = None
+        self._runtime_load_failed = False
 
     def _resolve_model_path(self) -> Optional[Path]:
         configured_path = os.getenv("LOCAL_LLM_MODEL_PATH")
@@ -38,10 +40,26 @@ class LocalLLMService:
         gguf_files = sorted(self.model_dir.rglob("*.gguf"))
         return gguf_files[0] if gguf_files else None
 
-    def is_available(self) -> bool:
+    def has_model_file(self) -> bool:
         if self.model_path is None:
             self.model_path = self._resolve_model_path()
         return self.model_path is not None and self.model_path.is_file()
+
+    def is_available(self) -> bool:
+        return self.has_model_file() and not self._runtime_load_failed
+
+    def runtime_loadable(self) -> Optional[bool]:
+        if self._llm is not None:
+            return True
+        if self._runtime_load_failed:
+            return False
+        if not self.has_model_file():
+            return False
+        return None
+
+    @property
+    def load_error(self) -> Optional[str]:
+        return self._load_error
 
     def _hf_token(self) -> Optional[str]:
         return (
@@ -113,7 +131,7 @@ class LocalLLMService:
 
     def ensure_model_available(self, download_if_missing: bool, required: bool) -> bool:
         """Ensure a GGUF model exists locally, importing it before downloading."""
-        if self.is_available():
+        if self.has_model_file():
             logger.info("Local LLM model already available: %s", self.model_path)
             return True
 
@@ -189,7 +207,7 @@ class LocalLLMService:
             return False
 
         self.model_path = self._resolve_model_path()
-        if not self.is_available():
+        if not self.has_model_file():
             message = f"No GGUF files found after download in {self.model_dir}"
             if required:
                 raise RuntimeError(message)
@@ -202,6 +220,9 @@ class LocalLLMService:
     def status(self) -> Dict[str, object]:
         return {
             "available": self.is_available(),
+            "file_available": self.has_model_file(),
+            "runtime_loadable": self.runtime_loadable(),
+            "load_error": self._load_error,
             "model_name": self.model_name,
             "model_path": str(self.model_path) if self.model_path else None,
             "model_repo_id": self.repo_id,
@@ -219,7 +240,7 @@ class LocalLLMService:
         if self._llm is not None:
             return self._llm
 
-        if not self.is_available():
+        if not self.has_model_file():
             raise RuntimeError(
                 "Local LLM model file was not found. Set LOCAL_LLM_MODEL_PATH or build with ENABLE_LOCAL_LLM=true."
             )
@@ -241,7 +262,16 @@ class LocalLLMService:
         }
         if self.chat_format:
             llama_kwargs["chat_format"] = self.chat_format
-        self._llm = Llama(**llama_kwargs)
+        try:
+            self._llm = Llama(**llama_kwargs)
+        except Exception as exc:
+            self._llm = None
+            self._load_error = str(exc)
+            self._runtime_load_failed = True
+            raise
+
+        self._load_error = None
+        self._runtime_load_failed = False
         return self._llm
 
     async def generate(
