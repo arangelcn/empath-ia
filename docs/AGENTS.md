@@ -24,6 +24,7 @@ Plataforma de apoio terapêutico com IA conversacional baseada na abordagem huma
 | [`CONVENTIONS.md`](CONVENTIONS.md) | Padrões de código, como adicionar endpoints, páginas, componentes |
 | [`CONTRACTS.md`](CONTRACTS.md) | Contratos internos entre microserviços (payloads, formatos, URLs) |
 | [`SECURITY_FIX_SESSION_ISOLATION.md`](SECURITY_FIX_SESSION_ISOLATION.md) | Correção crítica de isolamento de sessões entre usuários |
+| [`todos/NEXT_STEPS.md`](todos/NEXT_STEPS.md) | Próximos passos gerais do produto e checklist de implementação |
 | [`todos/TODOVOICECONVERSATION.md`](todos/TODOVOICECONVERSATION.md) | Roadmap da feature de conversação por voz |
 
 ---

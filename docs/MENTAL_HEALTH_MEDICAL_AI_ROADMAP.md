@@ -15,6 +15,36 @@ This roadmap is grounded in the current application:
 
 The learning source in `docs/learning/_OceanofPDF.com_AI_Agents_in_Action_-_Micheal_Lanham (1).pdf` should be used after understanding the app and planning the steps of action.
 
+## Current Product Next Steps
+
+The immediate product roadmap is focused on making the user-facing app feel closer to current conversational AI products while improving personalization and user control.
+
+TODO:
+
+- Add a sidebar-style navigation to the user app:
+  - recent sessions/conversations
+  - new session entry point
+  - therapeutic journey/home
+  - personal data
+  - settings/logout
+- Add a Personal Data page:
+  - full name
+  - email/Google account identity
+  - preferred voice
+  - basic preferences and privacy controls
+  - future export/delete account entry points
+- Update login/onboarding to collect the user's full name:
+  - request full name after Google OAuth when missing
+  - store it in the user profile as the user's display name
+  - keep email/username as the technical identifier
+  - use the saved name in UI copy and AI personalization context
+
+Reference:
+
+- `docs/todos/NEXT_STEPS.md`
+- `apps/web-ui/README.md`
+- `docs/FRONTEND.md`
+
 ## Product Positioning
 
 Empat.IA should become:
@@ -311,8 +341,18 @@ Use the book and the project together.
 
 ## First Concrete Implementation Slice
 
-Start small:
-So
+Start with the user-facing personalization slice:
+
+1. Add a reusable sidebar shell to the web UI.
+2. Move primary navigation into the sidebar while preserving mobile usability.
+3. Create the authenticated Personal Data route/page.
+4. Extend login/onboarding to request full name when it is missing.
+5. Persist `full_name`/`display_name` in the user profile.
+6. Use the display name in Home, Chat, and AI context while keeping `username`/email as the stable technical identifier.
+7. Add a short regression checklist for login, existing users, new users, and session navigation.
+
+After that UX slice, continue with the safety and LLMOps foundation:
+
 1. Update prompt identity and boundaries.
 2. Add mental health safety evaluation cases.
 3. Add local model configuration to the AI service.
@@ -321,4 +361,4 @@ So
 6. Store risk metadata with messages.
 7. Show high-risk conversations in the admin panel.
 
-This first slice improves product safety, creates an LLMOps foundation, and keeps the work aligned with the current app architecture.
+This sequence improves product familiarity and personalization first, then deepens product safety, evaluation, and local-model readiness.

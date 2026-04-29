@@ -31,6 +31,8 @@
 /chat/:sessionId → ChatScreen     (autenticado — chat de sessão específica)
 ```
 
+**Roadmap imediato:** adicionar um shell autenticado com menu lateral para aproximar o app das IAs conversacionais atuais. O menu deve reunir sessões/conversas recentes, nova sessão, jornada terapêutica, Dados pessoais, configurações e logout. Em mobile, deve funcionar como drawer.
+
 **Lógica de guarda:** `App.jsx` controla o estado `isOnboarded`. Quando `false`, apenas `/` e `/login` estão disponíveis. Quando `true`, apenas `/home`, `/chat` e `/chat/:sessionId`. Qualquer rota fora do grupo redireciona para a rota padrão do grupo.
 
 ### Estado global (App.jsx)
@@ -65,12 +67,20 @@ O estado vive em `AppRoutes` dentro de `App.jsx`. Não há Redux nem Context API
   4. Salva via `POST /api/user/preferences`
   5. Chama `onLoginComplete({ username, voice, voiceEnabled, userData })`
 
+Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o login/onboarding deve solicitar o nome completo, salvar no perfil do usuário e usar esse nome na interface e no contexto enviado à IA. O `username`/email continua sendo o identificador técnico.
+
 #### `HomeScreen.jsx` (`components/Home/`)
 - Lista de sessões terapêuticas do usuário
 - Progresso visual (barra de progresso por sessão)
 - Estados visuais por sessão: `locked`, `unlocked`, `in_progress`, `completed`
 - Chama `GET /api/user/{username}/sessions` para listar sessões
 - Botão "Iniciar sessão" → `POST /api/user/{username}/sessions/{session_id}/start` → navega para `/chat/{session_id}`
+
+#### `PersonalData` (planejado)
+- Página autenticada para dados pessoais do usuário.
+- Deve exibir e permitir editar nome completo, voz preferida e preferências básicas.
+- Deve preservar email/username como identificador técnico.
+- Deve preparar pontos futuros de privacidade: consentimentos, exportação e exclusão de dados.
 
 #### `ChatScreen.tsx` (`components/Chat/`)
 - Tela principal de conversa com a IA
