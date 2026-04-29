@@ -14,6 +14,8 @@ PROJECT_NAME=empatia
 DOCKER_COMPOSE_DEV=docker-compose.dev.yml
 DOCKER_COMPOSE_HOST=docker-compose.host.yml
 DOCKER_COMPOSE_PROD=config/docker-compose.prod.yml
+COMPOSE_DEV=-f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST)
+COMPOSE_BRIDGE=-f docker-compose.yml -f $(DOCKER_COMPOSE_DEV)
 
 help: ## Mostra esta ajuda
 	@echo "${BLUE}=== empatIA - Comandos Disponíveis ===${NC}"
@@ -56,44 +58,55 @@ setup: ## Configuração inicial do projeto
 	@echo "${BLUE}   - CREDENTIALS_JSON (para Google Cloud TTS)${NC}"
 	@echo "${BLUE}   - DID_API_USERNAME/DID_API_PASSWORD (opcional, para avatar)${NC}"
 
-dev: ## Inicia ambiente de desenvolvimento com hot reload
-	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento com live reload...${NC}"
+dev: ## Inicia ambiente dev com host network (sem bridge/veth)
+	@echo "${YELLOW}🚀 Iniciando ambiente dev com host network (sem bridge/veth)...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+	@set -a; . ./.env; set +a; docker compose $(COMPOSE_DEV) up --build
 
-dev-detached: ## Inicia ambiente de desenvolvimento em background
-	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento (background) com live reload...${NC}"
-	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
-
-dev-host: ## Inicia ambiente dev usando host network (sem bridge/veth)
-	@echo "${YELLOW}🚀 Iniciando ambiente dev com host network...${NC}"
-	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build
-
-dev-host-detached: ## Inicia ambiente dev em background usando host network
+dev-detached: ## Inicia ambiente dev em background com host network
 	@echo "${YELLOW}🚀 Iniciando ambiente dev com host network (background)...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build -d
+	@set -a; . ./.env; set +a; docker compose $(COMPOSE_DEV) up --build -d
+
+dev-host: dev ## Alias para dev (host network)
+
+dev-host-detached: dev-detached ## Alias para dev-detached (host network)
+
+dev-bridge: ## Inicia ambiente dev usando Docker bridge (modo legado)
+	@echo "${YELLOW}🚀 Iniciando ambiente dev com Docker bridge (modo legado)...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
+	@set -a; . ./.env; set +a; docker compose $(COMPOSE_BRIDGE) up --build
+
+dev-bridge-detached: ## Inicia ambiente dev em background usando Docker bridge (modo legado)
+	@echo "${YELLOW}🚀 Iniciando ambiente dev com Docker bridge (background, modo legado)...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
+	@set -a; . ./.env; set +a; docker compose $(COMPOSE_BRIDGE) up --build -d
+
+dev-host-clean: ## Migra da bridge para host network sem apagar volumes
+	@echo "${YELLOW}🧹 Removendo stack/rede bridge antiga e subindo em host network...${NC}"
+	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
+	@docker compose $(COMPOSE_BRIDGE) down --remove-orphans
+	@docker network rm empath-ia_empatia-network 2>/dev/null || true
+	@set -a; . ./.env; set +a; docker compose $(COMPOSE_DEV) up --build -d
 
 reset-host-runtime: ## Recria MongoDB/Redis e sobe stack dev em host network
 	@echo "${RED}⚠️  Recriando runtime local com MongoDB/Redis limpos...${NC}"
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) down --remove-orphans -v
-	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) -f $(DOCKER_COMPOSE_HOST) up --build -d
+	@docker compose $(COMPOSE_DEV) down --remove-orphans -v
+	@set -a; . ./.env; set +a; docker compose $(COMPOSE_DEV) up --build -d
 
 dev-services: ## Inicia apenas os serviços backend (sem web-ui)
 	@echo "${YELLOW}🚀 Iniciando apenas serviços backend...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@set -a; . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb redis
+	@set -a; . ./.env; set +a; docker compose $(COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb redis
 
 # ===== COMANDOS MONGODB =====
 mongo-logs: ## Visualiza logs do MongoDB
 	@echo "${BLUE}📋 Logs do MongoDB:${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f mongodb
+	@docker compose $(COMPOSE_DEV) logs -f mongodb
 
 mongo-shell: ## Acessa shell do MongoDB
 	@echo "${BLUE}🐚 Acessando shell do MongoDB...${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb mongosh -u admin -p admin123 --authenticationDatabase admin empatia_db
+	@docker compose $(COMPOSE_DEV) exec mongodb mongosh -u admin -p admin123 --authenticationDatabase admin empatia_db
 
 mongo-express: ## Abre MongoDB Express no navegador
 	@echo "${BLUE}🌐 Abrindo MongoDB Express...${NC}"
@@ -103,43 +116,43 @@ mongo-express: ## Abre MongoDB Express no navegador
 mongo-backup: ## Cria backup do MongoDB
 	@echo "${YELLOW}💾 Criando backup do MongoDB...${NC}"
 	@mkdir -p ./data/backups
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb mongodump --uri="mongodb://admin:admin123@localhost:27017/empatia_db?authSource=admin" --out=/tmp/backup
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb tar -czf /tmp/mongodb-backup-$(shell date +%Y%m%d_%H%M%S).tar.gz -C /tmp/backup .
-	@docker cp $$(docker compose -f docker-compose.yml -f docker-compose.dev.yml ps -q mongodb):/tmp/mongodb-backup-*.tar.gz ./data/backups/
+	@docker compose $(COMPOSE_DEV) exec mongodb mongodump --uri="mongodb://admin:admin123@localhost:27017/empatia_db?authSource=admin" --out=/tmp/backup
+	@docker compose $(COMPOSE_DEV) exec mongodb tar -czf /tmp/mongodb-backup-$(shell date +%Y%m%d_%H%M%S).tar.gz -C /tmp/backup .
+	@docker cp $$(docker compose $(COMPOSE_DEV) ps -q mongodb):/tmp/mongodb-backup-*.tar.gz ./data/backups/
 	@echo "${GREEN}✅ Backup criado em ./data/backups/${NC}"
 
 mongo-restore: ## Restaura backup do MongoDB (uso: make mongo-restore BACKUP=arquivo.tar.gz)
 	@echo "${YELLOW}📥 Restaurando backup do MongoDB...${NC}"
 	@test -n "$(BACKUP)" || (echo "${RED}❌ Especifique o arquivo: make mongo-restore BACKUP=arquivo.tar.gz${NC}" && exit 1)
-	@docker cp ./data/backups/$(BACKUP) $$(docker compose -f docker-compose.yml -f docker-compose.dev.yml ps -q mongodb):/tmp/
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb tar -xzf /tmp/$(BACKUP) -C /tmp/
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb mongorestore --uri="mongodb://admin:admin123@localhost:27017/empatia_db?authSource=admin" --drop /tmp/empatia_db
+	@docker cp ./data/backups/$(BACKUP) $$(docker compose $(COMPOSE_DEV) ps -q mongodb):/tmp/
+	@docker compose $(COMPOSE_DEV) exec mongodb tar -xzf /tmp/$(BACKUP) -C /tmp/
+	@docker compose $(COMPOSE_DEV) exec mongodb mongorestore --uri="mongodb://admin:admin123@localhost:27017/empatia_db?authSource=admin" --drop /tmp/empatia_db
 	@echo "${GREEN}✅ Backup restaurado com sucesso!${NC}"
 
 mongo-reset: ## Reseta completamente o banco MongoDB
 	@echo "${RED}⚠️  ATENÇÃO: Isto vai apagar TODOS os dados do MongoDB!${NC}"
 	@read -p "Tem certeza? Digite 'yes' para confirmar: " confirm && [ "$$confirm" = "yes" ] || (echo "Operação cancelada" && exit 1)
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml stop mongodb
+	@docker compose $(COMPOSE_DEV) stop mongodb
 	@docker volume rm empath-ia_mongodb_data_dev 2>/dev/null || true
 	@docker volume rm empath-ia_mongodb_data 2>/dev/null || true
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d mongodb
+	@docker compose $(COMPOSE_DEV) up -d mongodb
 	@echo "${GREEN}✅ MongoDB resetado com sucesso!${NC}"
 
 # ===== BUILD E DEPLOY =====
 build: ## Constrói todas as imagens Docker
 	@echo "${YELLOW}🔨 Construindo imagens Docker...${NC}"
-	@set -a; [ ! -f .env ] || . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build
+	@set -a; [ ! -f .env ] || . ./.env; set +a; docker compose $(COMPOSE_DEV) build
 
 build-service: ## Constrói imagem de um serviço específico (ex: make build-service SERVICE=ai-service)
 	@echo "${YELLOW}🔨 Construindo serviço $(SERVICE)...${NC}"
-	@set -a; [ ! -f .env ] || . ./.env; set +a; docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build $(SERVICE)
+	@set -a; [ ! -f .env ] || . ./.env; set +a; docker compose $(COMPOSE_DEV) build $(SERVICE)
 
 build-ai-local: ## Constrói o ai-service exigindo download do modelo local GGUF
 	@echo "${YELLOW}🔨 Construindo ai-service com modelo local obrigatório...${NC}"
 	@set -a; [ ! -f .env ] || . ./.env; set +a; \
 	token="$${HF_TOKEN:-$${HUGGING_FACE_TOKEN:-$${HUGGIN_FACE_TOKEN:-}}}"; \
 	test -n "$$token" || (echo "${RED}❌ Configure HF_TOKEN com acesso ao repositório Gemma antes do build.${NC}" && exit 1); \
-	HF_TOKEN="$$token" ENABLE_LOCAL_LLM=true LOCAL_MODEL_DOWNLOAD_REQUIRED=true docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) build --no-cache ai-service
+	HF_TOKEN="$$token" ENABLE_LOCAL_LLM=true LOCAL_MODEL_DOWNLOAD_REQUIRED=true docker compose $(COMPOSE_DEV) build --no-cache ai-service
 
 build-prod: ## Constrói imagens para produção
 	@echo "${YELLOW}🔨 Construindo imagens para produção...${NC}"
@@ -148,7 +161,7 @@ build-prod: ## Constrói imagens para produção
 deploy-dev: build ## Deploy em ambiente de desenvolvimento
 	@echo "${YELLOW}🚀 Fazendo deploy em desenvolvimento...${NC}"
 	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) up -d
+	@docker compose $(COMPOSE_DEV) up -d
 
 deploy-prod: build-prod ## Deploy em ambiente de produção
 	@echo "${YELLOW}🚀 Fazendo deploy em produção...${NC}"
@@ -158,7 +171,7 @@ deploy-prod: build-prod ## Deploy em ambiente de produção
 # ===== CONTROLE DE SERVIÇOS =====
 stop: ## Para todos os serviços
 	@echo "${YELLOW}⏹️ Parando serviços...${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+	@docker compose $(COMPOSE_DEV) down
 
 stop-prod: ## Para serviços de produção
 	@echo "${YELLOW}⏹️ Parando serviços de produção...${NC}"
@@ -169,33 +182,33 @@ restart: stop dev ## Reinicia ambiente de desenvolvimento
 
 restart-service: ## Reinicia um serviço específico (ex: make restart-service SERVICE=ai-service)
 	@echo "${YELLOW}🔄 Reiniciando serviço $(SERVICE)...${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml restart $(SERVICE)
+	@docker compose $(COMPOSE_DEV) restart $(SERVICE)
 
 # ===== LOGS E MONITORAMENTO =====
 logs: ## Visualiza logs de todos os serviços
 	@echo "${BLUE}📋 Logs dos serviços:${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f
+	@docker compose $(COMPOSE_DEV) logs -f
 
 logs-ai: ## Logs apenas do serviço de IA
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f ai-service
+	@docker compose $(COMPOSE_DEV) logs -f ai-service
 
 cuda-check: ## Verifica se o ai-service enxerga CUDA e llama.cpp tem GPU offload
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service sh -lc 'nvidia-smi && python -c "from llama_cpp import llama_cpp as lib; print(\"llama_supports_gpu_offload\", lib.llama_supports_gpu_offload())"'
+	@docker compose $(COMPOSE_DEV) exec ai-service sh -lc 'nvidia-smi && python -c "from llama_cpp import llama_cpp as lib; print(\"llama_supports_gpu_offload\", lib.llama_supports_gpu_offload())"'
 
 logs-avatar: ## Logs apenas do serviço de avatar
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f avatar-service
+	@docker compose $(COMPOSE_DEV) logs -f avatar-service
 
 logs-emotion: ## Logs apenas do serviço de emoções
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f emotion-service
+	@docker compose $(COMPOSE_DEV) logs -f emotion-service
 
 logs-gateway: ## Logs apenas do gateway
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f gateway
+	@docker compose $(COMPOSE_DEV) logs -f gateway
 
 logs-ui: ## Logs apenas do web-ui
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f web-ui
+	@docker compose $(COMPOSE_DEV) logs -f web-ui
 
 ps: ## Lista status dos containers
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
+	@docker compose $(COMPOSE_DEV) ps
 
 health: ## Verifica saúde de todos os serviços
 	@echo "${BLUE}🏥 Verificando saúde dos serviços...${NC}"
@@ -235,14 +248,14 @@ chat-conversations: ## Lista conversas recentes
 # ===== TESTES =====
 test: ## Executa todos os testes
 	@echo "${YELLOW}🧪 Executando testes...${NC}"
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service pytest tests/ || true
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service pytest tests/ || true
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service pytest tests/ || true
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway pytest tests/ || true
+	@docker compose $(COMPOSE_DEV) exec ai-service pytest tests/ || true
+	@docker compose $(COMPOSE_DEV) exec avatar-service pytest tests/ || true
+	@docker compose $(COMPOSE_DEV) exec emotion-service pytest tests/ || true
+	@docker compose $(COMPOSE_DEV) exec gateway pytest tests/ || true
 
 test-service: ## Executa testes de um serviço específico (ex: make test-service SERVICE=ai-service)
 	@echo "${YELLOW}🧪 Executando testes do $(SERVICE)...${NC}"
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec $(SERVICE) pytest tests/
+	@docker compose $(COMPOSE_DEV) exec $(SERVICE) pytest tests/
 
 test-integration: ## Executa testes de integração
 	@echo "${YELLOW}🧪 Executando testes de integração...${NC}"
@@ -255,49 +268,49 @@ test-e2e: ## Executa testes end-to-end
 # ===== QUALIDADE DE CÓDIGO =====
 lint: ## Executa linting em todos os serviços
 	@echo "${YELLOW}📝 Executando linting...${NC}"
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service flake8 src/ || true
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service flake8 src/ || true
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service flake8 src/ || true
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway flake8 src/ || true
+	@docker compose $(COMPOSE_DEV) exec ai-service flake8 src/ || true
+	@docker compose $(COMPOSE_DEV) exec avatar-service flake8 src/ || true
+	@docker compose $(COMPOSE_DEV) exec emotion-service flake8 src/ || true
+	@docker compose $(COMPOSE_DEV) exec gateway flake8 src/ || true
 
 format: ## Formata código com black
 	@echo "${YELLOW}🎨 Formatando código...${NC}"
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service black src/ || true
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service black src/ || true
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service black src/ || true
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway black src/ || true
+	@docker compose $(COMPOSE_DEV) exec ai-service black src/ || true
+	@docker compose $(COMPOSE_DEV) exec avatar-service black src/ || true
+	@docker compose $(COMPOSE_DEV) exec emotion-service black src/ || true
+	@docker compose $(COMPOSE_DEV) exec gateway black src/ || true
 
 # ===== LIMPEZA =====
 clean: ## Remove containers, volumes e imagens não utilizadas
 	@echo "${YELLOW}🧹 Limpando containers e volumes...${NC}"
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans
+	@docker compose $(COMPOSE_DEV) down -v --remove-orphans
 	@docker system prune -f
 	@echo "${GREEN}✅ Limpeza concluída!${NC}"
 
 clean-all: ## Remove tudo incluindo imagens
 	@echo "${RED}🧹 Limpeza completa (incluindo imagens)...${NC}"
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans --rmi all
+	@docker compose $(COMPOSE_DEV) down -v --remove-orphans --rmi all
 	@docker system prune -af
 	@echo "${GREEN}✅ Limpeza completa concluída!${NC}"
 
 # ===== SHELLS E ACESSO =====
 shell-ai: ## Acessa shell do serviço de IA
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec ai-service bash
+	@docker compose $(COMPOSE_DEV) exec ai-service bash
 
 shell-avatar: ## Acessa shell do serviço de avatar
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec avatar-service bash
+	@docker compose $(COMPOSE_DEV) exec avatar-service bash
 
 shell-emotion: ## Acessa shell do serviço de emoções
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec emotion-service bash
+	@docker compose $(COMPOSE_DEV) exec emotion-service bash
 
 shell-gateway: ## Acessa shell do gateway
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec gateway bash
+	@docker compose $(COMPOSE_DEV) exec gateway bash
 
 shell-ui: ## Acessa shell do web-ui
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec web-ui bash
+	@docker compose $(COMPOSE_DEV) exec web-ui bash
 
 shell-mongo: ## Acessa shell do MongoDB
-	@docker compose -f docker-compose.yml -f $(DOCKER_COMPOSE_DEV) exec mongodb bash
+	@docker compose $(COMPOSE_DEV) exec mongodb bash
 
 # ===== DOCUMENTAÇÃO =====
 docs: ## Mostra URLs da documentação

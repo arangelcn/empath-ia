@@ -198,7 +198,7 @@ services:
     networks:
       - empatia-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8004/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -292,7 +292,8 @@ volumes:
   redis_data:
   postgres_data:
   local_llm_models:
-  voice_cache:  # Cache para modelos TTS
+  voice_cache:
+    # Cache para modelos TTS
 
 secrets:
   hf_token:
