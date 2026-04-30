@@ -27,13 +27,14 @@
 /             → LandingScreen     (não autenticado)
 /login        → ComingSoonScreen  (placeholder — login via Google está na LandingScreen)
 /home         → HomeScreen        (autenticado — Home da jornada terapêutica)
+/profile      → ProfileVoicePage  (autenticado — perfil, dados básicos e voz)
 /chat         → redireciona para /home (chat exige sessão)
 /chat/:sessionId → ChatScreen     (autenticado — chat de sessão específica)
 ```
 
-**Shell autenticado:** as rotas `/home`, `/chat` e `/chat/:sessionId` renderizam dentro de um layout com menu lateral, aproximando o app das IAs conversacionais atuais. O menu reúne sessões/conversas recentes, ação de continuidade, Home e logout; dados pessoais e configurações ficam consolidados em um único acesso de perfil/voz no rodapé. Em mobile, funciona como drawer. A rota `/chat` sem `sessionId` redireciona para `/home`.
+**Shell autenticado:** as rotas `/home`, `/profile`, `/chat` e `/chat/:sessionId` renderizam dentro de um layout com menu lateral, aproximando o app das IAs conversacionais atuais. O menu reúne sessões/conversas recentes, ação de continuidade, Home e logout; dados pessoais e configurações ficam consolidados em um único acesso de perfil/voz no rodapé. Em mobile, funciona como drawer. A rota `/chat` sem `sessionId` redireciona para `/home`.
 
-**Lógica de guarda:** `App.jsx` controla o estado `isOnboarded`. Quando `false`, apenas `/` e `/login` estão disponíveis. Quando `true`, apenas `/home`, `/chat` e `/chat/:sessionId`. Qualquer rota fora do grupo redireciona para `/home`.
+**Lógica de guarda:** `App.jsx` controla o estado `isOnboarded`. Quando `false`, apenas `/` e `/login` estão disponíveis. Quando `true`, apenas `/home`, `/profile`, `/chat` e `/chat/:sessionId`. Qualquer rota fora do grupo redireciona para `/home`.
 
 ### Estado global (App.jsx)
 
@@ -70,7 +71,7 @@ O estado vive em `AppRoutes` dentro de `App.jsx`. Não há Redux nem Context API
 Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o login/onboarding deve solicitar o nome completo, salvar no perfil do usuário e usar esse nome na interface e no contexto enviado à IA. O `username`/email continua sendo o identificador técnico.
 
 #### `AuthenticatedShell.jsx` (`components/Layout/`)
-- Layout autenticado compartilhado entre `/home`, `/chat` e `/chat/:sessionId`
+- Layout autenticado compartilhado entre `/home`, `/profile`, `/chat` e `/chat/:sessionId`
 - Sidebar fixa em desktop e drawer no mobile
 - Carrega sessões e progresso via `GET /api/user/{username}/sessions` e `GET /api/user/{username}/progress`
 - Abre sessões usando `POST /api/user/{username}/sessions/{session_id}/start` quando necessário
@@ -83,11 +84,12 @@ Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o l
 - Usa os dados carregados pelo `AuthenticatedShell`
 - Botão "Iniciar/Continuar/Ver conversa" navega para `/chat/{username}_{session_id}`
 
-#### `PersonalData` (planejado)
-- Página autenticada para dados pessoais do usuário.
-- Deve exibir e permitir editar nome completo, voz preferida e preferências básicas.
-- Deve preservar email/username como identificador técnico.
-- Deve preparar pontos futuros de privacidade: consentimentos, exportação e exclusão de dados.
+#### `ProfileVoicePage.jsx` (`components/Profile/`)
+- Página autenticada `/profile` para dados básicos e voz.
+- Exibe email/username técnico, nome exibido e voz preferida.
+- Permite editar `preferences.display_name` e `preferences.selected_voice`.
+- Salva via `PUT /api/user/{username}/preferences`.
+- Mantém email/username como identificador técnico somente leitura.
 
 #### `ChatScreen.tsx` (`components/Chat/`)
 - Tela principal de conversa com a IA

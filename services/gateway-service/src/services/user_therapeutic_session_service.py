@@ -226,6 +226,8 @@ class UserTherapeuticSessionService:
             
             if result.modified_count > 0:
                 logger.info(f"✅ Sessão {session_id} marcada como '{status}' para usuário {username}")
+                if status == "completed":
+                    await self.auto_unlock_next_session(username)
                 return True
             else:
                 logger.warning(f"⚠️ Sessão {session_id} não encontrada para usuário {username}")

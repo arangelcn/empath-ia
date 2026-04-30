@@ -20,16 +20,16 @@ Arquivos principais:
 - `apps/web-ui/src/components/Chat/ChatScreen.tsx`
 - `docs/FRONTEND.md`
 
-## Prioridade 2: Dados pessoais e configurações rápidas
+## Prioridade 2: Dados pessoais e configurações rápidas ✅
 
-- [ ] Trocar os placeholders inferiores da sidebar por uma área compacta de conta.
-- [ ] Exibir na parte inferior da sidebar: avatar/inicial, nome exibido ou email, um único botão de ícone para "Perfil e voz" e botão "Sair".
-- [ ] Criar uma experiência simples para "Perfil e voz", preferencialmente em painel/drawer ou página leve autenticada.
-- [ ] Exibir email/username técnico, nome de exibição e voz preferida.
-- [ ] Permitir editar nome de exibição e voz preferida.
-- [ ] Manter configurações avançadas fora desta etapa; foco em identidade e voz.
-- [ ] Salvar alterações no perfil/preferências do usuário via gateway.
-- [ ] Mostrar feedback de carregamento, sucesso e erro.
+- [x] Trocar os placeholders inferiores da sidebar por uma área compacta de conta.
+- [x] Exibir na parte inferior da sidebar: avatar/inicial, nome exibido ou email, um único botão de ícone para "Perfil e voz" e botão "Sair".
+- [x] Criar uma experiência simples para "Perfil e voz" em página leve autenticada.
+- [x] Exibir email/username técnico, nome de exibição e voz preferida.
+- [x] Permitir editar nome de exibição e voz preferida.
+- [x] Manter configurações avançadas fora desta etapa; foco em identidade e voz.
+- [x] Salvar alterações no perfil/preferências do usuário via gateway.
+- [x] Mostrar feedback de carregamento, sucesso e erro.
 
 Direção de UX:
 
@@ -53,7 +53,7 @@ Arquivos prováveis:
 
 - `apps/web-ui/src/App.jsx`
 - `apps/web-ui/src/components/Layout/AuthenticatedShell.jsx`
-- `apps/web-ui/src/components/PersonalData/`
+- `apps/web-ui/src/components/Profile/ProfileVoicePage.jsx`
 - `apps/web-ui/src/services/api.js`
 - `services/gateway-service/src/api/`
 - `services/gateway-service/src/services/`
@@ -89,7 +89,7 @@ Critérios de aceite:
 
 - [ ] Login Google para usuário novo.
 - [ ] Login Google para usuário existente.
-- [ ] Atualização de dados pessoais e voz.
+- [x] Atualização de dados pessoais e voz.
 - [x] Navegação desktop com sidebar.
 - [x] Navegação mobile com menu recolhido.
 - [x] Abertura de sessão existente via sidebar.

@@ -5,6 +5,7 @@ import LoginScreen from './components/LoginScreen.jsx';
 import HomeScreen from './components/Home/HomeScreen.jsx';
 import LandingScreen from './components/LandingScreen.jsx';
 import AuthenticatedShell from './components/Layout/AuthenticatedShell.jsx';
+import ProfileVoicePage from './components/Profile/ProfileVoicePage.jsx';
 import { Brain, Loader2 } from 'lucide-react';
 import { getUserStatus } from './services/api.js';
 
@@ -115,10 +116,12 @@ function AppRoutes() {
           <AuthenticatedShell
             username={username}
             selectedVoice={selectedVoice}
+            setSelectedVoice={setSelectedVoice}
             onLogout={handleLogout}
           />
         }>
           <Route path="/home" element={<HomeScreen />} />
+          <Route path="/profile" element={<ProfileVoicePage />} />
           <Route path="/chat/:sessionId" element={
             <ChatScreen
               username={username || (localStorage.getItem('empatia_user_data') ? JSON.parse(localStorage.getItem('empatia_user_data')).name : 'Usuário')}

@@ -18,19 +18,28 @@ class ChatService:
         self.ai_service_url = os.getenv("AI_SERVICE_URL", "http://ai-service:8001")
         self.base_voice_url = "http://voice-service:8004"
         # self.voice_service_url = os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004")  # Comentado temporariamente
+
+    def _split_composite_session_id(self, session_id: str) -> tuple[Optional[str], str]:
+        """
+        Separar session_id composto no formato '{username}_session-N'.
+        O username pode conter underscores, então a separação deve usar a última ocorrência de '_session-'.
+        """
+        if not session_id:
+            return None, session_id
+
+        separator_index = session_id.rfind("_session-")
+        if separator_index == -1:
+            return None, session_id
+
+        return session_id[:separator_index], session_id[separator_index + 1:]
     
     async def start_or_get_conversation(self, session_id: str) -> Dict[str, Any]:
         """Iniciar ou recuperar conversa existente"""
         try:
             conversations = get_collection("conversations")
             
-            # 🔒 CORREÇÃO CRÍTICA: Extrair username do session_id 
-            username = None
-            if "_" in session_id:
-                try:
-                    username = session_id.split("_", 1)[0]
-                except:
-                    logger.warning(f"⚠️ Não foi possível extrair username do session_id: {session_id}")
+            # 🔒 CORREÇÃO CRÍTICA: Extrair username do session_id composto.
+            username, _ = self._split_composite_session_id(session_id)
             
             # Verificar se a conversa já existe
             existing = await conversations.find_one({"session_id": session_id})
@@ -112,7 +121,7 @@ class ChatService:
             await self.start_or_get_conversation(session_id)
             
             # Extrair username do session_id para buscar preferências
-            username = session_id.split('_')[0] if '_' in session_id else 'default'
+            username = self._extract_username_from_session_id(session_id) or 'default'
             
             # Carregar preferências do usuário (voz, etc.)
             users_collection = get_collection("users")
@@ -206,12 +215,7 @@ class ChatService:
             messages = get_collection("messages")
             
             # 🔒 CORREÇÃO CRÍTICA: Extrair username para validação adicional
-            username = None
-            if "_" in session_id:
-                try:
-                    username = session_id.split("_", 1)[0]
-                except:
-                    logger.warning(f"⚠️ Não foi possível extrair username do session_id: {session_id}")
+            username = self._extract_username_from_session_id(session_id)
             
             # Construir query com dupla validação
             query = {"session_id": session_id}
@@ -275,12 +279,7 @@ class ChatService:
             
             # 🔒 CORREÇÃO CRÍTICA: Extrair username do session_id para validação adicional
             # Formato esperado: "username_original_session_id"
-            username = None
-            if "_" in session_id:
-                try:
-                    username = session_id.split("_", 1)[0]
-                except:
-                    logger.warning(f"⚠️ Não foi possível extrair username do session_id: {session_id}")
+            username = self._extract_username_from_session_id(session_id)
             
             message_data = {
                 "session_id": session_id,
@@ -613,12 +612,7 @@ class ChatService:
             messages = get_collection("messages")
             
             # 🔒 CORREÇÃO CRÍTICA: Extrair username para validação adicional
-            username = None
-            if "_" in session_id:
-                try:
-                    username = session_id.split("_", 1)[0]
-                except:
-                    logger.warning(f"⚠️ Não foi possível extrair username do session_id: {session_id}")
+            username = self._extract_username_from_session_id(session_id)
             
             # Construir query com dupla validação
             query = {"session_id": session_id}
@@ -727,10 +721,15 @@ class ChatService:
             # Verificar se já foi finalizada
             if conversation.get("session_context"):
                 logger.info(f"✅ Sessão já possui contexto: {session_id}")
+                next_session_result = await self._create_next_session_automatically(
+                    session_id,
+                    conversation["session_context"]
+                )
                 return {
                     "success": True, 
                     "already_finalized": True,
-                    "context": conversation["session_context"]
+                    "context": conversation["session_context"],
+                    "next_session": next_session_result
                 }
             
             # Obter histórico completo da conversa
@@ -740,7 +739,7 @@ class ChatService:
             # ✅ CORREÇÃO: Para session-1 (cadastro), aceitar qualquer quantidade de mensagens
             # pois pode ser finalizada antes de completar todo o questionário
             # A session-1 tem lógica especial: dados de cadastro em registration_data + contexto normal
-            original_session_id = session_id.split('_')[-1] if '_' in session_id else session_id
+            _, original_session_id = self._split_composite_session_id(session_id)
             is_registration_session = original_session_id == "session-1"
             
             min_messages_required = 1 if is_registration_session else 2
@@ -905,33 +904,16 @@ class ChatService:
         Extrair username do session_id no formato 'username_session-X'
         """
         try:
-            if not session_id:
-                return None
-                
-            # Formato esperado: "username_session-X"
-            if "_" in session_id:
-                # Encontrar o último "_" para lidar com usernames que contêm underscores
-                last_underscore_index = session_id.rfind("_")
-                if last_underscore_index != -1:
-                    username = session_id[:last_underscore_index]
-                    session_part = session_id[last_underscore_index + 1:]
-                    
-                    # Validar que a parte da sessão tem formato correto
-                    if session_part.startswith("session-"):
-                        return username
-                    else:
-                        logger.warning(f"⚠️ Formato de session_id inválido: {session_id}")
-                        return None
-                else:
-                    logger.warning(f"⚠️ Underscore não encontrado em session_id: {session_id}")
-                    return None
-            else:
-                # Para sessões legacy sem username
-                if session_id in ["default", "test"]:
-                    return "anonymous"
-                else:
-                    logger.warning(f"⚠️ Session ID sem username: {session_id}")
-                    return None
+            username, original_session_id = self._split_composite_session_id(session_id)
+            if username and original_session_id.startswith("session-"):
+                return username
+
+            # Para sessões legacy sem username
+            if session_id in ["default", "test"]:
+                return "anonymous"
+
+            logger.warning(f"⚠️ Session ID sem username: {session_id}")
+            return None
                     
         except Exception as e:
             logger.error(f"❌ Erro ao extrair username do session_id {session_id}: {e}")
@@ -1143,9 +1125,6 @@ class ChatService:
         Criar sessão do usuário no banco de dados
         """
         try:
-            from .user_therapeutic_session_service import UserTherapeuticSessionService
-            user_session_service = UserTherapeuticSessionService()
-            
             # Extrair session_id com validação
             session_id = session_data.get("session_id")
             if not session_id:
@@ -1175,7 +1154,7 @@ class ChatService:
                 "generation_method": session_data.get("generation_method", "ai_service"),
                 "personalized": session_data.get("personalized", True),
                 "is_active": session_data.get("is_active", True),
-                "status": "locked",
+                "status": "unlocked",
                 "progress": 0,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow()
@@ -1185,15 +1164,7 @@ class ChatService:
             result = await user_sessions.insert_one(session_document)
             
             if result.inserted_id:
-                logger.info(f"✅ Sessão criada no banco: {session_id} para {username}")
-                
-                # Desbloquear automaticamente a nova sessão
-                unlock_success = await user_session_service.unlock_session(username, session_id)
-                if unlock_success:
-                    logger.info(f"🔓 Nova sessão desbloqueada automaticamente: {session_id}")
-                else:
-                    logger.warning(f"⚠️ Falha ao desbloquear sessão: {session_id}")
-                
+                logger.info(f"✅ Sessão criada e desbloqueada no banco: {session_id} para {username}")
                 return True
             else:
                 logger.error(f"❌ Falha ao inserir sessão no banco: {session_id}")
@@ -1424,7 +1395,7 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             ai_messages = [msg for msg in messages if msg["type"] == "ai"]
             
             # ✅ NOVO: Verificar se é sessão de cadastro para análise específica
-            original_session_id = session_id.split('_')[-1] if '_' in session_id else session_id
+            _, original_session_id = self._split_composite_session_id(session_id)
             is_registration_session = original_session_id == "session-1"
             
             if is_registration_session:
@@ -1879,8 +1850,8 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             if is_voice_mode:
                 logger.info(f"🎤 VoiceMode ativo na sessão de cadastro")
             
-            # Extrair username do session_id
-            username = session_id.split('_')[0] if '_' in session_id else 'usuario'
+            # Extrair username do session_id composto.
+            username = self._extract_username_from_session_id(session_id) or 'usuario'
             
             # Buscar preferências do usuário para áudio
             users_collection = get_collection("users")

@@ -1195,9 +1195,8 @@ async def get_initial_message(session_id: str):
     try:
         logger.info(f"🎯 Gerando mensagem inicial para sessão: {session_id}")
         
-        # Extrair session_id original e username
-        username = session_id.split('_')[0] if '_' in session_id else None
-        original_session_id = session_id.split('_')[-1] if '_' in session_id else session_id
+        # Extrair session_id original e username. O username pode conter underscores.
+        username, original_session_id = chat_service._split_composite_session_id(session_id)
         
         if not username:
             return {

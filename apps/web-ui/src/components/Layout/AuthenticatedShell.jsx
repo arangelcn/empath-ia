@@ -200,14 +200,17 @@ const SidebarContent = ({
             <p className="truncate text-sm font-medium text-gray-800">{username || 'Usuario'}</p>
             <p className="truncate text-xs text-gray-500">Conta e voz</p>
           </div>
-          <button
-            type="button"
-            disabled
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+          <NavLink
+            to="/profile"
+            onClick={onClose}
+            className={({ isActive }) => [
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
+              isActive ? 'bg-primary-50 text-primary-700' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900',
+            ].join(' ')}
             title="Perfil e voz"
           >
             <Settings className="h-4 w-4" />
-          </button>
+          </NavLink>
         </div>
         <button
           type="button"
@@ -222,7 +225,7 @@ const SidebarContent = ({
   );
 };
 
-const AuthenticatedShell = ({ username, onLogout }) => {
+const AuthenticatedShell = ({ username, selectedVoice, setSelectedVoice, onLogout }) => {
   const [userSessions, setUserSessions] = useState([]);
   const [userProgress, setUserProgress] = useState(null);
   const [loadingJourney, setLoadingJourney] = useState(true);
@@ -327,6 +330,8 @@ const AuthenticatedShell = ({ username, onLogout }) => {
 
   const outletContext = useMemo(() => ({
     username,
+    selectedVoice,
+    setSelectedVoice,
     userSessions,
     userProgress,
     loadingJourney,
@@ -339,6 +344,8 @@ const AuthenticatedShell = ({ username, onLogout }) => {
     setSuccessMessage,
   }), [
     username,
+    selectedVoice,
+    setSelectedVoice,
     userSessions,
     userProgress,
     loadingJourney,
