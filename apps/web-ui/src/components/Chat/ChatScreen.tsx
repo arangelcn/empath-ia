@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Bot, CheckCircle2, ChevronLeft, Heart, Mic, Send, Sparkles, Target, X } from 'lucide-react';
 import { sendMessage, getChatHistory, getTherapeuticSession, getInitialMessage } from '../../services/api.js';
@@ -171,7 +171,23 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
   
   // Obter informações da sessão do state (passado pelo navigate)
   const sessionInfo = location.state || {};
-  const { sessionTitle } = sessionInfo;
+  const { sessionTitle, originalSessionId: stateOriginalSessionId } = sessionInfo;
+  const originalSessionId = useMemo(() => {
+    if (stateOriginalSessionId) {
+      return stateOriginalSessionId;
+    }
+
+    if (!currentSessionId) {
+      return '';
+    }
+
+    if (username && currentSessionId.startsWith(`${username}_`)) {
+      return currentSessionId.slice(username.length + 1);
+    }
+
+    const sessionMatch = currentSessionId.match(/session-.+$/);
+    return sessionMatch?.[0] || currentSessionId;
+  }, [currentSessionId, stateOriginalSessionId, username]);
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -198,13 +214,6 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
         // Carregar objetivo da sessão
         if (currentSessionId) {
           try {
-            // ✅ CORREÇÃO: Extrair o session_id original (remover prefix do username)
-            // currentSessionId formato: "teste_01_session-1"
-            // Precisamos de: "session-1" para buscar na coleção de templates
-            const originalSessionId = currentSessionId.includes('_') 
-              ? currentSessionId.split('_').slice(1).join('_')  // Remove primeiro elemento (username)
-              : currentSessionId; // Fallback se não tiver underscore
-              
             console.log('🔍 Buscando sessão - currentSessionId:', currentSessionId, 'originalSessionId:', originalSessionId);
             
             const sessionResponse = await getTherapeuticSession(originalSessionId);
@@ -320,7 +329,7 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
     if (currentSessionId && username) {
       loadSessionData();
     }
-  }, [currentSessionId, username]);
+  }, [currentSessionId, originalSessionId, username]);
 
   // useEffect removido - emoção agora é atualizada via WebcamEmotionCapture
   
@@ -354,11 +363,6 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
       // ✅ CORREÇÃO: Para session-1 (cadastro), não passar sessionObjective 
       // Para outras sessões, passar apenas se for a primeira mensagem
       const isFirstMessage = messages.length === 0;
-      
-      // Extrair o session_id original para verificar se é session-1
-      const originalSessionId = currentSessionId.includes('_') 
-        ? currentSessionId.split('_').slice(1).join('_')
-        : currentSessionId;
       
       // session-1 é a sessão de cadastro, não deve receber título/objetivo
       const isRegistrationSession = originalSessionId === 'session-1';
@@ -677,7 +681,7 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
   const displaySessionSubtitle = sessionObjective?.subtitle || `Conversando com ${username || 'você'}`;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background-light text-text-primary transition-colors duration-300 dark:bg-background-dark dark:text-text-primary-dark">
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden bg-background-light text-text-primary transition-colors duration-300 dark:bg-background-dark dark:text-text-primary-dark lg:h-screen">
       {/* Header */}
       <div className="relative z-10 border-b border-gray-200/80 bg-white/90 px-4 py-3 backdrop-blur-xl dark:border-gray-800 dark:bg-dark-surface/90">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">

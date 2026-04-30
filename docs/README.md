@@ -205,11 +205,11 @@ Cada sessão é gerada automaticamente com base no **perfil do usuário** + **co
 
 Os próximos passos do produto priorizam uma experiência mais próxima das IAs conversacionais atuais e uma personalização mais humana desde o primeiro acesso:
 
-- **Menu lateral no app do usuário** — adicionar navegação persistente com sessões/conversas recentes, nova sessão, jornada terapêutica, dados pessoais e configurações.
-- **Página de Dados pessoais** — centralizar nome completo, email, voz preferida, preferências de uso, consentimentos e ações de privacidade.
+- **Menu lateral no app do usuário** — adicionar navegação persistente com sessões/conversas recentes, nova sessão, jornada terapêutica e conta no rodapé.
+- **Perfil e voz** — consolidar dados pessoais e configurações em uma tela simples para nome, email técnico e voz preferida.
 - **Nome completo no login/onboarding** — solicitar e salvar o nome completo do usuário, mantendo o email como identificador técnico e usando o nome salvo para personalizar mensagens e prompts.
 
-O checklist detalhado fica em [`todos/NEXT_STEPS.md`](todos/NEXT_STEPS.md).
+O roadmap detalhado fica em [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md).
 
 ---
 

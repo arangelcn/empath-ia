@@ -1,543 +1,291 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Sparkles, 
-  Settings, 
-  LogOut, 
-  RefreshCw,
-  TrendingUp,
-  Target,
+import { useOutletContext } from 'react-router-dom';
+import {
   CheckCircle,
-  Eye
+  Clock,
+  Eye,
+  Lock,
+  PlayCircle,
+  RefreshCw,
+  Target,
+  TrendingUp,
 } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { getUserSessions, getUserProgress, startUserSession } from '../../services/api.js';
-import SessionCard from './SessionCard';
 import ProgressBar from './ProgressBar';
 
-const HomeScreen = ({ username, onLogout }) => {
-  
-  const [userSessions, setUserSessions] = useState([]);
-  const [userProgress, setUserProgress] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [startingSession, setStartingSession] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null);
-  const navigate = useNavigate();
-  const location = useLocation();
+const statusStyles = {
+  completed: {
+    label: 'Concluida',
+    icon: CheckCircle,
+    badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    dot: 'bg-emerald-500',
+    card: 'border-emerald-200 bg-emerald-50/70',
+  },
+  in_progress: {
+    label: 'Em andamento',
+    icon: Clock,
+    badge: 'bg-amber-50 text-amber-700 border-amber-200',
+    dot: 'bg-amber-500',
+    card: 'border-amber-200 bg-amber-50/70',
+  },
+  unlocked: {
+    label: 'Disponivel',
+    icon: PlayCircle,
+    badge: 'bg-blue-50 text-blue-700 border-blue-200',
+    dot: 'bg-blue-500',
+    card: 'border-blue-200 bg-blue-50/70',
+  },
+  locked: {
+    label: 'Bloqueada',
+    icon: Lock,
+    badge: 'bg-gray-50 text-gray-500 border-gray-200',
+    dot: 'bg-gray-300',
+    card: 'border-gray-200 bg-gray-50',
+  },
+};
 
-  // ✅ NOVO: Detectar se voltou de uma sessão finalizada
-  useEffect(() => {
-    if (location.state?.message) {
-      setSuccessMessage(location.state.message);
-      
-      // Limpar mensagem após 8 segundos
-      setTimeout(() => {
-        setSuccessMessage(null);
-      }, 8000);
-      
-      // ✅ IMPORTANTE: Recarregar sessões quando volta de sessão finalizada
-      if (username) {
-        console.log('🔄 Recarregando sessões após retorno de sessão finalizada...');
-        loadSessions();
-      }
-      
-      // Limpar o state da navegação
-      navigate(location.pathname, { replace: true });
-    }
-  }, [location.state, username]);
-
-  // Limpar erro após 5 segundos
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => {
-        setError(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [error]);
-
-  const loadSessions = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      console.log(`🔄 Carregando sessões para usuário: ${username}`);
-
-      // ✅ NOVA LÓGICA: Buscar apenas user_therapeutic_sessions
-      // Agora cada usuário tem suas próprias sessões personalizadas
-      const userSessionsResponse = await getUserSessions(username);
-      const userSessionsData = userSessionsResponse.data?.sessions || [];
-
-      console.log(`✅ ${userSessionsData.length} sessões carregadas:`, userSessionsData.map(s => ({
-        id: s.session_id,
-        title: s.title,
-        status: s.status
-      })));
-
-      setUserSessions(userSessionsData);
-
-      // Progresso geral
-      const progressResponse = await getUserProgress(username);
-      const progressData = progressResponse.data;
-      setUserProgress(progressData);
-      
-      console.log(`📊 Progresso do usuário:`, progressData);
-    } catch (err) {
-      console.error('❌ Erro ao carregar sessões:', err);
-      setError('Erro ao carregar sessões. ' + (err?.message || 'Tente novamente.'));
-    } finally {
-      setLoading(false);
-    }
+const getSessionRank = (session) => {
+  const ranks = {
+    in_progress: 0,
+    unlocked: 1,
+    completed: 2,
+    locked: 3,
   };
+  return ranks[session?.status] ?? 4;
+};
+
+const Metric = ({ label, value, tone = 'text-gray-900' }) => (
+  <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-center">
+    <div className={`text-xl font-bold ${tone}`}>{value ?? 0}</div>
+    <div className="mt-1 text-xs font-medium text-gray-500">{label}</div>
+  </div>
+);
+
+const HomeScreen = () => {
+  const {
+    userSessions = [],
+    userProgress,
+    loadingJourney,
+    journeyError,
+    startingSession,
+    successMessage,
+    clearJourneyError,
+    openSession,
+    refreshJourney,
+  } = useOutletContext();
+
+  const sortedSessions = useMemo(() => (
+    [...userSessions].sort((a, b) => getSessionRank(a) - getSessionRank(b) || String(a.title || '').localeCompare(String(b.title || '')))
+  ), [userSessions]);
 
   useEffect(() => {
-    if (username) {
-      loadSessions();
-    } else {
-      setError('Username não fornecido');
-      setLoading(false);
+    if (!journeyError) {
+      return undefined;
     }
-  }, [username]);
 
-  const handleSessionSelect = async (session) => {
-    try {
-      // Indica que está iniciando esta sessão
-      setStartingSession(session.session_id);
-      
-      console.log(`🎯 Selecionando sessão:`, {
-        sessionId: session.session_id,
-        title: session.title,
-        status: session.status
-      });
+    const timer = window.setTimeout(clearJourneyError, 5000);
+    return () => window.clearTimeout(timer);
+  }, [clearJourneyError, journeyError]);
 
-      // ✅ SIMPLIFICADO: session já contém todas as informações necessárias
-      // Verificar se a sessão está desbloqueada
-      if (session.status === 'locked') {
-        setError('Esta sessão ainda está bloqueada. Complete as sessões anteriores primeiro.');
-        return;
-      }
-
-      // Se a sessão está desbloqueada mas não foi iniciada, marcar como iniciada
-      if (session.status === 'unlocked') {
-        try {
-          console.log(`🚀 Marcando sessão ${session.session_id} como iniciada...`);
-          const startResult = await startUserSession(username, session.session_id);
-          if (startResult.success) {
-            // Atualizar a lista de sessões para refletir o novo status
-            await loadSessions();
-          }
-        } catch (error) {
-          console.error('⚠️ Erro ao iniciar sessão:', error);
-          setError('Erro ao marcar sessão como iniciada. Continuando para o chat...');
-          // Continua para o chat mesmo se falhar ao marcar como iniciada
-        }
-      }
-
-      // 🔒 Criar session_id único por usuário
-      // Combinando username com session_id para garantir isolamento total
-      const uniqueSessionId = `${username}_${session.session_id}`;
-
-      console.log(`🔗 Navegando para chat com ID único: ${uniqueSessionId}`);
-
-      // Navegar para o chat com a sessão usando ID único
-      navigate(`/chat/${uniqueSessionId}`, { 
-        state: { 
-          username,
-          sessionTitle: session.title,
-          originalSessionId: session.session_id, // Manter referência original
-          userSession: {
-            ...session,
-            status: session.status === 'unlocked' ? 'in_progress' : session.status
-          }
-        } 
-      });
-
-    } catch (err) {
-      console.error('❌ Erro ao selecionar sessão:', err);
-      setError('Erro ao iniciar sessão. Tente novamente.');
-    } finally {
-      setStartingSession(null);
-    }
-  };
-
-  // ✅ SIMPLIFICADAS: Funções agora trabalham diretamente com userSessions
-  const isSessionUnlocked = (session) => {
-    return session?.status === 'unlocked' || session?.status === 'in_progress';
-  };
-
-  const isSessionCompleted = (session) => {
-    return session?.status === 'completed';
-  };
-
-  const isSessionCurrent = (session) => {
-    return session?.status === 'in_progress';
-  };
-
-
-
-  if (loading) {
+  if (loadingJourney && userSessions.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-center"
-        >
-          <div className="w-16 h-16 border-4 border-primary-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Carregando sua jornada terapêutica...</p>
+      <main className="flex min-h-screen items-center justify-center bg-background-light px-4">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-primary-100 border-t-primary-600" />
+          <p className="text-sm font-medium text-gray-600">Carregando sua Home...</p>
         </motion.div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 mb-4">{error}</p>
-          <button
-            onClick={loadSessions}
-            className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors duration-150 hover:bg-primary-700"
-          >
-            Tentar novamente
-          </button>
-        </div>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-secondary-50">
-      {/* Header */}
-      <motion.header
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="bg-white shadow-sm border-b border-gray-100"
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-white" />
+    <main className="min-h-screen bg-background-light px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
+        >
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase text-primary-600">Jornada continua</p>
+            <h1 className="font-heading text-3xl font-bold text-gray-950">Home</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
+              Continue de onde parou. Cada sessao preserva contexto, historico e progresso para a proxima conversa.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={refreshJourney}
+            className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${loadingJourney ? 'animate-spin' : ''}`} />
+            Atualizar
+          </button>
+        </motion.div>
+
+        {successMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700"
+          >
+            {successMessage}
+          </motion.div>
+        )}
+
+        {journeyError && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+          >
+            {journeyError}
+          </motion.div>
+        )}
+
+        {userProgress && (
+          <section className="mb-6 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 text-primary-700">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-950">Progresso</h2>
+                  <p className="text-sm text-gray-500">Resumo da sua continuidade entre sessoes.</p>
+                </div>
               </div>
-              <h1 className="text-xl font-bold text-gray-900 font-manrope">
-                Empat.IA
-              </h1>
+              <div className="text-left sm:text-right">
+                <div className="text-2xl font-bold text-primary-700">{userProgress.overall_progress}%</div>
+                <div className="text-xs font-medium text-gray-500">geral</div>
+              </div>
             </div>
-            
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => navigate('/settings')}
-                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-primary-600"
-              >
-                <Settings className="h-5 w-5" />
-              </button>
-              
-              <button
-                onClick={onLogout}
-                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-gray-500 transition-colors duration-150 hover:bg-red-50 hover:text-red-600"
-              >
-                <LogOut className="h-5 w-5" />
-              </button>
+
+            <ProgressBar progress={userProgress.overall_progress} className="mb-4" />
+
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <Metric label="Concluidas" value={userProgress.completed_sessions} tone="text-emerald-600" />
+              <Metric label="Em andamento" value={userProgress.in_progress_sessions} tone="text-amber-600" />
+              <Metric label="Disponiveis" value={userProgress.unlocked_sessions} tone="text-blue-600" />
+              <Metric label="Bloqueadas" value={userProgress.locked_sessions} tone="text-gray-500" />
+            </div>
+          </section>
+        )}
+
+        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-950">Sessoes da jornada</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Abra uma conversa existente ou avance para a proxima sessao disponivel.
+              </p>
             </div>
           </div>
-        </div>
-      </motion.header>
 
-      {/* Conteúdo Principal */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-        >
-          {/* Progresso Geral */}
-          {userProgress && (
-            <div className="mb-8">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-lg flex items-center justify-center">
-                      <TrendingUp className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-bold text-gray-900 font-manrope">
-                        Seu Progresso
-                      </h2>
-                      <p className="text-gray-600 text-sm">
-                        Continue sua jornada de autoconhecimento
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-primary-600">
-                      {userProgress.overall_progress}%
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      Progresso Geral
-                    </div>
-                  </div>
-                </div>
-                
-                <ProgressBar 
-                  progress={userProgress.overall_progress} 
-                  className="mb-4"
-                />
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                  <div>
-                    <div className="text-lg font-bold text-green-600">
-                      {userProgress.completed_sessions}
-                    </div>
-                    <div className="text-xs text-gray-500">Concluídas</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-orange-600">
-                      {userProgress.in_progress_sessions}
-                    </div>
-                    <div className="text-xs text-gray-500">Em Andamento</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-blue-600">
-                      {userProgress.unlocked_sessions}
-                    </div>
-                    <div className="text-xs text-gray-500">Disponíveis</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-gray-400">
-                      {userProgress.locked_sessions}
-                    </div>
-                    <div className="text-xs text-gray-500">Bloqueadas</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <div className="relative">
+            <div className="absolute bottom-0 left-4 top-0 hidden w-px bg-gray-200 sm:block" />
 
-          {/* Timeline de Sessões */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            {/* Header da timeline */}
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900 font-manrope mb-2">
-                  Sua Jornada Terapêutica
-                </h2>
-                <p className="text-gray-600">
-                  Explore as sessões disponíveis e continue seu desenvolvimento pessoal
-                </p>
-              </div>
-              
-              <button
-                onClick={loadSessions}
-                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg p-2 text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-primary-600"
-                title="Atualizar sessões"
-              >
-                <RefreshCw className="h-5 w-5" />
-              </button>
-            </div>
+            <div className="space-y-3">
+              {sortedSessions.map((session, index) => {
+                const styles = statusStyles[session.status] || statusStyles.locked;
+                const StatusIcon = styles.icon;
+                const isInteractive = session.status !== 'locked';
+                const isStarting = startingSession === session.session_id;
 
-            {/* Exibir mensagem de sucesso se existir */}
-            {successMessage && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-                    <CheckCircle className="w-3 h-3 text-white" />
-                  </div>
-                  <p className="text-green-700 text-sm font-medium">{successMessage}</p>
-                </div>
-              </motion.div>
-            )}
+                return (
+                  <motion.article
+                    key={session.session_id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, delay: index * 0.04 }}
+                    className="relative sm:pl-11"
+                  >
+                    <div className={`absolute left-1 top-5 hidden h-7 w-7 items-center justify-center rounded-full border-4 border-white ${styles.dot} sm:flex`}>
+                      <StatusIcon className="h-3.5 w-3.5 text-white" />
+                    </div>
 
-            {/* Exibir erro se existir */}
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">!</span>
-                  </div>
-                  <p className="text-red-700 text-sm font-medium">{error}</p>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Timeline de sessões */}
-            <div className="relative">
-              {/* Linha da timeline */}
-              <div className="absolute left-6 sm:left-8 top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary-200 to-secondary-200"></div>
-              
-              {/* Sessões ordenadas por nome */}
-              {userSessions
-                .sort((a, b) => a.title.localeCompare(b.title))
-                .map((session, index) => {
-                  const isUnlocked = isSessionUnlocked(session);
-                  const isCompleted = isSessionCompleted(session);
-                  const isCurrent = isSessionCurrent(session);
-                  
-                  return (
-                    <motion.div
-                      key={session.session_id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.5, delay: index * 0.1 }}
-                      className="relative mb-8 last:mb-0"
-                    >
-                      {/* Ponto da timeline */}
-                      <div className="absolute left-3 sm:left-5 top-6 w-6 h-6 rounded-full border-2 border-white shadow-sm z-10">
-                        {isCompleted ? (
-                          <div className="w-full h-full bg-green-500 rounded-full flex items-center justify-center">
-                            <CheckCircle className="w-8 h-8 text-white -m-1" />
+                    <div className={`rounded-lg border p-4 transition-colors ${styles.card}`}>
+                      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <h3 className="text-base font-semibold text-gray-950">
+                              {session.title}
+                            </h3>
+                            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium ${styles.badge}`}>
+                              <StatusIcon className="h-3 w-3" />
+                              {styles.label}
+                            </span>
                           </div>
-                        ) : isCurrent ? (
-                          <div className="w-full h-full bg-orange-500 rounded-full flex items-center justify-center">
-                            <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse"></div>
-                          </div>
-                        ) : isUnlocked ? (
-                          <div className="w-full h-full bg-blue-500 rounded-full"></div>
-                        ) : (
-                          <div className="w-full h-full bg-gray-300 rounded-full"></div>
-                        )}
-                      </div>
 
-                      {/* Card da sessão */}
-                      <div className="ml-12 sm:ml-16">
-                        <div className={`
-                          bg-white rounded-xl border-2 p-4 sm:p-6 shadow-sm transition-all duration-300 hover:shadow-md
-                          ${isCompleted ? 'border-green-200 bg-green-50' : 
-                            isCurrent ? 'border-orange-200 bg-orange-50' :
-                            isUnlocked ? 'border-blue-200 bg-blue-50 cursor-pointer hover:border-blue-300' : 
-                            'border-gray-200 bg-gray-50'}
-                        `}
-                        onClick={() => (isUnlocked || isCompleted) && handleSessionSelect(session)}
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-4">
-                            <div className="flex-1 mb-4 sm:mb-0">
-                              <div className="flex items-center gap-3 mb-2">
-                                <h3 className="text-lg font-bold text-gray-900 font-manrope">
-                                  {session.title}
-                                </h3>
-                                {isCompleted && (
-                                  <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-                                    Concluída
-                                  </span>
-                                )}
-                                {isCurrent && (
-                                  <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-medium rounded-full">
-                                    Em Andamento
-                                  </span>
-                                )}
-                                {!isUnlocked && !isCompleted && !isCurrent && (
-                                  <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">
-                                    Bloqueada
-                                  </span>
-                                )}
-                              </div>
-                              
-                              <p className="text-gray-600 text-sm mb-4">
-                                {session.description}
-                              </p>
+                          {session.subtitle && (
+                            <p className="mb-1 text-sm font-medium text-gray-700">{session.subtitle}</p>
+                          )}
 
-                              {/* Duração estimada */}
-                              <div className="flex items-center gap-2 text-xs text-gray-500">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span>{session.estimated_duration || '15-20 min'}</span>
-                              </div>
-                            </div>
+                          {session.description && (
+                            <p className="max-w-3xl text-sm leading-6 text-gray-600">{session.description}</p>
+                          )}
 
-                            {/* Botão de ação */}
-                            <div className="sm:ml-4 flex flex-col sm:items-end gap-2 w-full sm:w-auto">
-                              {isCompleted ? (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSessionSelect(session);
-                                  }}
-                                  className="flex min-h-[42px] w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-green-700 sm:w-auto"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                  <span className="sm:hidden">Ver conversa</span>
-                                  <span className="hidden sm:inline">Visualizar conversa</span>
-                                </button>
-                              ) : isUnlocked ? (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSessionSelect(session);
-                                  }}
-                                  disabled={startingSession === session.session_id}
-                                  className={`
-                                    flex min-h-[42px] w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors duration-150 sm:w-auto
-                                    ${isCurrent ? 
-                                      'bg-orange-500 hover:bg-orange-600' :
-                                      'bg-primary-600 hover:bg-primary-700'
-                                    }
-                                    ${startingSession === session.session_id ? 'opacity-70 cursor-not-allowed' : ''}
-                                  `}
-                                >
-                                  {startingSession === session.session_id ? (
-                                    <>
-                                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                      Iniciando...
-                                    </>
-                                  ) : (
-                                    <>{isCurrent ? 'Continuar' : 'Iniciar'}</>
-                                  )}
-                                </button>
-                              ) : (
-                                <button
-                                  disabled
-                                  className="min-h-[42px] w-full rounded-lg bg-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-500 opacity-70 sm:w-auto"
-                                >
-                                  Bloqueada
-                                </button>
-                              )}
-                              
-                              {/* Indicador visual para sessão disponível */}
-                              {isUnlocked && !isCurrent && !isCompleted && (
-                                <div className="text-xs text-blue-600 font-medium animate-pulse text-center sm:text-right">
-                                  ✨ Disponível para iniciar
-                                </div>
-                              )}
-                            </div>
+                          <div className="mt-3 flex items-center gap-2 text-xs font-medium text-gray-500">
+                            <Clock className="h-4 w-4" />
+                            <span>{session.estimated_duration || '15-20 min'}</span>
                           </div>
                         </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
 
-              {/* Mensagem quando não há sessões */}
-              {userSessions.length === 0 && (
-                <div className="text-center py-12">
-                  <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Nenhuma sessão disponível
-                  </h3>
-                  <p className="text-gray-500">
-                    As sessões terapêuticas serão carregadas em breve.
-                  </p>
-                </div>
-              )}
+                        <button
+                          type="button"
+                          onClick={() => openSession(session)}
+                          disabled={!isInteractive || isStarting}
+                          className={[
+                            'inline-flex min-h-[42px] w-full shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors md:w-auto',
+                            session.status === 'completed'
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                              : session.status === 'in_progress'
+                                ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                : session.status === 'unlocked'
+                                  ? 'bg-primary-600 text-white hover:bg-primary-700'
+                                  : 'bg-gray-200 text-gray-500',
+                            isStarting ? 'cursor-wait opacity-70' : '',
+                          ].join(' ')}
+                        >
+                          {isStarting ? (
+                            <>
+                              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                              Abrindo...
+                            </>
+                          ) : session.status === 'completed' ? (
+                            <>
+                              <Eye className="h-4 w-4" />
+                              Ver conversa
+                            </>
+                          ) : session.status === 'in_progress' ? (
+                            'Continuar'
+                          ) : session.status === 'unlocked' ? (
+                            'Iniciar'
+                          ) : (
+                            'Bloqueada'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </motion.article>
+                );
+              })}
             </div>
+
+            {!loadingJourney && sortedSessions.length === 0 && (
+              <div className="py-12 text-center">
+                <Target className="mx-auto mb-4 h-12 w-12 text-gray-400" />
+                <h3 className="mb-2 text-lg font-medium text-gray-950">Nenhuma sessao disponivel</h3>
+                <p className="text-sm text-gray-500">As sessoes terapeuticas serao carregadas em breve.</p>
+              </div>
+            )}
           </div>
-        </motion.div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 };
 
-export default HomeScreen; 
+export default HomeScreen;

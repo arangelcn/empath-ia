@@ -41,7 +41,7 @@ TODO:
 
 Reference:
 
-- `docs/todos/NEXT_STEPS.md`
+- `docs/roadmap/ROADMAP.md`
 - `apps/web-ui/README.md`
 - `docs/FRONTEND.md`
 
@@ -287,7 +287,7 @@ Actions:
 
 Reference:
 
-- `docs/todos/TODOVOICECONVERSATION.md`
+- `docs/roadmap/VOICE_CONVERSATION_ROADMAP.md`
 
 ## Phase 6: Agent Platform And MCP
 

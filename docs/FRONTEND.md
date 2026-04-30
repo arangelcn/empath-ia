@@ -26,14 +26,14 @@
 ```
 /             → LandingScreen     (não autenticado)
 /login        → ComingSoonScreen  (placeholder — login via Google está na LandingScreen)
-/home         → HomeScreen        (autenticado — jornada terapêutica)
-/chat         → ChatScreen        (autenticado — chat sem sessão específica)
+/home         → HomeScreen        (autenticado — Home da jornada terapêutica)
+/chat         → redireciona para /home (chat exige sessão)
 /chat/:sessionId → ChatScreen     (autenticado — chat de sessão específica)
 ```
 
-**Roadmap imediato:** adicionar um shell autenticado com menu lateral para aproximar o app das IAs conversacionais atuais. O menu deve reunir sessões/conversas recentes, nova sessão, jornada terapêutica, Dados pessoais, configurações e logout. Em mobile, deve funcionar como drawer.
+**Shell autenticado:** as rotas `/home`, `/chat` e `/chat/:sessionId` renderizam dentro de um layout com menu lateral, aproximando o app das IAs conversacionais atuais. O menu reúne sessões/conversas recentes, ação de continuidade, Home e logout; dados pessoais e configurações ficam consolidados em um único acesso de perfil/voz no rodapé. Em mobile, funciona como drawer. A rota `/chat` sem `sessionId` redireciona para `/home`.
 
-**Lógica de guarda:** `App.jsx` controla o estado `isOnboarded`. Quando `false`, apenas `/` e `/login` estão disponíveis. Quando `true`, apenas `/home`, `/chat` e `/chat/:sessionId`. Qualquer rota fora do grupo redireciona para a rota padrão do grupo.
+**Lógica de guarda:** `App.jsx` controla o estado `isOnboarded`. Quando `false`, apenas `/` e `/login` estão disponíveis. Quando `true`, apenas `/home`, `/chat` e `/chat/:sessionId`. Qualquer rota fora do grupo redireciona para `/home`.
 
 ### Estado global (App.jsx)
 
@@ -69,12 +69,19 @@ O estado vive em `AppRoutes` dentro de `App.jsx`. Não há Redux nem Context API
 
 Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o login/onboarding deve solicitar o nome completo, salvar no perfil do usuário e usar esse nome na interface e no contexto enviado à IA. O `username`/email continua sendo o identificador técnico.
 
+#### `AuthenticatedShell.jsx` (`components/Layout/`)
+- Layout autenticado compartilhado entre `/home`, `/chat` e `/chat/:sessionId`
+- Sidebar fixa em desktop e drawer no mobile
+- Carrega sessões e progresso via `GET /api/user/{username}/sessions` e `GET /api/user/{username}/progress`
+- Abre sessões usando `POST /api/user/{username}/sessions/{session_id}/start` quando necessário
+- Preserva o `session_id` composto no formato `${username}_${session_id}`
+
 #### `HomeScreen.jsx` (`components/Home/`)
-- Lista de sessões terapêuticas do usuário
-- Progresso visual (barra de progresso por sessão)
+- Home da jornada terapêutica na rota existente `/home`
+- Exibe progresso detalhado e sessões terapêuticas do usuário
 - Estados visuais por sessão: `locked`, `unlocked`, `in_progress`, `completed`
-- Chama `GET /api/user/{username}/sessions` para listar sessões
-- Botão "Iniciar sessão" → `POST /api/user/{username}/sessions/{session_id}/start` → navega para `/chat/{session_id}`
+- Usa os dados carregados pelo `AuthenticatedShell`
+- Botão "Iniciar/Continuar/Ver conversa" navega para `/chat/{username}_{session_id}`
 
 #### `PersonalData` (planejado)
 - Página autenticada para dados pessoais do usuário.
@@ -103,7 +110,7 @@ Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o l
 5. POST /api/user/{username}/login → cria session-1
 6. Seleção de voz → POST /api/user/preferences
 7. Redireciona para /home
-8. HomeScreen lista sessões → clica em sessão desbloqueada
+8. AuthenticatedShell carrega progresso e sessões; HomeScreen exibe a Home
 9. POST /api/user/{username}/sessions/{session_id}/start
 10. Navega para /chat/{username}_{session_id}
 11. ChatScreen carrega → GET /api/chat/initial-message/{full_session_id}

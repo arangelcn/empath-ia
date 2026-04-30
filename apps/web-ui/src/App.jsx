@@ -4,6 +4,7 @@ import ChatScreen from './components/Chat/ChatScreen.tsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import HomeScreen from './components/Home/HomeScreen.jsx';
 import LandingScreen from './components/LandingScreen.jsx';
+import AuthenticatedShell from './components/Layout/AuthenticatedShell.jsx';
 import { Brain, Loader2 } from 'lucide-react';
 import { getUserStatus } from './services/api.js';
 
@@ -110,27 +111,22 @@ function AppRoutes() {
         </>
       )}
       {isOnboarded && (
-        <>
-          <Route path="/home" element={
-            <HomeScreen 
-              username={username}
-              onLogout={handleLogout}
-              selectedVoice={selectedVoice}
-            />
-          } />
+        <Route element={
+          <AuthenticatedShell
+            username={username}
+            selectedVoice={selectedVoice}
+            onLogout={handleLogout}
+          />
+        }>
+          <Route path="/home" element={<HomeScreen />} />
           <Route path="/chat/:sessionId" element={
-            <ChatScreen 
-              username={username || (localStorage.getItem('empatia_user_data') ? JSON.parse(localStorage.getItem('empatia_user_data')).name : 'Usuário')} 
+            <ChatScreen
+              username={username || (localStorage.getItem('empatia_user_data') ? JSON.parse(localStorage.getItem('empatia_user_data')).name : 'Usuário')}
             />
           } />
-          <Route path="/chat" element={
-            <ChatScreen 
-              sessionId={sessionId} 
-              username={username || (localStorage.getItem('empatia_user_data') ? JSON.parse(localStorage.getItem('empatia_user_data')).name : 'Usuário')} 
-            />
-          } />
+          <Route path="/chat" element={<Navigate to="/home" replace />} />
           <Route path="/*" element={<Navigate to="/home" replace />} />
-        </>
+        </Route>
       )}
     </Routes>
   );
