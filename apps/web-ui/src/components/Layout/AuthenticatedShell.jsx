@@ -77,6 +77,7 @@ const SidebarSession = ({ session, onOpen, disabled }) => {
 
 const SidebarContent = ({
   username,
+  displayName,
   userSessions,
   loadingJourney,
   startingSession,
@@ -86,6 +87,7 @@ const SidebarContent = ({
   onRefresh,
 }) => {
   const navigate = useNavigate();
+  const accountLabel = displayName || username || 'Usuario';
   const primarySession = userSessions.find(session => session.status === 'in_progress')
     || userSessions.find(session => session.status === 'unlocked');
 
@@ -109,7 +111,7 @@ const SidebarContent = ({
           </div>
           <div>
             <p className="font-heading text-base font-semibold text-gray-900">Empat.IA</p>
-            <p className="max-w-[170px] truncate text-xs text-gray-500">{username}</p>
+            <p className="max-w-[170px] truncate text-xs text-gray-500">{accountLabel}</p>
           </div>
         </div>
         <button
@@ -194,10 +196,10 @@ const SidebarContent = ({
       <div className="border-t border-gray-100 p-3">
         <div className="mb-2 flex items-center gap-2 rounded-lg px-2 py-1.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700">
-            {(username || 'U').charAt(0).toUpperCase()}
+            {accountLabel.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-gray-800">{username || 'Usuario'}</p>
+            <p className="truncate text-sm font-medium text-gray-800">{accountLabel}</p>
             <p className="truncate text-xs text-gray-500">Conta e voz</p>
           </div>
           <NavLink
@@ -225,7 +227,7 @@ const SidebarContent = ({
   );
 };
 
-const AuthenticatedShell = ({ username, selectedVoice, setSelectedVoice, onLogout }) => {
+const AuthenticatedShell = ({ username, displayName, setDisplayName, selectedVoice, setSelectedVoice, onLogout }) => {
   const [userSessions, setUserSessions] = useState([]);
   const [userProgress, setUserProgress] = useState(null);
   const [loadingJourney, setLoadingJourney] = useState(true);
@@ -330,6 +332,8 @@ const AuthenticatedShell = ({ username, selectedVoice, setSelectedVoice, onLogou
 
   const outletContext = useMemo(() => ({
     username,
+    displayName,
+    setDisplayName,
     selectedVoice,
     setSelectedVoice,
     userSessions,
@@ -344,6 +348,8 @@ const AuthenticatedShell = ({ username, selectedVoice, setSelectedVoice, onLogou
     setSuccessMessage,
   }), [
     username,
+    displayName,
+    setDisplayName,
     selectedVoice,
     setSelectedVoice,
     userSessions,
@@ -362,6 +368,7 @@ const AuthenticatedShell = ({ username, selectedVoice, setSelectedVoice, onLogou
       <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block">
         <SidebarContent
           username={username}
+          displayName={displayName}
           userSessions={userSessions}
           loadingJourney={loadingJourney}
           startingSession={startingSession}
@@ -383,6 +390,7 @@ const AuthenticatedShell = ({ username, selectedVoice, setSelectedVoice, onLogou
           <div className="relative h-full w-72 max-w-[86vw]">
             <SidebarContent
               username={username}
+              displayName={displayName}
               userSessions={userSessions}
               loadingJourney={loadingJourney}
               startingSession={startingSession}

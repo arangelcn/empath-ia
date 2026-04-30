@@ -50,6 +50,17 @@ def _account_username(google_sub: str, email: str | None) -> str:
     return f"google_{google_sub}"
 
 
+def _user_name_fields(user: dict | None) -> tuple[str | None, str | None]:
+    """Lê nomes salvos sem derivar do e-mail/Google, para o onboarding saber quando pedir."""
+    if not user:
+        return None, None
+
+    preferences = user.get("preferences") or {}
+    full_name = user.get("full_name") or preferences.get("full_name")
+    display_name = user.get("display_name") or preferences.get("display_name")
+    return full_name, display_name
+
+
 @router.get("/google/status")
 async def google_auth_status():
     """Informa se a autenticação Google está disponível no servidor."""
@@ -100,7 +111,11 @@ async def google_auth(body: GoogleAuthRequest):
         {"$or": [{"google_id": google_sub}, {"email": email}, {"email": email_raw.strip()}]}
     )
 
+    full_name = None
+    display_name = None
+
     if user:
+        full_name, display_name = _user_name_fields(user)
         await users_col.update_one(
             {"_id": user["_id"]},
             {
@@ -149,6 +164,7 @@ async def google_auth(body: GoogleAuthRequest):
                     detail="Conflito ao criar conta; tente novamente em instantes.",
                 ) from exc
             username = user.get("username") or stable_username
+            full_name, display_name = _user_name_fields(user)
         else:
             username = stable_username
             logger.info("Novo usuário Google criado: %s", email)
@@ -166,6 +182,10 @@ async def google_auth(body: GoogleAuthRequest):
             "name": name,
             "picture": picture,
             "username": username,
+            "full_name": full_name,
+            "display_name": display_name,
+            "preferences": (user or new_user).get("preferences", {}),
+            "requires_profile_name": not bool(full_name or display_name),
             "email_verified": email_verified,
             "auth_method": "google",
         },

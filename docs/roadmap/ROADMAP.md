@@ -67,15 +67,15 @@ Critérios de aceite:
 - Alterar voz atualiza a preferência usada nas próximas conversas.
 - Feedback de sucesso/erro aparece sem redirecionar o usuário para fora do fluxo atual.
 
-## Prioridade 3: Nome completo no login/onboarding
+## Prioridade 3: Nome completo no login/onboarding ✅
 
-- [ ] Depois do Google OAuth, verificar se o perfil já possui `full_name` ou `display_name`.
-- [ ] Se estiver ausente, pedir o nome completo antes de concluir o onboarding.
-- [ ] Persistir o nome completo no perfil do usuário.
-- [ ] Manter `username`/email como identificador técnico e não usar nome completo em `session_id`.
-- [ ] Passar `display_name` para Home e Chat.
-- [ ] Incluir `display_name` no contexto enviado à IA para que ela chame o usuário pelo nome.
-- [ ] Tratar usuários existentes sem quebrar sessões antigas.
+- [x] Depois do Google OAuth, verificar se o perfil já possui `full_name` ou `display_name`.
+- [x] Se estiver ausente, pedir o nome completo antes de concluir o onboarding.
+- [x] Persistir o nome completo no perfil do usuário.
+- [x] Manter `username`/email como identificador técnico e não usar nome completo em `session_id`.
+- [x] Passar `display_name` para Home e Chat.
+- [x] Incluir `display_name` no contexto enviado à IA para que ela chame o usuário pelo nome.
+- [x] Tratar usuários existentes sem quebrar sessões antigas.
 
 Critérios de aceite:
 
@@ -85,10 +85,99 @@ Critérios de aceite:
 - Chat usa o nome salvo em textos de interface e contexto de personalização.
 - Email/username continua sendo usado para autenticação, queries e isolamento de sessão.
 
+## Próximas etapas: Admin, RAG e voz
+
+As próximas prioridades devem transformar o Admin em uma ferramenta operacional real para configuração, curadoria de conhecimento e observabilidade, enquanto o Voice Service evolui para menor latência e opções locais.
+
+## Prioridade 4: Ajustes do Admin
+
+- [ ] Auditar telas do Admin para identificar dados mockados, fallbacks silenciosos e endpoints ainda inexistentes.
+- [ ] Mapear cada tela para contrato real de API: Dashboard, Usuários, Sessões, Conversas, Prompts, Analytics, Status e Configurações.
+- [ ] Substituir mocks por estados explícitos de carregamento, vazio, erro e indisponibilidade do backend.
+- [ ] Garantir autenticação consistente no Admin usando o mesmo padrão de token/headers das rotas protegidas.
+- [ ] Validar permissões mínimas para separar ações administrativas de leitura, edição e operação sensível.
+- [ ] Registrar lacunas de backend em issues/tarefas pequenas antes de iniciar grandes refactors de UI.
+
+Arquivos prováveis:
+
+- `apps/admin-panel/src/pages/Dashboard.js`
+- `apps/admin-panel/src/pages/UserManagement.js`
+- `apps/admin-panel/src/pages/SessionManagement.js`
+- `apps/admin-panel/src/pages/Conversations.js`
+- `apps/admin-panel/src/pages/PromptManagement.js`
+- `apps/admin-panel/src/pages/Analytics.js`
+- `apps/admin-panel/src/pages/SystemStatus.js`
+- `apps/admin-panel/src/services/api.js`
+- `services/gateway-service/src/api/`
+
+Critérios de aceite:
+
+- Admin deixa claro quando um dado é real, vazio ou indisponível.
+- Dashboard e páginas principais não usam dados simulados como se fossem produção.
+- Falhas de API são visíveis e acionáveis, sem mascarar problemas com métricas falsas.
+- Cada tela possui contrato documentado e endpoint correspondente ou tarefa técnica aberta.
+
+## Prioridade 5: Pipeline RAG pelo Admin
+
+- [ ] Definir modelo de dados para base de conhecimento: documento, versão, fonte, status, tags, idioma, escopo e responsável.
+- [ ] Criar fluxo de upload no Admin para PDFs, Markdown, TXT e materiais estruturados.
+- [ ] Implementar validação de arquivo: tipo, tamanho, duplicidade, metadados mínimos e política de privacidade.
+- [ ] Criar pipeline de ingestão: extração de texto, limpeza, chunking, embeddings, indexação vetorial e auditoria.
+- [ ] Expor status do processamento no Admin: pendente, processando, indexado, falhou, arquivado.
+- [ ] Permitir revisão/ativação manual de materiais antes de ficarem disponíveis para o assistente.
+- [ ] Integrar recuperação ao AI Service de forma model-agnostic, para funcionar com OpenAI ou modelo local.
+- [ ] Registrar citações/metadados de origem nas respostas quando conhecimento aprovado for usado.
+- [ ] Adicionar avaliação mínima de grounding para evitar respostas desconectadas dos documentos.
+
+Arquivos prováveis:
+
+- `apps/admin-panel/src/pages/`
+- `apps/admin-panel/src/services/api.js`
+- `services/gateway-service/src/api/admin.py`
+- `services/ai-service/src/services/`
+- `docs/MENTAL_HEALTH_MEDICAL_AI_ROADMAP.md`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Admin consegue cadastrar e acompanhar documentos da base de conhecimento.
+- Documentos só entram no índice após validação e aprovação explícita.
+- Assistente consegue recuperar conhecimento aprovado sem depender do provedor do LLM.
+- Respostas que usam RAG preservam fonte, versão e rastreabilidade.
+
+## Prioridade 6: Voice Service e baixa latência
+
+- [ ] Medir latência atual ponta a ponta: captura no frontend, gateway, geração LLM, TTS e reprodução.
+- [ ] Separar métricas de TTS, STT, rede, tamanho da resposta e tempo de primeira reprodução.
+- [ ] Estudar opções locais para voz: STT local, TTS local e modelos híbridos com fallback para Google Cloud.
+- [ ] Comparar candidatos locais por idioma pt-BR, qualidade, privacidade, custo, CPU/GPU e tempo de resposta.
+- [ ] Implementar modo de resposta curta para voz no AI Service, com limites de tokens e frases mais naturais para áudio.
+- [ ] Avaliar streaming ou chunking de áudio para reduzir tempo até o usuário ouvir a primeira frase.
+- [ ] Adicionar cache seguro para TTS de frases comuns quando não houver dado pessoal sensível.
+- [ ] Criar health/status do Voice Service com provedor ativo, fila, latência média e fallback.
+- [ ] Documentar trade-offs entre local, cloud e híbrido antes de promover um modelo local como padrão.
+
+Arquivos prováveis:
+
+- `services/voice-service/src/`
+- `services/voice-service/README.md`
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/main.py`
+- `services/ai-service/src/services/openai_service.py`
+- `docs/roadmap/VOICE_CONVERSATION_ROADMAP.md`
+- `docs/LOCAL_MODEL_TEST_PLAN.md`
+
+Critérios de aceite:
+
+- Existe baseline de latência antes de alterar arquitetura.
+- Voice mode tem respostas mais curtas e adequadas à fala.
+- Pelo menos uma opção local ou híbrida é testada com métricas comparáveis.
+- O serviço expõe status suficiente para diagnosticar lentidão e falhas.
+
 ## Checklist de validação
 
-- [ ] Login Google para usuário novo.
-- [ ] Login Google para usuário existente.
+- [x] Login Google para usuário novo.
+- [x] Login Google para usuário existente.
 - [x] Atualização de dados pessoais e voz.
 - [x] Navegação desktop com sidebar.
 - [x] Navegação mobile com menu recolhido.

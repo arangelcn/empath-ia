@@ -63,6 +63,7 @@ const Metric = ({ label, value, tone = 'text-gray-900' }) => (
 
 const HomeScreen = () => {
   const {
+    displayName,
     userSessions = [],
     userProgress,
     loadingJourney,
@@ -109,7 +110,9 @@ const HomeScreen = () => {
         >
           <div>
             <p className="mb-2 text-xs font-semibold uppercase text-primary-600">Jornada continua</p>
-            <h1 className="font-heading text-3xl font-bold text-gray-950">Home</h1>
+            <h1 className="font-heading text-3xl font-bold text-gray-950">
+              {displayName ? `Ola, ${displayName}` : 'Home'}
+            </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
               Continue de onde parou. Cada sessao preserva contexto, historico e progresso para a proxima conversa.
             </p>

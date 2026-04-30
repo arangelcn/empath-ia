@@ -41,6 +41,8 @@ class UserPreferencesRequest(BaseModel):
     username: str
     selected_voice: str
     voice_enabled: bool = True
+    full_name: Optional[str] = None
+    display_name: Optional[str] = None
 
 # Criar app FastAPI
 app = FastAPI(
@@ -75,6 +77,24 @@ therapeutic_session_service = TherapeuticSessionService()
 user_therapeutic_session_service = UserTherapeuticSessionService()
 user_emotion_service = UserEmotionService()
 prompt_service = PromptService()
+
+
+async def _get_user_display_name(username: str) -> str:
+    """Nome humano para UI/prompts; username continua sendo apenas identificador técnico."""
+    try:
+        user = await user_service.get_user(username)
+        preferences = (user or {}).get("preferences", {})
+        return (
+            (user or {}).get("display_name")
+            or preferences.get("display_name")
+            or (user or {}).get("full_name")
+            or preferences.get("full_name")
+            or (user or {}).get("name")
+            or username
+        )
+    except Exception as exc:
+        logger.warning("Não foi possível obter display_name para %s: %s", username, exc)
+        return username
 
 # Incluir rotas
 app.include_router(auth_router)
@@ -218,11 +238,35 @@ async def save_user_preferences(request: UserPreferencesRequest):
         # Garante que a conversa exista antes de tentar atualizá-la
         await chat_service.start_or_get_conversation(request.session_id)
 
+        display_name = (request.display_name or request.full_name or "").strip() or None
+        full_name = (request.full_name or request.display_name or "").strip() or None
+
+        user = await user_service.get_user(request.username)
+        existing_preferences = (user or {}).get("preferences", {})
+        user_preferences = {
+            **existing_preferences,
+            "selected_voice": request.selected_voice,
+            "voice_enabled": request.voice_enabled,
+            "theme": existing_preferences.get("theme", "dark"),
+            "language": existing_preferences.get("language", "pt-BR"),
+        }
+        if full_name:
+            user_preferences["full_name"] = full_name
+        if display_name:
+            user_preferences["display_name"] = display_name
+
+        if user:
+            await user_service.update_user_preferences(request.username, user_preferences)
+        else:
+            await user_service.create_user(username=request.username, preferences=user_preferences)
+
         updated_data = {
             "user_preferences": {
                 "username": request.username,
                 "selected_voice": request.selected_voice,
                 "voice_enabled": request.voice_enabled,
+                "full_name": full_name,
+                "display_name": display_name,
                 "completed_welcome": True
             }
         }
@@ -255,13 +299,18 @@ async def get_user_status(session_id: str):
             }
         
         user_prefs = conversation.get("user_preferences", {})
+        username = user_prefs.get("username")
+        user = await user_service.get_user(username) if username else None
+        preferences = (user or {}).get("preferences", {})
         
         return {
             "success": True,
             "data": {
                 "is_onboarded": user_prefs.get("completed_welcome", False),
-                "username": user_prefs.get("username"),
-                "selected_voice": user_prefs.get("selected_voice")
+                "username": username,
+                "selected_voice": preferences.get("selected_voice") or user_prefs.get("selected_voice"),
+                "full_name": (user or {}).get("full_name") or preferences.get("full_name") or user_prefs.get("full_name"),
+                "display_name": (user or {}).get("display_name") or preferences.get("display_name") or user_prefs.get("display_name")
             }
         }
         
@@ -1203,6 +1252,8 @@ async def get_initial_message(session_id: str):
                 "success": False,
                 "error": "Username não encontrado no session_id"
             }
+
+        user_label = await _get_user_display_name(username)
         
         # Verificar se já tem mensagens (não é primeira entrada)
         history = await chat_service.get_conversation_history(session_id)
@@ -1216,7 +1267,7 @@ async def get_initial_message(session_id: str):
         # Gerar mensagem inicial específica para cada tipo de sessão
         if original_session_id == "session-1":
             # Sessão 1: Mensagem de boas-vindas e primeira pergunta
-            initial_message = f"""Olá, {username}! 
+            initial_message = f"""Olá, {user_label}!
 
 Eu sou seu assistente terapêutico. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. 
 
@@ -1254,13 +1305,13 @@ Primeiro, me conta: qual é a sua idade?"""
                     # Gerar mensagem personalizada baseada no contexto anterior
                     if main_themes:
                         themes_text = ", ".join(main_themes[:2])  # Pegar os 2 principais temas
-                        initial_message = f"""Olá, {username}! É bom te ver novamente.
+                        initial_message = f"""Olá, {user_label}! É bom te ver novamente.
 
 Como você está se sentindo desde nossa última conversa? 
 
 Na nossa sessão anterior, conversamos sobre {themes_text}. Gostaria de continuar explorando esses temas ou há algo específico que te trouxe aqui hoje?"""
                     else:
-                        initial_message = f"""Olá, {username}! É bom te ver novamente.
+                        initial_message = f"""Olá, {user_label}! É bom te ver novamente.
 
 Como você está se sentindo desde nossa última conversa? O que te trouxe aqui hoje?"""
                         
@@ -1283,19 +1334,19 @@ Como você está se sentindo desde nossa última conversa? O que te trouxe aqui 
                     if current_session_number == 2:
                         if objectives:
                             objectives_text = ", ".join(objectives[:2])
-                            initial_message = f"""Olá, {username}! É bom te ver novamente.
+                            initial_message = f"""Olá, {user_label}! É bom te ver novamente.
 
 Agora que nos conhecemos melhor, esta é nossa segunda sessão terapêutica. 
 
 Lembro que você mencionou interesse em trabalhar com {objectives_text}. Como você está se sentindo desde nossa conversa anterior? Gostaria de explorar esses temas ou há algo específico que te trouxe aqui hoje?"""
                         else:
-                            initial_message = f"""Olá, {username}! É bom te ver novamente.
+                            initial_message = f"""Olá, {user_label}! É bom te ver novamente.
 
 Agora que nos conhecemos melhor, esta é nossa segunda sessão terapêutica. 
 
 Como você está se sentindo desde nossa conversa anterior? Há algo específico que gostaria de explorar hoje, ou prefere que conversemos sobre como você tem se sentido recentemente?"""
                     else:
-                        initial_message = f"""Olá, {username}! É bom te ver novamente.
+                        initial_message = f"""Olá, {user_label}! É bom te ver novamente.
 
 Esta é nossa sessão {current_session_number}. Como você está se sentindo desde nossa última conversa? 
 
@@ -1311,19 +1362,19 @@ O que te trouxe aqui hoje? Há algo específico que gostaria de conversar comigo
                     username_hash = int(hashlib.md5(username.encode()).hexdigest(), 16) % 3
                     
                     session_2_variations = [
-                        f"""Olá, {username}! É bom te ver novamente.
+                        f"""Olá, {user_label}! É bom te ver novamente.
 
 Agora que nos conhecemos melhor, esta é nossa segunda sessão terapêutica. 
 
 Como você está se sentindo desde nossa conversa anterior? Há algo específico que gostaria de explorar hoje?""",
                         
-                        f"""Oi, {username}! Que bom que você voltou.
+                        f"""Oi, {user_label}! Que bom que você voltou.
 
 Esta é nossa segunda sessão juntos. Como você tem estado desde que conversamos?
 
 O que você gostaria de compartilhar comigo hoje? Há algo que tem estado em sua mente?""",
                         
-                        f"""Olá, {username}! É um prazer te ver novamente.
+                        f"""Olá, {user_label}! É um prazer te ver novamente.
 
 Agora que já nos conhecemos um pouco, como você está se sentindo hoje?
 
@@ -1331,19 +1382,19 @@ Há alguma reflexão da nossa primeira conversa que gostaria de continuar explor
                     ]
                     
                     other_session_variations = [
-                        f"""Olá, {username}! É bom te ver novamente.
+                        f"""Olá, {user_label}! É bom te ver novamente.
 
 Esta é nossa sessão {current_session_number}. Como você está se sentindo hoje?
 
 O que te trouxe aqui? Há algo específico que gostaria de conversar comigo?""",
                         
-                        f"""Oi, {username}! Que bom que você voltou.
+                        f"""Oi, {user_label}! Que bom que você voltou.
 
 Como você tem estado desde nossa última conversa? 
 
 O que você gostaria de compartilhar comigo hoje nesta sessão {current_session_number}?""",
                         
-                        f"""Olá, {username}! É um prazer te ver novamente.
+                        f"""Olá, {user_label}! É um prazer te ver novamente.
 
 Como você está se sentindo hoje? Há algo em particular que gostaria de explorar em nossa sessão {current_session_number}?"""
                     ]
@@ -1359,7 +1410,7 @@ Como você está se sentindo hoje? Há algo em particular que gostaria de explor
                 logger.error(f"❌ Erro ao processar sessão 2+ para {username}: {session_error}")
                 
                 # Fallback em caso de erro (ainda personalizado)
-                initial_message = f"""Olá, {username}! É bom te ver novamente.
+                initial_message = f"""Olá, {user_label}! É bom te ver novamente.
 
 Como você está se sentindo hoje? O que gostaria de conversar comigo?"""
         

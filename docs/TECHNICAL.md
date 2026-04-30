@@ -252,12 +252,16 @@ GET /api/admin/user-sessions
   "email": "email@exemplo.com",
   "google_id": "sub do Google",
   "name": "Nome Completo",
+  "full_name": "Nome Completo informado pelo usuário",
+  "display_name": "Nome usado na interface e nos prompts",
   "picture": "https://...",
   "email_verified": true,
   "auth_method": "google",
   "preferences": {
     "selected_voice": "pt-BR-Neural2-B",
     "voice_enabled": true,
+    "full_name": "Nome Completo informado pelo usuário",
+    "display_name": "Nome usado na interface e nos prompts",
     "theme": "dark",
     "language": "pt-BR"
   },

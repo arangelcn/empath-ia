@@ -49,7 +49,13 @@ const readLocalUser = () => {
 };
 
 const ProfileVoicePage = () => {
-  const { username, selectedVoice, setSelectedVoice } = useOutletContext();
+  const {
+    username,
+    displayName: currentDisplayName,
+    setDisplayName: setGlobalDisplayName,
+    selectedVoice,
+    setSelectedVoice,
+  } = useOutletContext();
   const [user, setUser] = useState(null);
   const [displayName, setDisplayName] = useState('');
   const [voice, setVoice] = useState(selectedVoice || 'pt-BR-Neural2-B');
@@ -79,8 +85,11 @@ const ProfileVoicePage = () => {
 
         setUser(userData);
         setDisplayName(
-          nextPreferences.display_name
+          userData.display_name
+          || userData.full_name
+          || nextPreferences.display_name
           || nextPreferences.full_name
+          || currentDisplayName
           || localUser?.name
           || userData.email
           || username
@@ -105,7 +114,7 @@ const ProfileVoicePage = () => {
     };
 
     loadUser();
-  }, [localUser, selectedVoice, username]);
+  }, [currentDisplayName, localUser, selectedVoice, username]);
 
   useEffect(() => {
     if (!success) return undefined;
@@ -129,6 +138,7 @@ const ProfileVoicePage = () => {
 
       const nextPreferences = {
         ...preferences,
+        full_name: displayName.trim(),
         display_name: displayName.trim(),
         selected_voice: voice,
         voice_enabled: preferences.voice_enabled ?? true,
@@ -141,10 +151,13 @@ const ProfileVoicePage = () => {
         ...(prev || {}),
         username,
         email,
+        full_name: displayName.trim(),
+        display_name: displayName.trim(),
         preferences: nextPreferences,
       }));
 
       localStorage.setItem('empatia_selected_voice', voice);
+      setGlobalDisplayName?.(displayName.trim());
       setSelectedVoice?.(voice);
 
       const storedUser = readLocalUser();
@@ -152,6 +165,7 @@ const ProfileVoicePage = () => {
         const nextUser = {
           ...storedUser,
           name: displayName.trim() || storedUser.name,
+          full_name: displayName.trim(),
           display_name: displayName.trim(),
         };
         if (localStorage.getItem('empatia_user_data')) {
@@ -220,7 +234,7 @@ const ProfileVoicePage = () => {
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block">
-                <span className="mb-2 block text-sm font-medium text-gray-700">Nome exibido</span>
+                <span className="mb-2 block text-sm font-medium text-gray-700">Nome completo</span>
                 <input
                   type="text"
                   value={displayName}

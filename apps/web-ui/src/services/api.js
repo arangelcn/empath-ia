@@ -139,6 +139,9 @@ export const getUserStatus = async (sessionId) => {
  */
 export const saveUserPreferences = async (sessionId, username, selectedVoice, voiceEnabled = true, userData = null) => {
   try {
+    const fullName = userData?.full_name || userData?.fullName || userData?.display_name || userData?.name || '';
+    const displayName = userData?.display_name || userData?.displayName || fullName || '';
+
     // Primeiro, criar ou atualizar o usuário no sistema
     if (userData && userData.authMethod === 'google') {
       // Para usuários Google, criar/atualizar no sistema de usuários
@@ -148,6 +151,8 @@ export const saveUserPreferences = async (sessionId, username, selectedVoice, vo
         preferences: {
           selected_voice: selectedVoice,
           voice_enabled: voiceEnabled,
+          full_name: fullName,
+          display_name: displayName,
           theme: 'dark',
           language: 'pt-BR'
         }
@@ -160,6 +165,8 @@ export const saveUserPreferences = async (sessionId, username, selectedVoice, vo
           console.warn('Erro ao criar usuário:', error);
         }
       }
+
+      await apiClient.put(`/user/${username}/preferences`, userPayload.preferences);
       
       // Registrar login
       await apiClient.post(`/user/${username}/login`);
@@ -171,6 +178,8 @@ export const saveUserPreferences = async (sessionId, username, selectedVoice, vo
       username,
       selected_voice: selectedVoice,
       voice_enabled: voiceEnabled,
+      full_name: fullName,
+      display_name: displayName,
     };
 
     // Adicionar dados do usuário se disponíveis
@@ -420,7 +429,7 @@ export const getInitialMessage = async (sessionId) => {
   }
 };
 
-// ===== APIs DE USUÁRIO ===== 
+// ===== APIs DE USUÁRIO =====
 
 export const getSessions = async () => {
   try {
@@ -430,4 +439,4 @@ export const getSessions = async () => {
     console.error('Erro ao buscar sessões:', error.response?.data || error.message);
     throw error;
   }
-}; 
+};

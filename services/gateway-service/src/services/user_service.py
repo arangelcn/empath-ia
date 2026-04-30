@@ -45,6 +45,12 @@ class UserService:
                 "is_active": True,
                 "session_count": 0
             }
+
+            if preferences:
+                if preferences.get("full_name"):
+                    user_data["full_name"] = preferences["full_name"]
+                if preferences.get("display_name"):
+                    user_data["display_name"] = preferences["display_name"]
             
             result = await self.users_collection.insert_one(user_data)
             user_data["_id"] = str(result.inserted_id)
@@ -74,14 +80,19 @@ class UserService:
     async def update_user_preferences(self, username: str, preferences: Dict[str, Any]) -> bool:
         """Atualizar preferências do usuário"""
         try:
+            update_fields = {
+                "preferences": preferences,
+                "updated_at": datetime.utcnow()
+            }
+
+            if "full_name" in preferences:
+                update_fields["full_name"] = preferences.get("full_name")
+            if "display_name" in preferences:
+                update_fields["display_name"] = preferences.get("display_name")
+
             result = await self.users_collection.update_one(
                 {"username": username},
-                {
-                    "$set": {
-                        "preferences": preferences,
-                        "updated_at": datetime.utcnow()
-                    }
-                }
+                {"$set": update_fields}
             )
             
             if result.modified_count > 0:
@@ -212,4 +223,4 @@ class UserService:
             
         except Exception as e:
             logger.error(f"❌ Erro ao obter estatísticas do usuário: {e}")
-            raise 
+            raise

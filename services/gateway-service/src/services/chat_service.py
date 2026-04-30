@@ -950,10 +950,23 @@ class ChatService:
             # 1. Buscar dados estruturados do usuário (se existir)
             user = await users.find_one({"username": username})
             user_profile = {}
+            preferences = (user or {}).get("preferences", {})
+            display_name = (
+                (user or {}).get("display_name")
+                or preferences.get("display_name")
+                or (user or {}).get("full_name")
+                or preferences.get("full_name")
+            )
             
             if user and user.get("user_profile"):
                 user_profile = user["user_profile"]
                 logger.info(f"✅ Perfil estruturado encontrado para {username}")
+
+            user_profile["username"] = username
+            user_profile["preferences"] = preferences
+            if display_name:
+                user_profile["display_name"] = display_name
+                user_profile["full_name"] = (user or {}).get("full_name") or preferences.get("full_name") or display_name
             
             # 2. ✅ NOVO: Buscar registration_data da sessão-1 para integrar ao perfil
             session_1_id = f"{username}_session-1"
@@ -965,7 +978,6 @@ class ChatService:
                 
                 # Integrar registration_data ao user_profile
                 user_profile["registration_data"] = registration_data
-                user_profile["username"] = username
                 
                 # ✅ NOVO: Criar summary baseado no registration_data se não existir
                 if not user_profile.get("profile_summary"):
@@ -993,6 +1005,9 @@ class ChatService:
                 logger.warning(f"⚠️ Nenhum dado de perfil encontrado para {username}")
                 return {
                     "username": username,
+                    "display_name": display_name,
+                    "full_name": (user or {}).get("full_name") or preferences.get("full_name") or display_name,
+                    "preferences": preferences,
                     "profile_summary": f"Usuário {username} - dados limitados",
                     "registration_data": {},
                     "personal_info": {},

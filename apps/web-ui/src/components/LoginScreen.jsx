@@ -5,6 +5,8 @@ import GoogleAuth from './GoogleAuth.jsx';
 
 const LoginScreen = ({ onComplete, sessionId }) => {
   const [selectedVoice, setSelectedVoice] = useState('pt-BR-Neural2-B');
+  const [fullName, setFullName] = useState('');
+  const [needsProfileName, setNeedsProfileName] = useState(false);
   const [error, setError] = useState('');
   const [userData, setUserData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -50,6 +52,9 @@ const LoginScreen = ({ onComplete, sessionId }) => {
         const user = JSON.parse(saved);
         if (user.auth_method === 'google' && localStorage.getItem('empatia_access_token')) {
           setUserData(user);
+          const savedName = user.full_name || user.display_name || '';
+          setFullName(savedName || user.name || '');
+          setNeedsProfileName(!savedName);
         }
       } catch {
         // dado corrompido — ignorar
@@ -60,6 +65,9 @@ const LoginScreen = ({ onComplete, sessionId }) => {
   const handleAuthSuccess = (user) => {
     localStorage.setItem('empatia_user', JSON.stringify(user));
     setUserData(user);
+    const savedName = user.full_name || user.display_name || user.preferences?.full_name || user.preferences?.display_name || '';
+    setFullName(savedName || user.name || '');
+    setNeedsProfileName(user.requires_profile_name ?? !savedName);
     setError('');
   };
 
@@ -70,14 +78,23 @@ const LoginScreen = ({ onComplete, sessionId }) => {
   const handleComplete = async () => {
     if (!userData || !selectedVoice) return;
 
+    const normalizedFullName = fullName.trim().replace(/\s+/g, ' ');
+    if (needsProfileName && normalizedFullName.length < 2) {
+      setError('Informe seu nome completo para continuar.');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
 
     try {
+      const displayName = normalizedFullName || userData.display_name || userData.name || userData.email;
       const userInfo = {
         id: userData.id,
         email: userData.email,
-        name: userData.name,
+        name: displayName,
+        full_name: normalizedFullName || userData.full_name || displayName,
+        display_name: displayName,
         picture: userData.picture,
         username: userData.username || userData.name,
         authMethod: 'google',
@@ -89,6 +106,7 @@ const LoginScreen = ({ onComplete, sessionId }) => {
         username: userInfo.username,
         voice: selectedVoice,
         voiceEnabled: true,
+        displayName,
         userData: userInfo,
       });
     } catch {
@@ -98,7 +116,7 @@ const LoginScreen = ({ onComplete, sessionId }) => {
     }
   };
 
-  const canProceed = userData && selectedVoice && !isLoading;
+  const canProceed = userData && selectedVoice && !isLoading && (!needsProfileName || fullName.trim().length >= 2);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background-light via-background-muted to-background-light dark:from-background-dark dark:via-dark-surface dark:to-background-dark">
@@ -156,7 +174,7 @@ const LoginScreen = ({ onComplete, sessionId }) => {
               </div>
             )}
 
-            {/* Etapa 2 — Seleção de Voz */}
+            {/* Etapa 2 — Nome e Seleção de Voz */}
             {userData && (
               <div className="space-y-4">
                 <div className="text-center space-y-2">
@@ -170,6 +188,24 @@ const LoginScreen = ({ onComplete, sessionId }) => {
                   <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
                     Olá, {userData.name}!
                   </p>
+
+                  {needsProfileName && (
+                    <div className="pt-2 text-left">
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-medium text-text-primary dark:text-text-primary-dark">
+                          Nome completo
+                        </span>
+                        <input
+                          type="text"
+                          value={fullName}
+                          onChange={event => setFullName(event.target.value)}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                          placeholder="Seu nome completo"
+                          autoComplete="name"
+                        />
+                      </label>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-center gap-2 text-text-primary dark:text-text-primary-dark pt-2">
                     <svg className="w-5 h-5 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">

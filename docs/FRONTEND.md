@@ -44,6 +44,7 @@ O estado vive em `AppRoutes` dentro de `App.jsx`. Não há Redux nem Context API
 |--------|------|-----------|
 | `sessionId` | string | ID de sessão legado (gerado localmente, armazenado em localStorage) |
 | `username` | string | Email do usuário Google |
+| `displayName` | string | Nome humano usado na interface e personalização da IA |
 | `selectedVoice` | string | ID da voz TTS selecionada |
 | `isOnboarded` | boolean | Se o usuário completou o onboarding |
 | `isLoading` | boolean | Carregando estado inicial da sessão |
@@ -51,7 +52,7 @@ O estado vive em `AppRoutes` dentro de `App.jsx`. Não há Redux nem Context API
 **Inicialização (useEffect em App.jsx):**
 1. Verifica/gera `empatia_session_id` no localStorage
 2. Chama `GET /api/user/status/{session_id}` para checar se já tem onboarding
-3. Define `isOnboarded`, `username` e `selectedVoice` conforme resposta
+3. Define `isOnboarded`, `username`, `displayName` e `selectedVoice` conforme resposta
 
 ### Componentes principais
 
@@ -64,11 +65,12 @@ O estado vive em `AppRoutes` dentro de `App.jsx`. Não há Redux nem Context API
 - Fluxo de onboarding pós-login Google:
   1. Valida ID Token do Google via `POST /api/auth/google`
   2. Registra login via `POST /api/user/{username}/login`
-  3. Coleta preferências: seleção de voz
-  4. Salva via `POST /api/user/preferences`
-  5. Chama `onLoginComplete({ username, voice, voiceEnabled, userData })`
+  3. Quando `full_name`/`display_name` ainda não existe, solicita nome completo
+  4. Coleta preferências: seleção de voz
+  5. Salva via `POST /api/user/preferences`
+  6. Chama `onLoginComplete({ username, displayName, voice, voiceEnabled, userData })`
 
-Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o login/onboarding deve solicitar o nome completo, salvar no perfil do usuário e usar esse nome na interface e no contexto enviado à IA. O `username`/email continua sendo o identificador técnico.
+O `username`/email continua sendo o identificador técnico. O nome salvo é usado como `displayName` na interface e no contexto enviado à IA.
 
 #### `AuthenticatedShell.jsx` (`components/Layout/`)
 - Layout autenticado compartilhado entre `/home`, `/profile`, `/chat` e `/chat/:sessionId`
@@ -76,6 +78,7 @@ Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o l
 - Carrega sessões e progresso via `GET /api/user/{username}/sessions` e `GET /api/user/{username}/progress`
 - Abre sessões usando `POST /api/user/{username}/sessions/{session_id}/start` quando necessário
 - Preserva o `session_id` composto no formato `${username}_${session_id}`
+- Exibe `displayName` quando disponível, sem alterar o identificador técnico
 
 #### `HomeScreen.jsx` (`components/Home/`)
 - Home da jornada terapêutica na rota existente `/home`
@@ -83,6 +86,7 @@ Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o l
 - Estados visuais por sessão: `locked`, `unlocked`, `in_progress`, `completed`
 - Usa os dados carregados pelo `AuthenticatedShell`
 - Botão "Iniciar/Continuar/Ver conversa" navega para `/chat/{username}_{session_id}`
+- Usa `displayName` no cabeçalho quando disponível
 
 #### `ProfileVoicePage.jsx` (`components/Profile/`)
 - Página autenticada `/profile` para dados básicos e voz.
@@ -101,6 +105,7 @@ Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o l
 - **Áudio:** quando `audio_url` vem na resposta, usa `audioService.js` para reproduzir
 - **Finalizar sessão:** botão ou detecção de fim → `POST /api/chat/finalize/{session_id}` → redireciona para `/home`
 - Exibe `EmotionBadge` com a emoção detectada em tempo real
+- Recebe `displayName` para textos de interface, mantendo `username` apenas para isolamento e queries
 
 ### Fluxo completo do usuário
 
@@ -109,17 +114,18 @@ Próximo passo: quando o perfil ainda não tiver `full_name`/`display_name`, o l
 2. Clica "Fazer Login com Google" → popup Google → retorna ID Token
 3. POST /api/auth/google → recebe JWT de sessão
 4. JWT armazenado em localStorage ("empatia_access_token")
-5. POST /api/user/{username}/login → cria session-1
-6. Seleção de voz → POST /api/user/preferences
-7. Redireciona para /home
-8. AuthenticatedShell carrega progresso e sessões; HomeScreen exibe a Home
-9. POST /api/user/{username}/sessions/{session_id}/start
-10. Navega para /chat/{username}_{session_id}
-11. ChatScreen carrega → GET /api/chat/initial-message/{full_session_id}
-12. Conversa... POST /api/chat/send (vai e volta)
-13. Análise emocional em background (webcam → POST /api/emotion/analyze-realtime)
-14. Clica "Finalizar sessão" → POST /api/chat/finalize/{full_session_id}
-15. AI gera contexto + próxima sessão → redireciona para /home
+5. Se necessário, informa nome completo
+6. POST /api/user/{username}/login → cria session-1
+7. Seleção de voz + nome completo → POST /api/user/preferences
+8. Redireciona para /home
+9. AuthenticatedShell carrega progresso e sessões; HomeScreen exibe a Home
+10. POST /api/user/{username}/sessions/{session_id}/start
+11. Navega para /chat/{username}_{session_id}
+12. ChatScreen carrega → GET /api/chat/initial-message/{full_session_id}
+13. Conversa... POST /api/chat/send (vai e volta)
+14. Análise emocional em background (webcam → POST /api/emotion/analyze-realtime)
+15. Clica "Finalizar sessão" → POST /api/chat/finalize/{full_session_id}
+16. AI gera contexto + próxima sessão → redireciona para /home
 ```
 
 ---

@@ -14,6 +14,7 @@ interface Message {
   type: 'user' | 'ai';
   content: string;
   audioUrl?: string;
+  authorName?: string;
 }
 
 interface SessionObjective {
@@ -160,7 +161,7 @@ const ChatComposer = ({
   );
 };
 
-const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
+const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => {
   const { sessionId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -168,6 +169,7 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
   
   // Usar sessionId da URL
   const currentSessionId = sessionId || fallbackSessionId;
+  const participantName = displayName || username || 'você';
   
   // Obter informações da sessão do state (passado pelo navigate)
   const sessionInfo = location.state || {};
@@ -243,6 +245,7 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
             type: msg.type === 'user' ? 'user' : 'ai',
             content: msg.content,
             audioUrl: msg.audio_url || undefined,
+            authorName: msg.type === 'user' ? participantName : undefined,
           }));
           
           setMessages(historyMessages);
@@ -270,6 +273,7 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
                   type: msg.type === 'user' ? 'user' : 'ai',
                   content: msg.content,
                   audioUrl: msg.audio_url || undefined,
+                  authorName: msg.type === 'user' ? participantName : undefined,
                 }));
                 
                 setMessages(historyMessages);
@@ -329,7 +333,7 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
     if (currentSessionId && username) {
       loadSessionData();
     }
-  }, [currentSessionId, originalSessionId, username]);
+  }, [currentSessionId, originalSessionId, participantName, username]);
 
   // useEffect removido - emoção agora é atualizada via WebcamEmotionCapture
   
@@ -353,6 +357,7 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
       id: `user-${Date.now()}`,
       type: 'user',
       content: inputValue,
+      authorName: participantName,
     };
     setMessages(prev => [...prev, userMessage]);
     const currentInput = inputValue;
@@ -678,7 +683,7 @@ const ChatScreen = ({ username, sessionId: fallbackSessionId }) => {
   };
 
   const displaySessionTitle = sessionTitle || sessionObjective?.title || 'Sessão terapêutica';
-  const displaySessionSubtitle = sessionObjective?.subtitle || `Conversando com ${username || 'você'}`;
+  const displaySessionSubtitle = sessionObjective?.subtitle || `Conversando com ${participantName}`;
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden bg-background-light text-text-primary transition-colors duration-300 dark:bg-background-dark dark:text-text-primary-dark lg:h-screen">

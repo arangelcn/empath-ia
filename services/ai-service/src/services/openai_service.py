@@ -556,11 +556,20 @@ CONTEXTO:
         
         # ✅ NOVO: Reobter perfil do usuário (pode ter sido atualizado pelo previous_session_context)
         user_profile_context = self._get_user_profile_context(username)
+        cached_profile = self._get_cached_user_profile(username) or {}
+        display_name = (
+            cached_profile.get("display_name")
+            or cached_profile.get("full_name")
+            or (cached_profile.get("preferences") or {}).get("display_name")
+            or (cached_profile.get("preferences") or {}).get("full_name")
+            or username
+        )
         
         # ✅ NOVO: Adicionar informações do usuário ao contexto
         user_context = f"""
 INFORMAÇÕES DO USUÁRIO:
 - Username: {username}
+- Nome preferido: {display_name}
 - Sessão: {session_id}
 - Timestamp: {datetime.now().isoformat()}
 
@@ -568,7 +577,8 @@ INFORMAÇÕES DO USUÁRIO:
 
 {previous_session_info}
 
-IMPORTANTE: Você está conversando especificamente com {username}. 
+IMPORTANTE: Você está conversando especificamente com {display_name}.
+Use o nome preferido com naturalidade, sem usar o e-mail/username como forma de tratamento.
 Mantenha a conversa personalizada e contextualizada para este usuário.
 Use as informações do perfil e das sessões anteriores para personalizar sua abordagem terapêutica.
 PRIORIZE sempre as informações mais recentes e relevantes do contexto cumulativo.
@@ -1966,6 +1976,18 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
         """
         try:
             context_parts = []
+
+            display_name = (
+                profile.get("display_name")
+                or profile.get("full_name")
+                or (profile.get("preferences") or {}).get("display_name")
+                or (profile.get("preferences") or {}).get("full_name")
+            )
+            if display_name:
+                context_parts.append("👤 IDENTIDADE:")
+                context_parts.append(f"- Nome preferido: {display_name}")
+                if profile.get("username"):
+                    context_parts.append(f"- Identificador técnico: {profile['username']}")
             
             # ✅ NOVO: Processar registration_data se disponível (dados da sessão-1)
             registration_data = profile.get("registration_data", {})
