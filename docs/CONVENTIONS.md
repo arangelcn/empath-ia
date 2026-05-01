@@ -360,7 +360,7 @@ doc = await colecao.find_one({
 doc = await colecao.find_one({"session_id": session_id})
 ```
 
-Ver [`SECURITY_FIX_SESSION_ISOLATION.md`](SECURITY_FIX_SESSION_ISOLATION.md) para o histórico.
+Veja também a seção de sessões terapêuticas em [`TECHNICAL.md`](TECHNICAL.md) para o formato atual de `chat_id`, `session_id` e isolamento por usuário.
 
 ### Serialização de ObjectId
 

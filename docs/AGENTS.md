@@ -17,67 +17,63 @@ Plataforma de apoio terapêutico com IA conversacional baseada na abordagem huma
 
 | Arquivo | O que cobre |
 |---------|-------------|
-| [`TECHNICAL.md`](TECHNICAL.md) | Referência técnica completa: serviços, variáveis de ambiente, API, banco de dados, infra, deploy |
+| [`README.md`](README.md) | Índice curto da documentação ativa |
+| [`TECHNICAL.md`](TECHNICAL.md) | Referência técnica: serviços, variáveis de ambiente, API, banco de dados, prompts e deploy |
 | [`AGENTS.md`](AGENTS.md) | **Este arquivo** — índice de navegação para agentes |
 | [`CODEBASE_MAP.md`](CODEBASE_MAP.md) | Mapa de arquivos: onde encontrar cada pedaço do código |
 | [`FRONTEND.md`](FRONTEND.md) | Arquitetura React (web-ui e admin-panel): rotas, componentes, estado, localStorage |
 | [`CONVENTIONS.md`](CONVENTIONS.md) | Padrões de código, como adicionar endpoints, páginas, componentes |
-| [`CONTRACTS.md`](CONTRACTS.md) | Contratos internos entre microserviços (payloads, formatos, URLs) |
-| [`SECURITY_FIX_SESSION_ISOLATION.md`](SECURITY_FIX_SESSION_ISOLATION.md) | Correção crítica de isolamento de sessões entre usuários |
-| [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md) | Próximos passos gerais do produto e checklist de implementação |
-| [`roadmap/VOICE_CONVERSATION_ROADMAP.md`](roadmap/VOICE_CONVERSATION_ROADMAP.md) | Roadmap da feature de conversação por voz |
+| [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md) | Roadmap vivo: prioridades, Prompt Control, RAG e voz |
 
 ---
 
 ## Navegação rápida por tipo de tarefa
 
 ### Adicionar ou modificar um endpoint de API
-1. Leia [`CONVENTIONS.md#endpoints-fastapi`](CONVENTIONS.md#endpoints-fastapi)
-2. Veja exemplos em [`CODEBASE_MAP.md#gateway-service`](CODEBASE_MAP.md#gateway-service)
-3. Consulte o schema de request/response em [`TECHNICAL.md#3-api-reference--gateway`](TECHNICAL.md#3-api-reference--gateway)
+1. Leia a seção de endpoints em [`CONVENTIONS.md`](CONVENTIONS.md)
+2. Veja o mapa do gateway em [`CODEBASE_MAP.md`](CODEBASE_MAP.md)
+3. Consulte a API Gateway em [`TECHNICAL.md`](TECHNICAL.md)
 
 ### Trabalhar no frontend (web-ui)
-1. Leia [`FRONTEND.md#web-ui`](FRONTEND.md#web-ui)
-2. Consulte [`CODEBASE_MAP.md#web-ui`](CODEBASE_MAP.md#web-ui) para encontrar arquivos
-3. Veja padrões de componentes em [`CONVENTIONS.md#react`](CONVENTIONS.md#react)
+1. Leia a seção Web UI em [`FRONTEND.md`](FRONTEND.md)
+2. Consulte [`CODEBASE_MAP.md`](CODEBASE_MAP.md) para encontrar arquivos
+3. Veja padrões React em [`CONVENTIONS.md`](CONVENTIONS.md)
 
 ### Trabalhar no admin panel
-1. Leia [`FRONTEND.md#admin-panel`](FRONTEND.md#admin-panel)
-2. Consulte [`CODEBASE_MAP.md#admin-panel`](CODEBASE_MAP.md#admin-panel)
+1. Leia a seção Admin Panel em [`FRONTEND.md`](FRONTEND.md)
+2. Consulte [`CODEBASE_MAP.md`](CODEBASE_MAP.md)
 
 ### Modificar lógica de IA ou prompts
-1. Leia [`TECHNICAL.md#9-gerenciamento-de-prompts`](TECHNICAL.md#9-gerenciamento-de-prompts)
-2. Consulte [`CONTRACTS.md#gateway-ai-service`](CONTRACTS.md#gateway-ai-service)
-3. Arquivo principal: `services/ai-service/src/api/openai_routes.py`
+1. Leia a seção de prompts em [`TECHNICAL.md`](TECHNICAL.md)
+2. Consulte a Prioridade 5 em [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md)
+3. Arquivos principais: `services/gateway-service/src/services/prompt_service.py`, `services/gateway-service/src/services/chat_service.py` e `services/ai-service/src/services/openai_service.py`
 
 ### Trabalhar com sessões terapêuticas
-1. Leia [`TECHNICAL.md#8-sessões-terapêuticas-e-contexto`](TECHNICAL.md#8-sessões-terapêuticas-e-contexto)
-2. Leia [`SECURITY_FIX_SESSION_ISOLATION.md`](SECURITY_FIX_SESSION_ISOLATION.md) — **obrigatório** antes de tocar em session_id
+1. Leia a seção de sessões terapêuticas em [`TECHNICAL.md`](TECHNICAL.md)
+2. Leia a seção "Identidade de Chat" neste arquivo antes de tocar em `chat_id` ou `session_id`
 3. Serviço responsável: `services/gateway-service/src/services/user_therapeutic_session_service.py`
 
 ### Trabalhar com análise emocional
-1. Leia [`TECHNICAL.md#6-sistema-de-análise-emocional`](TECHNICAL.md#6-sistema-de-análise-emocional)
-2. Consulte [`CONTRACTS.md#gateway-emotion-service`](CONTRACTS.md#gateway-emotion-service)
-3. Serviço: `services/emotion-service/src/`
+1. Leia a seção de análise emocional em [`TECHNICAL.md`](TECHNICAL.md)
+2. Serviço: `services/emotion-service/src/`
 
 ### Trabalhar com síntese de voz
-1. Leia [`TECHNICAL.md#7-síntese-de-voz`](TECHNICAL.md#7-síntese-de-voz)
-2. Consulte [`CONTRACTS.md#gateway-voice-service`](CONTRACTS.md#gateway-voice-service)
+1. Leia a seção de síntese de voz em [`TECHNICAL.md`](TECHNICAL.md)
+2. Consulte a Prioridade 7 em [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md)
 3. Atenção ao rewrite de URL: `_rewrite_audio_url()` em `gateway-service/src/main.py`
 
 ### Modificar banco de dados (schema/queries)
-1. Leia [`TECHNICAL.md#4-schema-do-banco-de-dados`](TECHNICAL.md#4-schema-do-banco-de-dados)
-2. Leia [`SECURITY_FIX_SESSION_ISOLATION.md`](SECURITY_FIX_SESSION_ISOLATION.md)
-3. Conexão e coleções: `services/gateway-service/src/models/database.py`
+1. Leia a seção de schema do banco em [`TECHNICAL.md`](TECHNICAL.md)
+2. Conexão e coleções: `services/gateway-service/src/models/database.py`
 
 ### Deploy e infraestrutura
-1. Leia [`TECHNICAL.md#10-infraestrutura-e-deploy`](TECHNICAL.md#10-infraestrutura-e-deploy)
+1. Leia [`TECHNICAL.md`](TECHNICAL.md) e [`../infrastructure/README.md`](../infrastructure/README.md)
 2. Manifests K8s: `infrastructure/k8s/`
 3. Terraform: `infrastructure/terraform/`
 4. CI/CD: `.github/workflows/`
 
 ### Setup local
-1. Leia [`TECHNICAL.md#11-desenvolvimento-local`](TECHNICAL.md#11-desenvolvimento-local)
+1. Leia a seção de desenvolvimento local em [`TECHNICAL.md`](TECHNICAL.md)
 2. Copie `.env.example` → `.env` e preencha `OPENAI_API_KEY`, `GOOGLE_CLIENT_ID`, `SECRET_KEY`
 3. `docker compose up -d`
 
@@ -95,7 +91,7 @@ chat_4f0d...
 `session_id` continua representando a sessão terapêutica (`session-2`) e `username` fica em campo separado. O formato legado `{username}_session-N` ainda é aceito pelo gateway como `legacy_session_id` para migração/compatibilidade; se precisar separar esse legado, use `rfind("_session-")`, nunca `split('_')` simples.
 
 ### 2. Isolamento de sessões (segurança crítica)
-Qualquer query nas coleções `messages` ou `conversations` deve preferir `chat_id`. Quando filtrar por sessão terapêutica, use o par `username + therapeutic_session_id`. Sem isso, um usuário pode ver mensagens de outro. Ver [`SECURITY_FIX_SESSION_ISOLATION.md`](SECURITY_FIX_SESSION_ISOLATION.md) para o histórico completo.
+Qualquer query nas coleções `messages` ou `conversations` deve preferir `chat_id`. Quando filtrar por sessão terapêutica, use o par `username + therapeutic_session_id`. Sem isso, um usuário pode ver mensagens de outro. O resumo atualizado fica na seção de sessões terapêuticas em [`TECHNICAL.md`](TECHNICAL.md).
 
 ### 3. Audio URL rewrite
 O voice service retorna URLs no formato `/api/v1/audio/{filename}` (porta 8004, interna). O gateway reescreve para `/api/voice/audio/{filename}` antes de retornar ao browser. A função `_rewrite_audio_url()` em `main.py` faz isso. **Nunca retorne a URL interna diretamente ao frontend.**

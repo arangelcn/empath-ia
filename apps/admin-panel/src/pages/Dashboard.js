@@ -11,6 +11,65 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import apiService from '../services/api';
 import { DataQualityBadge, EmptyState, ErrorState, UnavailableState } from '../components/AdminState';
 
+const EMOTION_COLORS = {
+  alegria: '#10B981',
+  happy: '#10B981',
+  happiness: '#10B981',
+  joy: '#10B981',
+  tristeza: '#3B82F6',
+  sad: '#3B82F6',
+  sadness: '#3B82F6',
+  ansiedade: '#F59E0B',
+  anxiety: '#F59E0B',
+  anxious: '#F59E0B',
+  medo: '#F59E0B',
+  fear: '#F59E0B',
+  raiva: '#EF4444',
+  angry: '#EF4444',
+  anger: '#EF4444',
+  surpresa: '#8B5CF6',
+  surprise: '#8B5CF6',
+  nojo: '#84CC16',
+  disgust: '#84CC16',
+  calma: '#14B8A6',
+  calm: '#14B8A6',
+  neutro: '#64748B',
+  neutral: '#64748B',
+};
+
+const EMOTION_LABELS = {
+  happy: 'Alegria',
+  happiness: 'Alegria',
+  joy: 'Alegria',
+  sad: 'Tristeza',
+  sadness: 'Tristeza',
+  anxiety: 'Ansiedade',
+  anxious: 'Ansiedade',
+  fear: 'Medo',
+  angry: 'Raiva',
+  anger: 'Raiva',
+  surprise: 'Surpresa',
+  disgust: 'Nojo',
+  calm: 'Calma',
+  neutral: 'Neutro',
+};
+
+const normalizeEmotionKey = (emotion = '') => (
+  String(emotion)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+);
+
+const formatEmotionLabel = (emotion) => {
+  const key = normalizeEmotionKey(emotion);
+  const label = EMOTION_LABELS[key] || emotion || 'Indefinida';
+  return String(label).charAt(0).toUpperCase() + String(label).slice(1);
+};
+
+const getEmotionColor = (emotion) => EMOTION_COLORS[normalizeEmotionKey(emotion)] || '#7C3AED';
+
 function StatsCard({ title, value, change, icon: Icon, trend, isLoading }) {
   const isPositive = trend === 'up';
   
@@ -97,9 +156,9 @@ export default function Dashboard() {
       }
 
       if (emotionsResponse.success) {
-        const emotionsData = emotionsResponse.data.distribution;
+        const emotionsData = emotionsResponse.data.distribution || {};
         const formattedEmotions = Object.entries(emotionsData).map(([name, value]) => ({
-          name: name.charAt(0).toUpperCase() + name.slice(1),
+          name: formatEmotionLabel(name),
           value: value,
           color: getEmotionColor(name)
         }));
@@ -131,17 +190,6 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const getEmotionColor = (emotion) => {
-    const colors = {
-      alegria: '#10B981',
-      tristeza: '#3B82F6',
-      ansiedade: '#F59E0B',
-      raiva: '#EF4444',
-      neutro: '#6B7280'
-    };
-    return colors[emotion] || '#6B7280';
   };
 
   useEffect(() => {

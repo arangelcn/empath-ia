@@ -72,7 +72,7 @@
 | Timeline emocional completa | MongoDB (`user_emotions`) | Relatórios e geração de próxima sessão |
 | Tendências ao longo do tempo | Agregação temporal | Dashboard do terapeuta |
 
-O painel acima mostra, ao longo dos últimos 7 dias: **3.542 sessões**, **12.847 emoções detectadas**, **94.2% de taxa de satisfação** — com tendências emocionais, engajamento por horário e distribuição demográfica.
+A tela acima ilustra a área de analytics emocionais. No estado atual, o Admin deve diferenciar dados reais, estados vazios e indisponibilidade de backend, evitando métricas simuladas como se fossem produção.
 
 ---
 
@@ -96,7 +96,7 @@ O terapeuta visualiza em tempo real todas as sessões de todos os usuários: qua
 - **Geração de próxima sessão** — instruções para a IA criar sessões personalizadas
 - **Análise de contexto** — como a IA estrutura e resume cada sessão
 - **Fallbacks por emoção** — respostas automáticas para raiva, gratidão, despedida, etc.
-- Cada prompt pode ser **ativado/desativado** individualmente, com versionamento e timestamps
+- Cada prompt pode ser **ativado/desativado** individualmente, com versão numérica e timestamps; a governança avançada de prompts entra como próxima prioridade do roadmap
 
 ---
 
@@ -203,13 +203,21 @@ Cada sessão é gerada automaticamente com base no **perfil do usuário** + **co
 
 ## Roadmap Imediato
 
-Os próximos passos do produto priorizam uma experiência mais próxima das IAs conversacionais atuais e uma personalização mais humana desde o primeiro acesso:
+Os últimos ciclos concluíram a base de experiência do usuário e a primeira rodada de saneamento operacional do Admin:
 
-- **Menu lateral no app do usuário** — adicionar navegação persistente com sessões/conversas recentes, nova sessão, jornada terapêutica, dados pessoais e configurações.
-- **Página de Dados pessoais** — centralizar nome completo, email, voz preferida, preferências de uso, consentimentos e ações de privacidade.
-- **Nome completo no login/onboarding** — solicitar e salvar o nome completo do usuário, mantendo o email como identificador técnico e usando o nome salvo para personalizar mensagens e prompts.
+- **Menu lateral e sessões recentes** — navegação autenticada com conversas recentes, Home, Chat e conta.
+- **Perfil e voz** — edição de nome exibido e voz preferida, sem fluxo pesado de configurações.
+- **Nome completo no onboarding** — coleta inicial do nome para personalização da interface e das respostas.
+- **Admin operacional** — remoção de mocks silenciosos, estados explícitos de carregamento/erro/vazio e contratos reais por tela.
+- **Emotion Service estabilizado** — ajustes de dependências, DeepFace/OpenFace e integração com histórico/contexto.
 
-O checklist detalhado fica em [`docs/todos/NEXT_STEPS.md`](docs/todos/NEXT_STEPS.md).
+Agora o foco imediato muda para controle do comportamento da IA antes de acelerar voz:
+
+- **Prioridade 5: Controle de Prompts e LLMOps** — versionamento forte, estados de revisão, auditoria, rollback, rastreabilidade por resposta e testes de regressão de prompts críticos.
+- **Prioridade 6: Pipeline RAG pelo Admin** — curadoria de documentos, aprovação explícita, embeddings, recuperação model-agnostic, citações e avaliação de grounding.
+- **Prioridade 7: Voice Service e baixa latência** — baseline de latência, resposta curta via Prompt Control, opções locais/híbridas, streaming/chunking e status operacional do serviço.
+
+O checklist detalhado fica em [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md).
 
 ---
 
@@ -227,8 +235,13 @@ Veja detalhes de infraestrutura, Terraform e pipeline CI/CD na [Documentação T
 
 ---
 
-## Atualizações Recentes (Abril 2026)
+## Atualizações Recentes (Abril/Maio 2026)
 
+- **Admin revisado como ferramenta operacional** — telas principais passaram a explicitar dados reais, vazios, erros e lacunas de backend
+- **Prompt Management consolidado como próxima frente** — roadmap atualizado para tratar prompts como ativo operacional com auditoria, versão, avaliação e rollback
+- **Emotion Service estabilizado** — ajustes de DeepFace/OpenFace, dependências e política de GPU para reduzir falhas de runtime
+- **ChatSessionID e isolamento de sessão ajustados** — navegação e histórico preservam identificadores opacos por usuário/sessão
+- **Onboarding e perfil concluídos** — nome completo, nome exibido e voz preferida integrados à experiência autenticada
 - **Login Google restaurado em produção** — `GOOGLE_CLIENT_ID` adicionado ao ConfigMap do K8s; endpoint `/api/auth/google/status` deployado corretamente
 - **Correção de áudio no proxy** — `audio_url` reescrita no gateway para servir MP3 via `/api/voice/audio/`
 - **Pipeline CI/CD estabilizado** — HTTPS e certificados gerenciados no GKE Autopilot

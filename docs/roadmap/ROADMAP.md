@@ -85,9 +85,9 @@ Critérios de aceite:
 - Chat usa o nome salvo em textos de interface e contexto de personalização.
 - Email/username continua sendo usado para autenticação, queries e isolamento de sessão.
 
-## Próximas etapas: Admin, RAG e voz
+## Próximas etapas: Prompt Control, RAG e voz
 
-As próximas prioridades devem transformar o Admin em uma ferramenta operacional real para configuração, curadoria de conhecimento e observabilidade, enquanto o Voice Service evolui para menor latência e opções locais.
+Com a Prioridade 4 concluída e o Emotion Service estabilizado como fonte operacional de sinais emocionais, o próximo eixo do produto passa a ser controle de comportamento da IA. Antes de acelerar voz, o sistema precisa tratar prompts, versões, avaliação, curadoria de conhecimento e RAG como superfície administrativa forte, auditável e segura.
 
 ## Prioridade 4: Ajustes do Admin ✅
 
@@ -109,7 +109,7 @@ Arquivos prováveis:
 - `apps/admin-panel/src/pages/SystemStatus.js`
 - `apps/admin-panel/src/services/api.js`
 - `services/gateway-service/src/api/`
-- `docs/admin/ADMIN_CONTRACT_AUDIT.md`
+- `docs/TECHNICAL.md`
 
 Critérios de aceite:
 
@@ -118,7 +118,56 @@ Critérios de aceite:
 - Falhas de API são visíveis e acionáveis, sem mascarar problemas com métricas falsas.
 - Cada tela possui contrato documentado e endpoint correspondente ou tarefa técnica aberta.
 
-## Prioridade 5: Pipeline RAG pelo Admin
+## Pós-Prioridade 4: Emotion Service estabilizado ✅
+
+- [x] Ajustar dependências e inicialização do Emotion Service para reduzir falhas de runtime.
+- [x] Corrigir integração DeepFace/OpenFace e compatibilidade do processador facial.
+- [x] Manter política de GPU clara: AI Service como dono padrão da GPU e Emotion Service operando em CPU quando necessário.
+- [x] Preservar o Emotion Service como sinal auxiliar de experiência, não como diagnóstico clínico.
+- [x] Conectar análise emocional ao histórico/contexto sem quebrar isolamento por usuário e sessão.
+
+Critérios de aceite:
+
+- Emotion Service sobe de forma previsível no ambiente local/containerizado.
+- Falhas de análise emocional degradam a experiência de forma controlada.
+- O gateway consegue registrar/consultar sinais emocionais sem depender de dados simulados.
+- Documentação continua deixando claro que emoção detectada não equivale a diagnóstico.
+
+## Prioridade 5: Controle de Prompts e LLMOps
+
+- [ ] Separar endpoints administrativos de prompts em namespace protegido, por exemplo `/api/admin/prompts`, ou adicionar autenticação service-to-service para manter `/api/prompts` seguro.
+- [ ] Criar versionamento de prompts: versão, status, autor, data de publicação, changelog, tags e motivo da alteração.
+- [ ] Diferenciar estados operacionais: rascunho, em revisão, ativo, arquivado e rollback disponível.
+- [ ] Registrar em cada resposta da IA: `prompt_key`, `prompt_version`, modelo, provedor, latência, fallback e flags de segurança.
+- [ ] Adicionar preview/teste de prompt no Admin com variáveis reais/sintéticas controladas.
+- [ ] Criar suite mínima de regressão para prompts críticos: segurança, tom Rogeriano, não diagnóstico, crise, voz e continuidade de sessão.
+- [ ] Criar metadados mínimos de segurança por resposta: nível de risco, categorias, necessidade de revisão e motivo resumido.
+- [ ] Permitir comparação entre versões de prompt com resultado esperado, resultado obtido e observações de revisão.
+- [ ] Mapear variáveis permitidas por prompt para evitar interpolação livre e vazamento de dados sensíveis.
+- [ ] Definir prompts por contexto de uso: chat, voz, geração de sessão, resumo, fallback, análise, RAG e crise.
+- [ ] Criar trilha de auditoria para criação, edição, ativação, arquivamento e rollback.
+
+Arquivos prováveis:
+
+- `apps/admin-panel/src/pages/PromptManagement.js`
+- `apps/admin-panel/src/services/api.js`
+- `services/gateway-service/src/main.py`
+- `services/gateway-service/src/api/admin.py`
+- `services/gateway-service/src/services/prompt_service.py`
+- `services/ai-service/src/services/openai_service.py`
+- `services/gateway-service/src/services/chat_service.py`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Admin diferencia prompt em rascunho, ativo, arquivado e versão anterior.
+- Toda resposta gerada pela IA pode ser rastreada até a versão de prompt usada.
+- Mudanças de prompt têm auditoria, revisão mínima e caminho de rollback.
+- Prompts críticos têm testes de regressão antes de serem ativados.
+- Respostas sensíveis possuem metadados suficientes para avaliação e revisão administrativa.
+- O AI Service não depende de strings hardcoded para comportamento principal quando houver prompt ativo no banco.
+
+## Prioridade 6: Pipeline RAG pelo Admin
 
 - [ ] Definir modelo de dados para base de conhecimento: documento, versão, fonte, status, tags, idioma, escopo e responsável.
 - [ ] Criar fluxo de upload no Admin para PDFs, Markdown, TXT e materiais estruturados.
@@ -129,6 +178,8 @@ Critérios de aceite:
 - [ ] Integrar recuperação ao AI Service de forma model-agnostic, para funcionar com OpenAI ou modelo local.
 - [ ] Registrar citações/metadados de origem nas respostas quando conhecimento aprovado for usado.
 - [ ] Adicionar avaliação mínima de grounding para evitar respostas desconectadas dos documentos.
+- [ ] Conectar RAG ao Prompt Control: prompts devem declarar quando podem recuperar conhecimento, qual escopo podem consultar e como citar fontes.
+- [ ] Definir política de expiração/revisão de documentos para impedir conhecimento obsoleto em respostas sensíveis.
 
 Arquivos prováveis:
 
@@ -136,7 +187,8 @@ Arquivos prováveis:
 - `apps/admin-panel/src/services/api.js`
 - `services/gateway-service/src/api/admin.py`
 - `services/ai-service/src/services/`
-- `docs/MENTAL_HEALTH_MEDICAL_AI_ROADMAP.md`
+- `services/ai-service/src/services/rag_service.py`
+- `services/ai-service/src/services/embedding_service.py`
 - `docs/TECHNICAL.md`
 
 Critérios de aceite:
@@ -145,14 +197,16 @@ Critérios de aceite:
 - Documentos só entram no índice após validação e aprovação explícita.
 - Assistente consegue recuperar conhecimento aprovado sem depender do provedor do LLM.
 - Respostas que usam RAG preservam fonte, versão e rastreabilidade.
+- Recuperação é desativável por prompt/contexto e não vira comportamento global invisível.
+- Existe avaliação mínima para medir grounding, citação correta e ausência de resposta inventada.
 
-## Prioridade 6: Voice Service e baixa latência
+## Prioridade 7: Voice Service e baixa latência
 
 - [ ] Medir latência atual ponta a ponta: captura no frontend, gateway, geração LLM, TTS e reprodução.
 - [ ] Separar métricas de TTS, STT, rede, tamanho da resposta e tempo de primeira reprodução.
 - [ ] Estudar opções locais para voz: STT local, TTS local e modelos híbridos com fallback para Google Cloud.
 - [ ] Comparar candidatos locais por idioma pt-BR, qualidade, privacidade, custo, CPU/GPU e tempo de resposta.
-- [ ] Implementar modo de resposta curta para voz no AI Service, com limites de tokens e frases mais naturais para áudio.
+- [ ] Implementar modo de resposta curta para voz no AI Service via Prompt Control, com limites de tokens e frases mais naturais para áudio.
 - [ ] Avaliar streaming ou chunking de áudio para reduzir tempo até o usuário ouvir a primeira frase.
 - [ ] Adicionar cache seguro para TTS de frases comuns quando não houver dado pessoal sensível.
 - [ ] Criar health/status do Voice Service com provedor ativo, fila, latência média e fallback.
@@ -165,8 +219,7 @@ Arquivos prováveis:
 - `services/gateway-service/src/services/chat_service.py`
 - `services/gateway-service/src/main.py`
 - `services/ai-service/src/services/openai_service.py`
-- `docs/roadmap/VOICE_CONVERSATION_ROADMAP.md`
-- `docs/LOCAL_MODEL_TEST_PLAN.md`
+- `docs/TECHNICAL.md`
 
 Critérios de aceite:
 
@@ -174,6 +227,16 @@ Critérios de aceite:
 - Voice mode tem respostas mais curtas e adequadas à fala.
 - Pelo menos uma opção local ou híbrida é testada com métricas comparáveis.
 - O serviço expõe status suficiente para diagnosticar lentidão e falhas.
+- Otimizações de voz respeitam as versões de prompt, regras de segurança e rastreabilidade já definidas.
+
+## Notas consolidadas
+
+- Segurança mental: manter o assistente como apoio, sem diagnóstico, prescrição ou plano clínico autônomo. Casos de crise precisam de resposta segura, metadados de risco e revisão quando aplicável.
+- Avaliação: criar casos de regressão para prompts, segurança, grounding de RAG, voz e continuidade entre sessões antes de promover mudanças sensíveis.
+- RAG: usar somente conhecimento aprovado, versionado, revisável e citável. Recuperação deve ser escopo de prompt/contexto, não comportamento global invisível.
+- Voz: medir latência antes de trocar arquitetura. Testar STT/TTS local ou híbrido somente com comparação de qualidade, custo, privacidade e tempo de primeira reprodução.
+- Modelos locais: promover modelo local apenas se passar em qualidade, segurança, latência e fallback. OpenAI continua sendo fallback operacional enquanto isso.
+- MCP/agentes: tratar como etapa futura. Só expor tools/resources depois de existir contrato de segurança, autenticação interna e isolamento por usuário/sessão.
 
 ## Checklist de validação
 

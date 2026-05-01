@@ -274,6 +274,53 @@ class LocalLLMService:
         self._runtime_load_failed = False
         return self._llm
 
+    def _uses_gemma_chat_template(self) -> bool:
+        model_identity = " ".join(
+            [
+                self.model_name or "",
+                self.repo_id or "",
+                str(self.model_path or ""),
+            ]
+        ).lower()
+        return "gemma" in model_identity
+
+    def _prepare_messages_for_model(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Adapt chat messages for model families with limited role support."""
+        normalized_messages: List[Dict[str, str]] = []
+        system_chunks: List[str] = []
+
+        for message in messages:
+            role = message.get("role", "user")
+            content = (message.get("content") or "").strip()
+            if not content:
+                continue
+
+            if self._uses_gemma_chat_template() and role == "system":
+                system_chunks.append(content)
+                continue
+
+            normalized_messages.append({"role": role, "content": content})
+
+        if not system_chunks:
+            return normalized_messages
+
+        system_instructions = "\n\n".join(system_chunks)
+        prefixed_content = (
+            "INSTRUÇÕES DE COMPORTAMENTO PARA TODA A CONVERSA:\n"
+            f"{system_instructions}\n\n"
+            "MENSAGEM DO USUÁRIO:\n"
+        )
+
+        for index, message in enumerate(normalized_messages):
+            if message["role"] == "user":
+                normalized_messages[index] = {
+                    "role": "user",
+                    "content": f"{prefixed_content}{message['content']}",
+                }
+                return normalized_messages
+
+        return [{"role": "user", "content": system_instructions}]
+
     async def generate(
         self,
         messages: List[Dict[str, str]],
@@ -295,8 +342,9 @@ class LocalLLMService:
         temperature: float,
     ) -> Optional[str]:
         llm = self._load_model()
+        prepared_messages = self._prepare_messages_for_model(messages)
         response = llm.create_chat_completion(
-            messages=messages,
+            messages=prepared_messages,
             max_tokens=max_tokens,
             temperature=temperature,
         )
