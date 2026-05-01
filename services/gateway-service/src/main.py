@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import logging
 
 # Importar modelos e serviços
-from .models.database import init_mongodb, close_mongodb, get_collection
+from .models.database import init_mongodb, close_mongodb, create_indexes, get_collection
 from .services.chat_service import ChatService
 from .services.user_service import UserService
 from .services.therapeutic_session_service import TherapeuticSessionService
@@ -35,6 +35,8 @@ class ChatRequest(BaseModel):
 
 class ConversationRequest(BaseModel):
     session_id: str
+    username: Optional[str] = None
+    therapeutic_session_id: Optional[str] = None
 
 class UserPreferencesRequest(BaseModel):
     session_id: str
@@ -108,6 +110,7 @@ async def startup_event():
         init_mongodb()
         logger.info("✅ Gateway Service iniciado com sucesso")
         logger.info("✅ MongoDB conectado")
+        await create_indexes()
         
         # ✅ NOVO: Auto-inicializar prompts padrão se não existirem
         await auto_initialize_prompts()
@@ -220,7 +223,11 @@ async def start_conversation(request: ConversationRequest):
     Iniciar ou recuperar conversa existente
     """
     try:
-        conversation = await chat_service.start_or_get_conversation(request.session_id)
+        conversation = await chat_service.start_or_get_conversation(
+            request.session_id,
+            username=request.username,
+            therapeutic_session_id=request.therapeutic_session_id,
+        )
         
         return {
             "success": True,
@@ -235,8 +242,13 @@ async def start_conversation(request: ConversationRequest):
 async def save_user_preferences(request: UserPreferencesRequest):
     """Salva as preferências do usuário (nome, voz, voz habilitada) para uma sessão."""
     try:
-        # Garante que a conversa exista antes de tentar atualizá-la
-        await chat_service.start_or_get_conversation(request.session_id)
+        # Atualização de conversa é opcional: o login ainda envia um id local antigo
+        # (`session_timestamp_random`) que não deve virar PK de chat.
+        should_update_conversation = bool(request.session_id) and (
+            request.session_id.startswith("chat_") or "_session-" in request.session_id
+        )
+        if should_update_conversation:
+            await chat_service.start_or_get_conversation(request.session_id)
 
         display_name = (request.display_name or request.full_name or "").strip() or None
         full_name = (request.full_name or request.display_name or "").strip() or None
@@ -271,7 +283,9 @@ async def save_user_preferences(request: UserPreferencesRequest):
             }
         }
         
-        result = await chat_service.update_conversation_data(request.session_id, updated_data)
+        result = True
+        if should_update_conversation:
+            result = await chat_service.update_conversation_data(request.session_id, updated_data)
         
         if result:
             return {"success": True, "message": "Preferências salvas com sucesso."}
@@ -865,7 +879,14 @@ async def emotion_analyze_realtime(request: Request):
     
     # Extrair informações do usuário da request
     username = body.get("username")
-    session_id = body.get("session_id") 
+    session_id = body.get("session_id")
+    chat_id = None
+    therapeutic_session_id = None
+    if session_id:
+        identity = await chat_service.resolve_conversation_ref(session_id)
+        chat_id = identity.get("chat_id")
+        session_id = identity.get("legacy_session_id") or session_id
+        therapeutic_session_id = identity.get("therapeutic_session_id")
     
     async with httpx.AsyncClient() as client:
         try:
@@ -881,7 +902,9 @@ async def emotion_analyze_realtime(request: Request):
             if emotion_result.get("status") == "success" and username and session_id:
                 emotion_data = {
                     "username": username,
+                    "chat_id": chat_id,
                     "session_id": session_id,
+                    "therapeutic_session_id": therapeutic_session_id,
                     "dominant_emotion": emotion_result.get("dominant_emotion"),
                     "emotions": emotion_result.get("emotions", {}),
                     "confidence": emotion_result.get("confidence", 0),
@@ -1098,17 +1121,19 @@ async def finalize_session(session_id: str):
     Finalizar sessão manualmente e gerar contexto
     """
     try:
+        identity = await chat_service.resolve_conversation_ref(session_id)
+        legacy_session_id = identity.get("legacy_session_id") or session_id
         # ✅ NOVA LÓGICA: Finalizar sessão completa (contexto + status completed)
-        result = await chat_service.finalize_session_context(session_id, manual_termination=True)
+        result = await chat_service.finalize_session_context(legacy_session_id, manual_termination=True)
         
         # ✅ NOVO: Extrair username e session_id original para marcar como completed
         # session_id formato: "username_session-N"
-        if "_session-" in session_id:
+        if "_session-" in legacy_session_id:
             # Encontrar a última ocorrência de "_session-" para extrair corretamente
-            session_separator_index = session_id.rfind("_session-")
+            session_separator_index = legacy_session_id.rfind("_session-")
             if session_separator_index != -1:
-                username = session_id[:session_separator_index]
-                original_session_id = session_id[session_separator_index + 1:]  # session-1, session-2, etc.
+                username = legacy_session_id[:session_separator_index]
+                original_session_id = legacy_session_id[session_separator_index + 1:]  # session-1, session-2, etc.
                 
                 logger.info(f"🏁 Finalizando sessão: username={username}, session_id={original_session_id}")
                 
@@ -1134,9 +1159,9 @@ async def finalize_session(session_id: str):
                     result["session_completed"] = False
                     result["completion_error"] = str(e)
             else:
-                logger.warning(f"⚠️ Formato de session_id inválido: {session_id}")
+                logger.warning(f"⚠️ Formato de session_id inválido: {legacy_session_id}")
         else:
-            logger.warning(f"⚠️ Session_id sem padrão '_session-': {session_id}")
+            logger.warning(f"⚠️ Session_id sem padrão '_session-': {legacy_session_id}")
         
         return {
             "success": result.get("success", False),
@@ -1244,8 +1269,13 @@ async def get_initial_message(session_id: str):
     try:
         logger.info(f"🎯 Gerando mensagem inicial para sessão: {session_id}")
         
+        identity = await chat_service.resolve_conversation_ref(session_id)
+        legacy_session_id = identity.get("legacy_session_id") or session_id
         # Extrair session_id original e username. O username pode conter underscores.
-        username, original_session_id = chat_service._split_composite_session_id(session_id)
+        username = identity.get("username")
+        original_session_id = identity.get("therapeutic_session_id")
+        if not username or not original_session_id:
+            username, original_session_id = chat_service._split_composite_session_id(legacy_session_id)
         
         if not username:
             return {
@@ -1256,7 +1286,7 @@ async def get_initial_message(session_id: str):
         user_label = await _get_user_display_name(username)
         
         # Verificar se já tem mensagens (não é primeira entrada)
-        history = await chat_service.get_conversation_history(session_id)
+        history = await chat_service.get_conversation_history(legacy_session_id)
         
         if history.get("history") and len(history["history"]) > 0:
             return {
@@ -1415,14 +1445,14 @@ Como você está se sentindo hoje? Há algo em particular que gostaria de explor
 Como você está se sentindo hoje? O que gostaria de conversar comigo?"""
         
         # Salvar mensagem inicial no histórico
-        await chat_service.start_or_get_conversation(session_id)
-        message_id = await chat_service._save_message(session_id, "ai", initial_message)
+        await chat_service.start_or_get_conversation(legacy_session_id)
+        message_id = await chat_service._save_message(legacy_session_id, "ai", initial_message)
         
         # ✅ DEBUG: Verificar se mensagem foi salva
         logger.info(f"🔍 DEBUG: Mensagem inicial salva com ID: {message_id}")
         
         # ✅ DEBUG: Verificar se consegue recuperar o histórico
-        debug_history = await chat_service.get_conversation_history(session_id)
+        debug_history = await chat_service.get_conversation_history(legacy_session_id)
         logger.info(f"🔍 DEBUG: Histórico após salvar - {len(debug_history.get('history', []))} mensagens")
         
         if debug_history.get('history'):
@@ -1438,7 +1468,7 @@ Como você está se sentindo hoje? O que gostaria de conversar comigo?"""
             
             if user and user.get("preferences", {}).get("voice_enabled", True):
                 selected_voice = user.get("preferences", {}).get("selected_voice", "pt-BR-Neural2-A")
-                audio_url = await chat_service._generate_audio_if_available(initial_message, session_id, selected_voice)
+                audio_url = await chat_service._generate_audio_if_available(initial_message, legacy_session_id, selected_voice)
         except Exception as audio_error:
             logger.warning(f"⚠️ Erro ao gerar áudio para mensagem inicial: {audio_error}")
         
@@ -1452,7 +1482,9 @@ Como você está se sentindo hoje? O que gostaria de conversar comigo?"""
                     "audioUrl": audio_url,
                     "timestamp": datetime.utcnow().isoformat()
                 },
-                "session_id": session_id,
+                "chat_id": identity.get("chat_id"),
+                "session_id": legacy_session_id,
+                "therapeutic_session_id": original_session_id,
                 "is_initial_message": True
             }
         }

@@ -696,17 +696,17 @@ O serviço utiliza logging estruturado com diferentes níveis:
 
 ### **Índices MongoDB**
 O serviço cria automaticamente índices para performance:
-- `conversations`: session_id (unique), username, created_at
-- `messages`: session_id, username, created_at
+- `conversations`: chat_id (unique), (username, therapeutic_session_id) (unique), session_id legado, created_at
+- `messages`: chat_id, session_id legado, username, therapeutic_session_id, created_at
 - `users`: username (unique), email, created_at
 - `user_therapeutic_sessions`: (username, session_id) (unique), status, created_at
-- `user_emotions`: username, session_id, timestamp
+- `user_emotions`: chat_id, username, session_id, timestamp
 
 ## 🎯 Funcionalidades Principais
 
 ### **✅ Implementado**
 - [x] Sistema de sessões personalizadas por usuário
-- [x] Isolamento de sessões por usuário (`username_session-id`)
+- [x] Isolamento de sessões por usuário com `chat_id` opaco e par lógico `username + session_id`
 - [x] Contexto entre sessões com continuidade terapêutica
 - [x] Sistema de onboarding estruturado (session-1)
 - [x] Geração automática de próximas sessões
@@ -738,7 +738,7 @@ O serviço cria automaticamente índices para performance:
 
 ### **Isolamento de Dados**
 - **Sessões**: Cada usuário tem acesso apenas às suas próprias sessões
-- **Mensagens**: Filtro duplo por `session_id` e `username`
+- **Mensagens**: Filtro por `chat_id`; fallback legado usa `session_id` + `username`
 - **Emoções**: Dados emocionais isolados por usuário
 - **Contexto**: Contexto de sessões protegido por usuário
 

@@ -165,7 +165,7 @@ class DeepFaceProcessor:
         device_info = {
             "device_type": self.device_type,
             "cuda_available": tf.test.is_built_with_cuda(),
-            "gpu_available": tf.test.is_gpu_available(),
+            "gpu_available": bool(self.gpus),
             "gpu_count": len(self.gpus) if self.gpus else 0,
         }
         

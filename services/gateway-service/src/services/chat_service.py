@@ -4,6 +4,7 @@ Serviço de chat - orquestra conversas e mensagens
 
 import logging
 import os
+import uuid
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import httpx
@@ -32,46 +33,192 @@ class ChatService:
             return None, session_id
 
         return session_id[:separator_index], session_id[separator_index + 1:]
+
+    def _build_legacy_session_id(self, username: Optional[str], therapeutic_session_id: Optional[str]) -> str:
+        """Chave legada usada por documentos antigos: username + session-N."""
+        if username and therapeutic_session_id:
+            return f"{username}_{therapeutic_session_id}"
+        return therapeutic_session_id or username or "default"
+
+    async def _ensure_conversation_identity(
+        self,
+        conversation: Dict[str, Any],
+        fallback_ref: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Normalizar uma conversa para o modelo novo.
+
+        chat_id é a PK pública/opaca. session_id antigo permanece como chave legada para
+        compatibilidade com dados existentes e serviços internos que ainda esperam esse formato.
+        """
+        conversations = get_collection("conversations")
+        updates: Dict[str, Any] = {}
+
+        chat_id = conversation.get("chat_id")
+        if not chat_id:
+            chat_id = f"chat_{uuid.uuid4().hex}"
+            updates["chat_id"] = chat_id
+
+        legacy_session_id = conversation.get("legacy_session_id") or conversation.get("session_id") or fallback_ref
+        username = conversation.get("username") or conversation.get("user_preferences", {}).get("username")
+        therapeutic_session_id = conversation.get("therapeutic_session_id")
+
+        if legacy_session_id and not therapeutic_session_id:
+            parsed_username, parsed_session_id = self._split_composite_session_id(legacy_session_id)
+            if parsed_username and parsed_session_id.startswith("session-"):
+                username = username or parsed_username
+                therapeutic_session_id = parsed_session_id
+
+        if not legacy_session_id:
+            legacy_session_id = self._build_legacy_session_id(username, therapeutic_session_id)
+
+        if username and conversation.get("username") != username:
+            updates["username"] = username
+        if therapeutic_session_id and conversation.get("therapeutic_session_id") != therapeutic_session_id:
+            updates["therapeutic_session_id"] = therapeutic_session_id
+        if legacy_session_id and conversation.get("legacy_session_id") != legacy_session_id:
+            updates["legacy_session_id"] = legacy_session_id
+
+        if updates:
+            updates["updated_at"] = datetime.utcnow()
+            await conversations.update_one({"_id": conversation["_id"]}, {"$set": updates})
+            conversation.update(updates)
+
+        return {
+            "chat_id": chat_id,
+            "legacy_session_id": legacy_session_id,
+            "username": username,
+            "therapeutic_session_id": therapeutic_session_id,
+            "conversation": conversation,
+        }
+
+    async def resolve_conversation_ref(
+        self,
+        conversation_ref: str,
+        *,
+        username: Optional[str] = None,
+        therapeutic_session_id: Optional[str] = None,
+        create: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Resolver chat_id novo ou session_id legado para a mesma conversa.
+
+        Ordem de busca:
+        1. chat_id opaco
+        2. par lógico (username, therapeutic_session_id)
+        3. session_id legado composto
+        """
+        conversations = get_collection("conversations")
+        conversation = None
+
+        if conversation_ref:
+            conversation = await conversations.find_one({"chat_id": conversation_ref})
+
+        if not conversation and username and therapeutic_session_id:
+            conversation = await conversations.find_one({
+                "username": username,
+                "therapeutic_session_id": therapeutic_session_id,
+            })
+
+        legacy_session_id = self._build_legacy_session_id(username, therapeutic_session_id)
+        if not conversation and conversation_ref:
+            parsed_username, parsed_session_id = self._split_composite_session_id(conversation_ref)
+            if parsed_username and parsed_session_id.startswith("session-"):
+                username = username or parsed_username
+                therapeutic_session_id = therapeutic_session_id or parsed_session_id
+                legacy_session_id = conversation_ref
+                conversation = await conversations.find_one({"session_id": conversation_ref})
+            else:
+                conversation = await conversations.find_one({"session_id": conversation_ref})
+                legacy_session_id = conversation_ref
+
+        if not conversation and username and therapeutic_session_id:
+            legacy_session_id = self._build_legacy_session_id(username, therapeutic_session_id)
+            conversation = await conversations.find_one({"session_id": legacy_session_id})
+
+        if conversation:
+            return await self._ensure_conversation_identity(conversation, legacy_session_id)
+
+        if not create:
+            parsed_username, parsed_session_id = self._split_composite_session_id(conversation_ref or "")
+            return {
+                "chat_id": None,
+                "legacy_session_id": conversation_ref or legacy_session_id,
+                "username": username or parsed_username,
+                "therapeutic_session_id": therapeutic_session_id or parsed_session_id,
+                "conversation": None,
+            }
+
+        if not username or not therapeutic_session_id:
+            parsed_username, parsed_session_id = self._split_composite_session_id(conversation_ref or "")
+            username = username or parsed_username
+            therapeutic_session_id = therapeutic_session_id or parsed_session_id
+
+        chat_id = f"chat_{uuid.uuid4().hex}"
+        legacy_session_id = self._build_legacy_session_id(username, therapeutic_session_id)
+        now = datetime.utcnow()
+        conversation_data = {
+            "chat_id": chat_id,
+            "session_id": legacy_session_id,
+            "legacy_session_id": legacy_session_id,
+            "therapeutic_session_id": therapeutic_session_id,
+            "username": username,
+            "created_at": now,
+            "updated_at": now,
+            "user_preferences": {},
+            "message_count": 0,
+            "is_active": True,
+        }
+
+        await conversations.insert_one(conversation_data)
+        logger.info(
+            "🆕 Nova conversa criada: chat_id=%s username=%s session_id=%s",
+            chat_id,
+            username,
+            therapeutic_session_id,
+        )
+
+        return {
+            "chat_id": chat_id,
+            "legacy_session_id": legacy_session_id,
+            "username": username,
+            "therapeutic_session_id": therapeutic_session_id,
+            "conversation": conversation_data,
+        }
     
-    async def start_or_get_conversation(self, session_id: str) -> Dict[str, Any]:
+    async def start_or_get_conversation(
+        self,
+        session_id: str,
+        username: Optional[str] = None,
+        therapeutic_session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Iniciar ou recuperar conversa existente"""
         try:
-            conversations = get_collection("conversations")
-            
-            # 🔒 CORREÇÃO CRÍTICA: Extrair username do session_id composto.
-            username, _ = self._split_composite_session_id(session_id)
-            
-            # Verificar se a conversa já existe
-            existing = await conversations.find_one({"session_id": session_id})
-            
-            if existing:
-                logger.info(f"📖 Recuperando conversa existente: {session_id} (username: {username})")
-                return {
-                    "session_id": session_id,
-                    "exists": True,
-                    "user_preferences": existing.get("user_preferences", {}),
-                    "created_at": existing.get("created_at"),
-                    "updated_at": existing.get("updated_at")
-                }
-            else:
-                # Criar nova conversa
-                conversation_data = {
-                    "session_id": session_id,
-                    "username": username,  # 🔒 Adicionar username para auditoria
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow(),
-                    "user_preferences": {},
-                    "message_count": 0
-                }
-                
-                await conversations.insert_one(conversation_data)
-                logger.info(f"🆕 Nova conversa criada: {session_id} (username: {username})")
-                
-                return {
-                    "session_id": session_id,
-                    "exists": False,
-                    "created_at": conversation_data["created_at"]
-                }
+            identity = await self.resolve_conversation_ref(
+                session_id,
+                username=username,
+                therapeutic_session_id=therapeutic_session_id,
+                create=True,
+            )
+            conversation = identity["conversation"] or {}
+            exists = bool(conversation.get("_id"))
+            logger.info(
+                "📖 Conversa resolvida: chat_id=%s username=%s session_id=%s",
+                identity["chat_id"],
+                identity["username"],
+                identity["therapeutic_session_id"],
+            )
+
+            return {
+                "chat_id": identity["chat_id"],
+                "session_id": identity["legacy_session_id"],
+                "therapeutic_session_id": identity["therapeutic_session_id"],
+                "username": identity["username"],
+                "exists": exists,
+                "user_preferences": conversation.get("user_preferences", {}),
+                "created_at": conversation.get("created_at"),
+                "updated_at": conversation.get("updated_at"),
+            }
                 
         except Exception as e:
             logger.error(f"❌ Erro ao iniciar/recuperar conversa: {e}")
@@ -82,7 +229,11 @@ class ChatService:
         Processar mensagem do usuário e gerar resposta da IA
         """
         try:
-            logger.info(f"💬 PROCESSANDO MENSAGEM para sessão {session_id}")
+            identity = await self.resolve_conversation_ref(session_id, create=True)
+            chat_id = identity.get("chat_id")
+            session_id = identity.get("legacy_session_id") or session_id
+
+            logger.info(f"💬 PROCESSANDO MENSAGEM para chat_id={chat_id}, sessão={session_id}")
             logger.info(f"📝 Mensagem do usuário: {user_message[:100]}...")
             logger.info(f"🎤 Modo de voz: {'ATIVO' if is_voice_mode else 'INATIVO'}")  # ✅ NOVO: Log do VoiceMode
             
@@ -187,6 +338,9 @@ class ChatService:
             return {
                 "success": True,
                 "data": {
+                    "chat_id": chat_id,
+                    "session_id": session_id,
+                    "therapeutic_session_id": identity.get("therapeutic_session_id"),
                     "user_message": {
                         "id": user_message_id,
                         "content": user_message
@@ -213,12 +367,18 @@ class ChatService:
         """Obter histórico completo de uma conversa"""
         try:
             messages = get_collection("messages")
+            identity = await self.resolve_conversation_ref(session_id)
+            chat_id = identity.get("chat_id")
+            session_id = identity.get("legacy_session_id") or session_id
             
             # 🔒 CORREÇÃO CRÍTICA: Extrair username para validação adicional
-            username = self._extract_username_from_session_id(session_id)
+            username = identity.get("username") or self._extract_username_from_session_id(session_id)
             
             # Construir query com dupla validação
-            query = {"session_id": session_id}
+            if chat_id:
+                query = {"$or": [{"chat_id": chat_id}, {"session_id": session_id}]}
+            else:
+                query = {"session_id": session_id}
             if username:
                 # 🔒 Adicionar filtro por username para segurança adicional
                 query["username"] = username
@@ -245,7 +405,10 @@ class ChatService:
             logger.info(f"📖 Histórico carregado para {session_id}: {len(history)} mensagens (username: {username})")
             
             return {
+                "chat_id": chat_id,
                 "session_id": session_id,
+                "therapeutic_session_id": identity.get("therapeutic_session_id"),
+                "username": username,
                 "history": history,
                 "message_count": len(history)
             }
@@ -258,11 +421,16 @@ class ChatService:
         """Atualizar dados da conversa"""
         try:
             conversations = get_collection("conversations")
+            identity = await self.resolve_conversation_ref(session_id, create=True)
             
             update_data["updated_at"] = datetime.utcnow()
+            if identity.get("chat_id"):
+                query = {"chat_id": identity["chat_id"]}
+            else:
+                query = {"session_id": identity.get("legacy_session_id") or session_id}
             
             result = await conversations.update_one(
-                {"session_id": session_id},
+                query,
                 {"$set": update_data}
             )
             
@@ -276,13 +444,18 @@ class ChatService:
         """Salvar mensagem no MongoDB"""
         try:
             messages = get_collection("messages")
+            identity = await self.resolve_conversation_ref(session_id)
+            chat_id = identity.get("chat_id")
+            session_id = identity.get("legacy_session_id") or session_id
             
             # 🔒 CORREÇÃO CRÍTICA: Extrair username do session_id para validação adicional
             # Formato esperado: "username_original_session_id"
-            username = self._extract_username_from_session_id(session_id)
+            username = identity.get("username") or self._extract_username_from_session_id(session_id)
             
             message_data = {
+                "chat_id": chat_id,
                 "session_id": session_id,
+                "therapeutic_session_id": identity.get("therapeutic_session_id"),
                 "username": username,  # 🔒 Adicionar username para dupla validação
                 "type": message_type,
                 "content": content,
@@ -610,12 +783,18 @@ class ChatService:
         """Obter contexto da conversa para enviar ao AI Service"""
         try:
             messages = get_collection("messages")
+            identity = await self.resolve_conversation_ref(session_id)
+            chat_id = identity.get("chat_id")
+            session_id = identity.get("legacy_session_id") or session_id
             
             # 🔒 CORREÇÃO CRÍTICA: Extrair username para validação adicional
-            username = self._extract_username_from_session_id(session_id)
+            username = identity.get("username") or self._extract_username_from_session_id(session_id)
             
             # Construir query com dupla validação
-            query = {"session_id": session_id}
+            if chat_id:
+                query = {"$or": [{"chat_id": chat_id}, {"session_id": session_id}]}
+            else:
+                query = {"session_id": session_id}
             if username:
                 # 🔒 Adicionar filtro por username para segurança adicional
                 query["username"] = username
@@ -647,11 +826,12 @@ class ChatService:
     async def _get_session_initial_prompt(self, session_id: str) -> Optional[str]:
         """Buscar o initial_prompt da sessão terapêutica do usuário"""
         try:
+            identity = await self.resolve_conversation_ref(session_id)
             # 🔒 Extrair username do session_id para buscar na coleção correta
-            username = None
-            original_session_id = session_id
+            username = identity.get("username")
+            original_session_id = identity.get("therapeutic_session_id") or session_id
             
-            if "_" in session_id:
+            if not username and "_" in session_id:
                 try:
                     # Formato: "teste_01_session-1" -> username="teste_01", original="session-1"
                     # Precisamos encontrar o último "_" e dividir por aí
@@ -696,8 +876,13 @@ class ChatService:
         """Atualizar contador de mensagens da conversa"""
         try:
             conversations = get_collection("conversations")
+            identity = await self.resolve_conversation_ref(session_id)
+            if identity.get("chat_id"):
+                query = {"chat_id": identity["chat_id"]}
+            else:
+                query = {"session_id": identity.get("legacy_session_id") or session_id}
             await conversations.update_one(
-                {"session_id": session_id},
+                query,
                 {"$inc": {"message_count": 1}, "$set": {"updated_at": datetime.utcnow()}}
             )
         except Exception as e:
@@ -710,6 +895,8 @@ class ChatService:
         Finalizar sessão e gerar contexto/resumo da conversa
         """
         try:
+            identity = await self.resolve_conversation_ref(session_id)
+            session_id = identity.get("legacy_session_id") or session_id
             logger.info(f"🎯 FINALIZANDO CONTEXTO DA SESSÃO: {session_id}")
             
             # Verificar se a sessão existe
@@ -1786,6 +1973,8 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
         Obter contexto salvo de uma sessão - busca na coleção session_contexts
         """
         try:
+            identity = await self.resolve_conversation_ref(session_id)
+            session_id = identity.get("legacy_session_id") or session_id
             # ✅ CORREÇÃO: Buscar contexto na coleção session_contexts para eliminar duplicação
             session_contexts = get_collection("session_contexts")
             context_doc = await session_contexts.find_one({"session_id": session_id})
@@ -1825,7 +2014,10 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             result = []
             async for conv in cursor:
                 result.append({
+                    "chat_id": conv.get("chat_id"),
                     "session_id": conv["session_id"],
+                    "therapeutic_session_id": conv.get("therapeutic_session_id"),
+                    "username": conv.get("username"),
                     "created_at": conv["created_at"],
                     "updated_at": conv["updated_at"],
                     "message_count": conv.get("message_count", 0)
@@ -1838,10 +2030,10 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             raise
 
     async def get_conversation_by_session_id(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Busca uma conversa pelo session_id e retorna como dicionário."""
+        """Busca uma conversa por chat_id novo ou session_id legado e retorna como dicionário."""
         try:
-            conversations = get_collection("conversations")
-            conversation = await conversations.find_one({"session_id": session_id})
+            identity = await self.resolve_conversation_ref(session_id)
+            conversation = identity.get("conversation")
             
             if conversation:
                 # ✅ CORREÇÃO: Retornar todos os campos da conversa, não apenas alguns selecionados

@@ -42,10 +42,9 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 COPY requirements.txt .
 
 # Não usar --ignore-installed aqui: a imagem base já traz TensorFlow 2.13.0.
-# Ignorar pacotes instalados permite que dependências transitivas reinstalem
-# TensorFlow/Keras incompatíveis com Python 3.8 e quebrem o import do DeepFace.
-RUN sed -i '/^tensorflow/d' requirements.txt && \
-    pip install --no-cache-dir -r requirements.txt
+# O requirements mantém tensorflow==2.13.0 como constraint satisfeita pela base,
+# evitando backtracking para versões incompatíveis de TensorFlow/Keras.
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Criar diretórios necessários
 RUN mkdir -p /app/models /app/data /shared_data

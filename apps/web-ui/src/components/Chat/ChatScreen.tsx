@@ -162,13 +162,13 @@ const ChatComposer = ({
 };
 
 const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => {
-  const { sessionId } = useParams();
+  const { chatId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { playAudio } = useAudioPlayer();
   
-  // Usar sessionId da URL
-  const currentSessionId = sessionId || fallbackSessionId;
+  // Usar chat_id opaco da URL. sessionId legado ainda é aceito como fallback.
+  const currentChatId = chatId || fallbackSessionId;
   const participantName = displayName || username || 'você';
   
   // Obter informações da sessão do state (passado pelo navigate)
@@ -179,17 +179,17 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
       return stateOriginalSessionId;
     }
 
-    if (!currentSessionId) {
+    if (!currentChatId) {
       return '';
     }
 
-    if (username && currentSessionId.startsWith(`${username}_`)) {
-      return currentSessionId.slice(username.length + 1);
+    if (username && currentChatId.startsWith(`${username}_`)) {
+      return currentChatId.slice(username.length + 1);
     }
 
-    const sessionMatch = currentSessionId.match(/session-.+$/);
-    return sessionMatch?.[0] || currentSessionId;
-  }, [currentSessionId, stateOriginalSessionId, username]);
+    const sessionMatch = currentChatId.match(/session-.+$/);
+    return sessionMatch?.[0] || '';
+  }, [currentChatId, stateOriginalSessionId, username]);
   
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -214,21 +214,23 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
         setIsLoadingHistory(true);
         
         // Carregar objetivo da sessão
-        if (currentSessionId) {
+        if (currentChatId) {
           try {
-            console.log('🔍 Buscando sessão - currentSessionId:', currentSessionId, 'originalSessionId:', originalSessionId);
+            console.log('🔍 Buscando sessão - currentChatId:', currentChatId, 'originalSessionId:', originalSessionId);
             
-            const sessionResponse = await getTherapeuticSession(originalSessionId);
-            if (sessionResponse.success && sessionResponse.data) {
-              console.log('✅ Session Objective carregado:', sessionResponse.data);
-              setSessionObjective({
-                title: sessionResponse.data.title,
-                subtitle: sessionResponse.data.subtitle,
-                objective: sessionResponse.data.objective,
-                initial_prompt: sessionResponse.data.initial_prompt
-              });
-            } else {
-              console.warn('⚠️ Session não encontrada para ID:', originalSessionId);
+            if (originalSessionId) {
+              const sessionResponse = await getTherapeuticSession(originalSessionId);
+              if (sessionResponse.success && sessionResponse.data) {
+                console.log('✅ Session Objective carregado:', sessionResponse.data);
+                setSessionObjective({
+                  title: sessionResponse.data.title,
+                  subtitle: sessionResponse.data.subtitle,
+                  objective: sessionResponse.data.objective,
+                  initial_prompt: sessionResponse.data.initial_prompt
+                });
+              } else {
+                console.warn('⚠️ Session não encontrada para ID:', originalSessionId);
+              }
             }
           } catch (error) {
             console.warn('Erro ao carregar objetivo da sessão:', error);
@@ -236,7 +238,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
         }
         
         // Carregar histórico de mensagens
-        const response = await getChatHistory(currentSessionId);
+        const response = await getChatHistory(currentChatId);
         
         if (response.success && response.data.history && response.data.history.length > 0) {
           // Converter histórico do backend para o formato do frontend
@@ -254,7 +256,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
           console.log('🤖 Sessão sem histórico, gerando mensagem inicial automática...');
           
           try {
-            const initialMessageResponse = await getInitialMessage(currentSessionId);
+            const initialMessageResponse = await getInitialMessage(currentChatId);
             console.log('🔍 DEBUG - Resposta inicial:', initialMessageResponse);
             
             if (initialMessageResponse.success && initialMessageResponse.data) {
@@ -264,7 +266,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
               
               // ✅ CORREÇÃO: Recarregar histórico DIRETAMENTE após gerar mensagem inicial
               console.log('🔄 Recarregando histórico após mensagem inicial...');
-              const updatedHistory = await getChatHistory(currentSessionId);
+              const updatedHistory = await getChatHistory(currentChatId);
               console.log('🔍 DEBUG - Histórico atualizado:', updatedHistory);
               
               if (updatedHistory.success && updatedHistory.data.history && updatedHistory.data.history.length > 0) {
@@ -330,10 +332,10 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
       }
     };
 
-    if (currentSessionId && username) {
+    if (currentChatId && username) {
       loadSessionData();
     }
-  }, [currentSessionId, originalSessionId, participantName, username]);
+  }, [currentChatId, originalSessionId, participantName, username]);
 
   // useEffect removido - emoção agora é atualizada via WebcamEmotionCapture
   
@@ -380,7 +382,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
       
       console.log(`🔍 Session Info: originalSessionId=${originalSessionId}, isRegistrationSession=${isRegistrationSession}, isFirstMessage=${isFirstMessage}, willSendObjective=${objectiveToSend !== null}`);
       
-      const response = await sendMessage(currentInput, currentSessionId, objectiveToSend);
+      const response = await sendMessage(currentInput, currentChatId, objectiveToSend);
       if (response.success) {
         const { ai_response } = response.data;
         const aiMessage: Message = {
@@ -492,10 +494,10 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     if (isFinalizing) return;
     
     setIsFinalizing(true);
-    console.log('🔚 Iniciando finalização da sessão:', currentSessionId);
+    console.log('🔚 Iniciando finalização da sessão:', currentChatId);
     
     try {
-      const response = await fetch(`/api/chat/finalize/${currentSessionId}`, {
+      const response = await fetch(`/api/chat/finalize/${currentChatId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -547,7 +549,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
   // Função para obter contexto da sessão
   const getSessionContext = async () => {
     try {
-      const response = await fetch(`/api/chat/context/${currentSessionId}`);
+      const response = await fetch(`/api/chat/context/${currentChatId}`);
       const result = await response.json();
       
       if (result.success) {
@@ -749,7 +751,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
         autoStart={true} 
         hidden={true}
         username={username}
-        sessionId={currentSessionId}
+        sessionId={currentChatId}
       />
 
       {/* Objetivo da Sessão */}
@@ -824,7 +826,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
       
       {/* Modo conversacional de voz */}
       <VoiceConversationMode
-        sessionId={currentSessionId}
+        sessionId={currentChatId}
         username={username}
         isOpen={isVoiceModeOpen}
         onClose={handleVoiceModeClose}

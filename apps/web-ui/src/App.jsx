@@ -37,6 +37,20 @@ function AppRoutes() {
       // }
 
       try {
+        const savedUserRaw = localStorage.getItem('empatia_user');
+        const accessToken = localStorage.getItem('empatia_access_token');
+        if (accessToken && savedUserRaw) {
+          const savedUser = JSON.parse(savedUserRaw);
+          const restoredUsername = savedUser.username || savedUser.email;
+          if (restoredUsername) {
+            setUsername(restoredUsername);
+            setDisplayName(savedUser.display_name || savedUser.full_name || savedUser.name || restoredUsername);
+            setSelectedVoice(savedUser.preferences?.selected_voice || localStorage.getItem('empatia_selected_voice') || '');
+            setIsOnboarded(true);
+            return;
+          }
+        }
+
         const response = await getUserStatus(currentSessionId);
         if (response.success) {
           const { is_onboarded, username: fetchedUsername, selected_voice, display_name, full_name } = response.data;
@@ -130,7 +144,7 @@ function AppRoutes() {
         }>
           <Route path="/home" element={<HomeScreen />} />
           <Route path="/profile" element={<ProfileVoicePage />} />
-          <Route path="/chat/:sessionId" element={
+          <Route path="/chat/:chatId" element={
             <ChatScreen
               username={username}
               displayName={displayName}

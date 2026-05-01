@@ -73,11 +73,11 @@ O estado vive em `AppRoutes` dentro de `App.jsx`. Não há Redux nem Context API
 O `username`/email continua sendo o identificador técnico. O nome salvo é usado como `displayName` na interface e no contexto enviado à IA.
 
 #### `AuthenticatedShell.jsx` (`components/Layout/`)
-- Layout autenticado compartilhado entre `/home`, `/profile`, `/chat` e `/chat/:sessionId`
+- Layout autenticado compartilhado entre `/home`, `/profile`, `/chat` e `/chat/:chatId`
 - Sidebar fixa em desktop e drawer no mobile
 - Carrega sessões e progresso via `GET /api/user/{username}/sessions` e `GET /api/user/{username}/progress`
 - Abre sessões usando `POST /api/user/{username}/sessions/{session_id}/start` quando necessário
-- Preserva o `session_id` composto no formato `${username}_${session_id}`
+- Abre `/chat/{chat_id}` usando o identificador opaco retornado por `POST /api/chat/start`
 - Exibe `displayName` quando disponível, sem alterar o identificador técnico
 
 #### `HomeScreen.jsx` (`components/Home/`)

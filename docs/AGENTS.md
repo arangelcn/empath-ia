@@ -85,17 +85,17 @@ Plataforma de apoio terapêutico com IA conversacional baseada na abordagem huma
 
 ## Coisas críticas para saber antes de escrever qualquer código
 
-### 1. Formato do `session_id`
-O `session_id` que circula entre serviços é **composto**: `{username}_{session_id_original}`.
+### 1. Identidade de Chat
+A PK pública do chat é `chat_id`, um identificador opaco salvo em `conversations.chat_id` e usado nas rotas `/chat/{chat_id}`.
 
 ```
-toni.rc.neto@gmail.com_session-2
+chat_4f0d...
 ```
 
-O gateway separa os dois componentes usando `rfind("_session-")` para extrair `username` e `original_session_id`. **Nunca use `split('_')` simples** — o username pode conter underscore.
+`session_id` continua representando a sessão terapêutica (`session-2`) e `username` fica em campo separado. O formato legado `{username}_session-N` ainda é aceito pelo gateway como `legacy_session_id` para migração/compatibilidade; se precisar separar esse legado, use `rfind("_session-")`, nunca `split('_')` simples.
 
 ### 2. Isolamento de sessões (segurança crítica)
-Qualquer query nas coleções `messages` ou `conversations` **deve** incluir o campo `username` no filtro, além do `session_id`. Sem isso, um usuário pode ver mensagens de outro. Ver [`SECURITY_FIX_SESSION_ISOLATION.md`](SECURITY_FIX_SESSION_ISOLATION.md) para o histórico completo.
+Qualquer query nas coleções `messages` ou `conversations` deve preferir `chat_id`. Quando filtrar por sessão terapêutica, use o par `username + therapeutic_session_id`. Sem isso, um usuário pode ver mensagens de outro. Ver [`SECURITY_FIX_SESSION_ISOLATION.md`](SECURITY_FIX_SESSION_ISOLATION.md) para o histórico completo.
 
 ### 3. Audio URL rewrite
 O voice service retorna URLs no formato `/api/v1/audio/{filename}` (porta 8004, interna). O gateway reescreve para `/api/voice/audio/{filename}` antes de retornar ao browser. A função `_rewrite_audio_url()` em `main.py` faz isso. **Nunca retorne a URL interna diretamente ao frontend.**

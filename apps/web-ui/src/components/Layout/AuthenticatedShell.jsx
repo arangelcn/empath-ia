@@ -14,7 +14,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { getUserProgress, getUserSessions, startUserSession } from '../../services/api.js';
+import { getUserProgress, getUserSessions, startChatConversation, startUserSession } from '../../services/api.js';
 
 const statusConfig = {
   completed: {
@@ -305,10 +305,16 @@ const AuthenticatedShell = ({ username, displayName, setDisplayName, selectedVoi
         }
       }
 
-      const uniqueSessionId = `${username}_${session.session_id}`;
+      const conversationResult = await startChatConversation(username, session.session_id);
+      const chatId = conversationResult.data?.chat_id;
+      if (!chatId) {
+        throw new Error('Gateway não retornou chat_id para a conversa.');
+      }
+
       setIsMobileMenuOpen(false);
-      navigate(`/chat/${uniqueSessionId}`, {
+      navigate(`/chat/${chatId}`, {
         state: {
+          chatId,
           username,
           sessionTitle: session.title,
           originalSessionId: session.session_id,

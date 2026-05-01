@@ -10,7 +10,7 @@ Este roadmap registra os próximos passos imediatos do produto. O foco é aproxi
 - [x] Incluir atalho para Home, acesso único de perfil/configurações e Sair.
 - [x] Remover acesso a chat sem sessão; `/chat` redireciona para `/home`.
 - [x] Usar sidebar fixa em desktop e drawer/overlay em mobile.
-- [x] Garantir que a navegação preserve o `session_id` composto e o isolamento por usuário.
+- [x] Garantir que a navegação use `chat_id` opaco e preserve isolamento por usuário no gateway/banco.
 
 Arquivos principais:
 

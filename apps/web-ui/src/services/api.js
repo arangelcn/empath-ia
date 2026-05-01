@@ -211,6 +211,24 @@ export const getChatHistory = async (sessionId) => {
 };
 
 /**
+ * Inicia ou recupera a conversa de uma sessão do usuário.
+ * A rota do chat deve usar chat_id, não username_session-N.
+ */
+export const startChatConversation = async (username, therapeuticSessionId) => {
+  try {
+    const response = await apiClient.post('/chat/start', {
+      session_id: `${username}_${therapeuticSessionId}`,
+      username,
+      therapeutic_session_id: therapeuticSessionId,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao iniciar conversa:', error.response?.data || error.message);
+    throw error;
+  }
+};
+
+/**
  * Criar novo usuário.
  * @param {string} username - Nome do usuário.
  * @param {string} email - Email do usuário (opcional).

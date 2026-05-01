@@ -101,6 +101,15 @@ const LoginScreen = ({ onComplete, sessionId }) => {
       };
 
       await saveUserPreferences(sessionId, userInfo.username, selectedVoice, true, userInfo);
+      localStorage.setItem('empatia_user', JSON.stringify({
+        ...userData,
+        ...userInfo,
+        preferences: {
+          ...(userData.preferences || {}),
+          selected_voice: selectedVoice,
+          voice_enabled: true,
+        },
+      }));
 
       onComplete({
         username: userInfo.username,
