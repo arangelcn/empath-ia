@@ -14,9 +14,17 @@ SENTENCE_END_RE = re.compile(r"([.!?;:。！？]+)(\s+|$)")
 class SentenceChunker:
     """Accumulate token deltas and flush speakable chunks."""
 
-    def __init__(self, max_chars: int = 220, max_wait_ms: int = 700) -> None:
+    def __init__(
+        self,
+        max_chars: int = 220,
+        max_wait_ms: int = 700,
+        min_timed_flush_chars: int = 48,
+        min_timed_flush_words: int = 6,
+    ) -> None:
         self.max_chars = max_chars
         self.max_wait_ms = max_wait_ms
+        self.min_timed_flush_chars = min_timed_flush_chars
+        self.min_timed_flush_words = min_timed_flush_words
         self._buffer = ""
         self._last_flush = time.perf_counter()
 
@@ -33,7 +41,7 @@ class SentenceChunker:
                 break
             chunks.append(chunk)
 
-        if len(self._buffer) >= self.max_chars or self._elapsed_ms() >= self.max_wait_ms:
+        if len(self._buffer) >= self.max_chars or self._should_timed_flush():
             chunk = self.flush()
             if chunk:
                 chunks.append(chunk)
@@ -59,6 +67,16 @@ class SentenceChunker:
 
     def _elapsed_ms(self) -> float:
         return (time.perf_counter() - self._last_flush) * 1000
+
+    def _should_timed_flush(self) -> bool:
+        if self._elapsed_ms() < self.max_wait_ms:
+            return False
+
+        speakable = self._buffer.strip()
+        if len(speakable) < self.min_timed_flush_chars:
+            return False
+
+        return len(speakable.split()) >= self.min_timed_flush_words
 
 
 def sse_event(event: str, data: Dict[str, Any]) -> str:

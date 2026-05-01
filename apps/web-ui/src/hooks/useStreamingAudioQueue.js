@@ -23,6 +23,8 @@ export const useStreamingAudioQueue = () => {
   const audioContextRef = useRef(null);
   const nextStartTimeRef = useRef(0);
   const activeSourcesRef = useRef(new Set());
+  const urlQueueRef = useRef([]);
+  const currentUrlAudioRef = useRef(null);
 
   const getAudioContext = useCallback(async (sampleRate) => {
     if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
@@ -58,11 +60,41 @@ export const useStreamingAudioQueue = () => {
 
     source.onended = () => {
       activeSourcesRef.current.delete(source);
-      if (activeSourcesRef.current.size === 0) {
+      if (activeSourcesRef.current.size === 0 && !currentUrlAudioRef.current && urlQueueRef.current.length === 0) {
         setIsStreamingPlaying(false);
       }
     };
   }, [getAudioContext]);
+
+  const playNextUrl = useCallback(() => {
+    if (currentUrlAudioRef.current || urlQueueRef.current.length === 0) {
+      if (!currentUrlAudioRef.current && activeSourcesRef.current.size === 0) {
+        setIsStreamingPlaying(false);
+      }
+      return;
+    }
+
+    const audioUrl = urlQueueRef.current.shift();
+    const audio = new Audio(audioUrl);
+    currentUrlAudioRef.current = audio;
+    setIsStreamingPlaying(true);
+
+    const finish = () => {
+      currentUrlAudioRef.current = null;
+      playNextUrl();
+    };
+
+    audio.onended = finish;
+    audio.onerror = finish;
+    audio.play().catch(finish);
+  }, []);
+
+  const enqueueAudioUrl = useCallback((audioUrl) => {
+    if (!audioUrl) return;
+    urlQueueRef.current.push(audioUrl);
+    setIsStreamingPlaying(true);
+    playNextUrl();
+  }, [playNextUrl]);
 
   const stopStreamingAudio = useCallback(() => {
     activeSourcesRef.current.forEach((source) => {
@@ -73,6 +105,12 @@ export const useStreamingAudioQueue = () => {
       }
     });
     activeSourcesRef.current.clear();
+    urlQueueRef.current = [];
+    if (currentUrlAudioRef.current) {
+      currentUrlAudioRef.current.pause();
+      currentUrlAudioRef.current.currentTime = 0;
+      currentUrlAudioRef.current = null;
+    }
     setIsStreamingPlaying(false);
     if (audioContextRef.current) {
       nextStartTimeRef.current = audioContextRef.current.currentTime;
@@ -90,6 +128,7 @@ export const useStreamingAudioQueue = () => {
 
   return {
     enqueueAudioChunk,
+    enqueueAudioUrl,
     stopStreamingAudio,
     isStreamingPlaying,
   };

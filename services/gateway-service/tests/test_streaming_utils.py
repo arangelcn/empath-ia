@@ -15,6 +15,22 @@ def test_sentence_chunker_flushes_long_buffer():
     assert chunker.flush() is None
 
 
+def test_sentence_chunker_does_not_time_flush_single_word():
+    chunker = SentenceChunker(max_chars=200, max_wait_ms=100, min_timed_flush_chars=20, min_timed_flush_words=4)
+    chunker._last_flush -= 1
+
+    assert chunker.push("você") == []
+    assert chunker.flush() == "você"
+
+
+def test_sentence_chunker_time_flushes_speakable_phrase():
+    chunker = SentenceChunker(max_chars=200, max_wait_ms=100, min_timed_flush_chars=20, min_timed_flush_words=4)
+    chunker._last_flush -= 1
+
+    assert chunker.push("isso parece importante para você agora") == ["isso parece importante para você agora"]
+    assert chunker.flush() is None
+
+
 def test_sse_event_serializes_utf8_json():
     frame = sse_event("text_delta", {"delta": "Olá", "trace_id": "trace_1"})
 

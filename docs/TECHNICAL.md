@@ -480,7 +480,7 @@ browser → POST /api/chat/send-stream
     ↓
 Gateway emite SSE meta + text_delta
     ↓
-AI Service → /openai/chat/stream com stream=True quando OpenAI está ativo
+AI Service → /openai/chat/stream com stream=True no OpenAI ou llama.cpp local
     ↓
 Gateway agrega deltas em frases curtas
     ↓
@@ -498,16 +498,19 @@ Eventos SSE principais:
 | `meta` | `trace_id`, ids de conversa e mensagem do usuário. |
 | `text_delta` | Trechos incrementais da resposta para atualizar a bolha de chat. |
 | `audio_chunk` | PCM base64 com `sequence`, `sample_rate_hz` e `encoding`. |
-| `audio_url` | Fallback para arquivo batch MP3/WAV quando streaming TTS falha ou não está disponível. |
+| `audio_url` | Fallback MP3/WAV. Pode ser segmentado por frase (`segment: true`) quando streaming TTS falha, ou final quando nenhum trecho foi gerado. |
 | `metrics` | Baseline de latência por etapa: primeiro texto, primeiro áudio, total gateway/AI. |
 | `done` | Resultado final persistido no histórico. |
 | `error` | Erro recuperável ou fatal do stream. |
 
-O modo streaming usa vozes GCP Chirp 3 HD, porque o streaming bidirecional do Google Cloud TTS é compatível com esse modelo. As preferências Neural2/WaveNet continuam válidas no fluxo batch e são mapeadas para uma voz Chirp 3 HD equivalente durante o streaming.
+O AI Service streama tokens tanto com OpenAI quanto com o modelo local GGUF via `llama-cpp-python` (`create_chat_completion(..., stream=True)`). Se o provider local não conseguir carregar, a cadeia de fallback continua tentando OpenAI ou o template seguro.
+
+O modo streaming de voz usa vozes GCP Chirp 3 HD, porque o streaming bidirecional do Google Cloud TTS é compatível com esse modelo. As preferências Neural2/WaveNet continuam válidas no fluxo batch e são mapeadas para uma voz Chirp 3 HD equivalente durante o streaming.
 
 Fallbacks:
 
 - Se o stream de áudio falhar, o gateway mantém o texto e tenta gerar áudio batch.
+- Quando o stream de áudio falha em um trecho, o gateway sintetiza aquele trecho imediatamente e envia `audio_url` segmentado; o frontend enfileira esses arquivos para não esperar a resposta inteira.
 - Se o GCP TTS falhar e `TTS_LOCAL_PROVIDER=piper` estiver configurado com `PIPER_MODEL_PATH`, o Voice Service tenta gerar WAV local com Piper.
 - Cache Redis de TTS só é usado para frases genéricas em `TTS_CACHE_ALLOWLIST`; conteúdo pessoal de conversa não entra em cache.
 

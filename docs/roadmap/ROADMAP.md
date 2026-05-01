@@ -221,7 +221,7 @@ Reduzir a latência percebida (Time to First Byte - TTFB) de ~4s para < 800ms, p
     - [x] Configurar limites de tokens e frases mais naturais para áudio (menos listas, mais prosa).
 
 - [ ] **Arquitetura de Streaming (GCP TTS)**
-    - [x] **AI Service:** Habilitar `stream=True` na OpenAI e usar `Async Generators`.
+    - [x] **AI Service:** Habilitar `stream=True` na OpenAI e no modelo local `llama-cpp-python`, usando `Async Generators`.
     - [x] **Chunking:** Criar buffer no Gateway para agrupar tokens em sentenças completas (antes de enviar ao TTS).
     - [x] **Voice Service:** Implementar `StreamingResponse` utilizando a API de streaming do Google Cloud TTS.
     - [x] **Gateway:** Criar endpoint paralelo de chat por Server-Sent Events (SSE) para entrega de texto/áudio em tempo real.

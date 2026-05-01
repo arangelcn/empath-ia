@@ -7,7 +7,7 @@ import { sendMessage, sendMessageStream } from '../../services/api.js';
 
 const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMessage, onUpdateMessage }) => {
   const { playAudio, isPlaying, stopAudio } = useAudioPlayer();
-  const { enqueueAudioChunk, stopStreamingAudio, isStreamingPlaying } = useStreamingAudioQueue();
+  const { enqueueAudioChunk, enqueueAudioUrl, stopStreamingAudio, isStreamingPlaying } = useStreamingAudioQueue();
   const pendingRestartRef = useRef(false);
   const streamAiMessageIdRef = useRef(null);
   const receivedStreamingAudioRef = useRef(false);
@@ -216,8 +216,8 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
       },
       onAudioUrl: (data) => {
         if (!data.audio_url) return;
-        receivedStreamingAudioRef.current = false;
-        playAudio(data.audio_url, restartListeningAfterPlayback);
+        receivedStreamingAudioRef.current = true;
+        enqueueAudioUrl(data.audio_url);
       },
       onMetrics: (data) => {
         console.log('📊 Métricas de voz:', data);
@@ -243,10 +243,6 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
             content: finalResponse.content || '',
             audioUrl: finalResponse.audioUrl,
           });
-        }
-
-        if (finalResponse?.audioUrl) {
-          return;
         }
 
         if (receivedStreamingAudioRef.current) {

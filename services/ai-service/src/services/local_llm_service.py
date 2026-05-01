@@ -7,7 +7,7 @@ import os
 import shutil
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import AsyncGenerator, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -359,3 +359,84 @@ class LocalLLMService:
         message = choices[0].get("message", {})
         content = message.get("content", "")
         return content.strip() if content else None
+
+    async def generate_stream(
+        self,
+        messages: List[Dict[str, str]],
+        max_tokens: int,
+        temperature: float,
+    ) -> AsyncGenerator[str, None]:
+        """Generate chat response deltas from the local model."""
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[object] = asyncio.Queue()
+        sentinel = object()
+        stop_event = threading.Event()
+
+        def _emit(item: object) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, item)
+
+        def _worker() -> None:
+            try:
+                with self._generation_lock:
+                    llm = self._load_model()
+                    prepared_messages = self._prepare_messages_for_model(messages)
+                    stream = llm.create_chat_completion(
+                        messages=prepared_messages,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        stream=True,
+                    )
+
+                    for chunk in stream:
+                        if stop_event.is_set():
+                            break
+                        delta = self._extract_stream_delta(chunk)
+                        if delta:
+                            _emit(delta)
+            except Exception as exc:
+                logger.error("❌ Local LLM streaming failed: %s", exc, exc_info=True)
+                _emit(exc)
+            finally:
+                _emit(sentinel)
+
+        thread = threading.Thread(target=_worker, name="local-llm-stream", daemon=True)
+        thread.start()
+
+        try:
+            while True:
+                item = await queue.get()
+                if item is sentinel:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield str(item)
+        finally:
+            stop_event.set()
+
+    def _extract_stream_delta(self, chunk: object) -> str:
+        """Extract text delta from llama-cpp-python OpenAI-compatible chunks."""
+        if not isinstance(chunk, dict):
+            return ""
+
+        choices = chunk.get("choices") or []
+        if not choices:
+            return ""
+
+        choice = choices[0] or {}
+        delta = choice.get("delta") or {}
+        if isinstance(delta, dict):
+            content = delta.get("content")
+            if content:
+                return str(content)
+
+        text = choice.get("text")
+        if text:
+            return str(text)
+
+        message = choice.get("message") or {}
+        if isinstance(message, dict):
+            content = message.get("content")
+            if content:
+                return str(content)
+
+        return ""

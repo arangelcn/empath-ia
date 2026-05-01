@@ -1078,15 +1078,27 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                     return
 
             elif provider == "local":
-                content = await self._call_local_llm(messages, max_tokens, temperature)
-                if content:
-                    yield {
-                        "type": "delta",
-                        "content": content,
-                        "provider": "local",
-                        "model": self.local_llm.model_name if self.local_llm else "local",
-                    }
-                    return
+                if not self.local_llm:
+                    continue
+                yielded = False
+                try:
+                    async for delta in self.local_llm.generate_stream(
+                        messages=messages,
+                        max_tokens=max_tokens or self.max_tokens,
+                        temperature=temperature if temperature is not None else self.temperature,
+                    ):
+                        yielded = True
+                        yield {
+                            "type": "delta",
+                            "content": delta,
+                            "provider": "local",
+                            "model": self.local_llm.model_name,
+                        }
+                    if yielded:
+                        return
+                except Exception as exc:
+                    logger.error("❌ Streaming local falhou; tentando próximo provider: %s", exc)
+                    continue
 
         return
 

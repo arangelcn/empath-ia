@@ -381,7 +381,8 @@ class ChatService:
         ai_done_data: Dict[str, Any] = {}
         full_response = ""
         audio_sequence = 0
-        tts_failed = False
+        tts_stream_failed = False
+        audio_url = None
         first_audio_ms: Optional[int] = None
         first_text_ms: Optional[int] = None
 
@@ -473,7 +474,9 @@ class ChatService:
 
             chunker = SentenceChunker(
                 max_chars=int(os.getenv("VOICE_CHUNK_MAX_CHARS", "220")),
-                max_wait_ms=int(os.getenv("VOICE_CHUNK_MAX_WAIT_MS", "700")),
+                max_wait_ms=int(os.getenv("VOICE_CHUNK_MAX_WAIT_MS", "1400")),
+                min_timed_flush_chars=int(os.getenv("VOICE_CHUNK_MIN_TIMED_CHARS", "48")),
+                min_timed_flush_words=int(os.getenv("VOICE_CHUNK_MIN_TIMED_WORDS", "6")),
             )
 
             async with httpx.AsyncClient(timeout=None) as client:
@@ -512,9 +515,9 @@ class ChatService:
                                     "elapsed_ms": now_ms(started_at),
                                 },
                             }
-                            if voice_enabled and not tts_failed:
+                            if voice_enabled:
                                 for text_chunk in chunker.push(delta):
-                                    async for audio_event in self._stream_tts_chunk(
+                                    async for audio_event in self._stream_tts_or_batch_chunk(
                                         text_chunk,
                                         selected_voice,
                                         trace_id,
@@ -525,15 +528,20 @@ class ChatService:
                                             audio_sequence += 1
                                             if first_audio_ms is None:
                                                 first_audio_ms = now_ms(started_at)
-                                        elif audio_event["event"] == "error":
-                                            tts_failed = True
+                                        elif audio_event["event"] == "audio_url":
+                                            audio_sequence += 1
+                                            audio_url = audio_event["data"].get("audio_url") or audio_url
+                                            if first_audio_ms is None:
+                                                first_audio_ms = now_ms(started_at)
+                                        elif audio_event["event"] == "error" and audio_event["data"].get("stage") == "tts_stream":
+                                            tts_stream_failed = True
                                         yield audio_event
                         elif current_event == "done":
                             ai_done_data = payload
 
             remaining = chunker.flush()
-            if remaining and voice_enabled and not tts_failed:
-                async for audio_event in self._stream_tts_chunk(
+            if remaining and voice_enabled:
+                async for audio_event in self._stream_tts_or_batch_chunk(
                     remaining,
                     selected_voice,
                     trace_id,
@@ -544,16 +552,32 @@ class ChatService:
                         audio_sequence += 1
                         if first_audio_ms is None:
                             first_audio_ms = now_ms(started_at)
-                    elif audio_event["event"] == "error":
-                        tts_failed = True
+                    elif audio_event["event"] == "audio_url":
+                        audio_sequence += 1
+                        audio_url = audio_event["data"].get("audio_url") or audio_url
+                        if first_audio_ms is None:
+                            first_audio_ms = now_ms(started_at)
+                    elif audio_event["event"] == "error" and audio_event["data"].get("stage") == "tts_stream":
+                        tts_stream_failed = True
                     yield audio_event
 
             final_text = (ai_done_data.get("response") or full_response).strip()
-            audio_url = None
             if voice_enabled and audio_sequence == 0 and final_text:
                 audio_url = await self._generate_audio(final_text, selected_voice, is_voice_mode=True)
                 if audio_url:
-                    yield {"event": "audio_url", "data": {"audio_url": audio_url, "trace_id": trace_id}}
+                    yield {
+                        "event": "audio_url",
+                        "data": {
+                            "audio_url": audio_url,
+                            "trace_id": trace_id,
+                            "sequence": audio_sequence,
+                            "segment": False,
+                            "elapsed_ms": now_ms(started_at),
+                        },
+                    }
+                    audio_sequence += 1
+                    if first_audio_ms is None:
+                        first_audio_ms = now_ms(started_at)
 
             ai_message_id = await self._save_message(legacy_session_id, "ai", final_text, audio_url)
             await self._update_message_count(legacy_session_id)
@@ -570,7 +594,7 @@ class ChatService:
                 "first_text_delta_ms": first_text_ms,
                 "first_audio_chunk_ms": first_audio_ms,
                 "audio_chunks": audio_sequence,
-                "tts_stream_failed": tts_failed,
+                "tts_stream_failed": tts_stream_failed,
                 "client_metrics": client_metrics or {},
                 **(ai_done_data.get("metrics") or {}),
             }
@@ -610,6 +634,46 @@ class ChatService:
                     "elapsed_ms": now_ms(started_at),
                 },
             }
+
+    async def _stream_tts_or_batch_chunk(
+        self,
+        text: str,
+        voice: str,
+        trace_id: str,
+        sequence: int,
+        started_at: float,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream PCM for a text chunk, or immediately synthesize that chunk as batch audio."""
+        emitted_audio = False
+        stream_failed = False
+
+        async for audio_event in self._stream_tts_chunk(text, voice, trace_id, sequence, started_at):
+            if audio_event["event"] == "audio_chunk":
+                emitted_audio = True
+            elif audio_event["event"] == "error":
+                stream_failed = True
+            yield audio_event
+
+        if emitted_audio:
+            return
+
+        audio_url = await self._generate_audio(text, voice, is_voice_mode=True)
+        if audio_url:
+            if stream_failed:
+                logger.info("🔊 Fallback batch por trecho gerado após falha no streaming TTS")
+            yield {
+                "event": "audio_url",
+                "data": {
+                    "audio_url": audio_url,
+                    "trace_id": trace_id,
+                    "sequence": sequence,
+                    "segment": True,
+                    "text_length": len(text),
+                    "elapsed_ms": now_ms(started_at),
+                },
+            }
+        elif stream_failed:
+            logger.warning("⚠️ Streaming TTS falhou e fallback batch por trecho não gerou áudio")
 
     async def _stream_tts_chunk(
         self,
