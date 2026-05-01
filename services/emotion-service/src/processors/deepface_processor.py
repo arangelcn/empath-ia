@@ -121,6 +121,7 @@ class DeepFaceProcessor:
         """
         # Configurar TensorFlow para GPU/CPU
         self.device_type, self.gpus = setup_tensorflow_gpu()
+        self.cuda_available = self.device_type == "GPU"
         
         # Caminho padrão otimizado: RetinaFace para qualidade, OpenCV como fallback leve.
         configured_detectors = os.getenv("DEEPFACE_DETECTOR_BACKENDS", "retinaface,opencv")
@@ -159,12 +160,14 @@ class DeepFaceProcessor:
 
     def get_device_info(self) -> Dict[str, Any]:
         """
-        Retorna informações sobre o dispositivo de processamento
+        Retorna informações cacheadas sobre o dispositivo de processamento.
+
+        Evita consultar TensorFlow a cada health/config request, porque isso pode
+        bloquear o worker do FastAPI quando CUDA está indisponível ou instável.
         """
-        tf = get_tensorflow()
         device_info = {
             "device_type": self.device_type,
-            "cuda_available": tf.test.is_built_with_cuda(),
+            "cuda_available": self.cuda_available,
             "gpu_available": bool(self.gpus),
             "gpu_count": len(self.gpus) if self.gpus else 0,
         }
