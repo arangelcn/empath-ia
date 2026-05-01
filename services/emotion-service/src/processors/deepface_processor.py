@@ -7,14 +7,31 @@ Suporte: GPU com fallback automático para CPU
 import logging
 import numpy as np
 import os
-from typing import Dict, Any, Optional, List
-from deepface import DeepFace
+from typing import Dict, Any, Optional
 import cv2
 
-# Configuração de GPU/CPU para TensorFlow
-import tensorflow as tf
-
 logger = logging.getLogger(__name__)
+
+_tf = None
+_deepface = None
+
+
+def get_tensorflow():
+    """Importa TensorFlow sob demanda para manter o startup diagnosticável."""
+    global _tf
+    if _tf is None:
+        import tensorflow as tf
+        _tf = tf
+    return _tf
+
+
+def get_deepface():
+    """Importa DeepFace sob demanda, depois que TensorFlow/Keras já foram fixados."""
+    global _deepface
+    if _deepface is None:
+        from deepface import DeepFace
+        _deepface = DeepFace
+    return _deepface
 
 
 def setup_tensorflow_gpu():
@@ -22,6 +39,8 @@ def setup_tensorflow_gpu():
     Configura TensorFlow para usar GPU quando disponível, com fallback para CPU
     """
     try:
+        tf = get_tensorflow()
+
         # Log das variáveis de ambiente relacionadas à GPU
         logger.info(f"🔍 Variáveis de ambiente GPU:")
         logger.info(f"   CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'não definida')}")
@@ -103,9 +122,16 @@ class DeepFaceProcessor:
         # Configurar TensorFlow para GPU/CPU
         self.device_type, self.gpus = setup_tensorflow_gpu()
         
-        # Lista de detectores em ordem de precisão (fallback automático)
-        self.detector_backends = ["retinaface", "mtcnn", "opencv", "mediapipe"]
-        self.primary_detector = detector_backend
+        # Caminho padrão otimizado: RetinaFace para qualidade, OpenCV como fallback leve.
+        configured_detectors = os.getenv("DEEPFACE_DETECTOR_BACKENDS", "retinaface,opencv")
+        self.detector_backends = [
+            item.strip()
+            for item in configured_detectors.split(",")
+            if item.strip()
+        ]
+        self.primary_detector = os.getenv("DEEPFACE_DETECTOR_BACKEND", detector_backend)
+        if self.primary_detector not in self.detector_backends:
+            self.detector_backends.insert(0, self.primary_detector)
         
         # Calibração de emoções baseada em análise de datasets
         self.emotion_calibration = {
@@ -120,13 +146,14 @@ class DeepFaceProcessor:
         }
         
         # Threshold mínimo de confiança para aceitar predição
-        self.confidence_threshold = 0.3
+        self.confidence_threshold = float(os.getenv("DEEPFACE_EMOTION_CONFIDENCE_THRESHOLD", "0.3"))
         
         logger.info(f"Inicializando DeepFaceProcessor otimizado:")
         logger.info(f"  - Dispositivo: {self.device_type}")
         if self.device_type == "GPU":
             logger.info(f"  - GPUs disponíveis: {len(self.gpus)}")
-        logger.info(f"  - Detectores: {self.detector_backends}")
+        logger.info(f"  - Detector principal: {self.primary_detector}")
+        logger.info(f"  - Fallbacks DeepFace: {self.detector_backends}")
         logger.info(f"  - Calibração ativada: Sim")
         logger.info(f"  - Threshold de confiança: {self.confidence_threshold}")
 
@@ -134,6 +161,7 @@ class DeepFaceProcessor:
         """
         Retorna informações sobre o dispositivo de processamento
         """
+        tf = get_tensorflow()
         device_info = {
             "device_type": self.device_type,
             "cuda_available": tf.test.is_built_with_cuda(),
@@ -199,6 +227,8 @@ class DeepFaceProcessor:
         Returns:
             Dict com resultado da análise ou None se todos falharem
         """
+        DeepFace = get_deepface()
+
         # Converter BGR para RGB
         rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
@@ -206,7 +236,7 @@ class DeepFaceProcessor:
         for detector in self.detector_backends:
             try:
                 logger.debug(f"Tentando detector: {detector}")
-                
+
                 result = DeepFace.analyze(
                     img_path=rgb_img,
                     actions=["emotion"],
@@ -292,6 +322,8 @@ class DeepFaceProcessor:
         """
         try:
             logger.info("Inicializando modelos DeepFace otimizados...")
+            DeepFace = get_deepface()
+
             # Criar imagem teste para forçar download dos modelos
             test_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
             
@@ -310,10 +342,10 @@ class DeepFaceProcessor:
             
             logger.info("✅ Modelos DeepFace otimizados inicializados com sucesso")
         except Exception as e:
-            logger.warning(f"⚠️ Inicialização DeepFace falhou: {e}")
-            logger.info("Isso é normal na primeira execução - modelos serão baixados sob demanda")
+            logger.error(f"⚠️ Inicialização DeepFace falhou: {e}")
+            raise
     
-    def predict(self, bgr_img: np.ndarray) -> Dict[str, Any]:
+    def predict(self, bgr_img: np.ndarray) -> Optional[Dict[str, Any]]:
         """
         Prediz emoções em uma imagem BGR com processamento otimizado
         
@@ -335,28 +367,14 @@ class DeepFaceProcessor:
             result = self.analyze_with_fallback(processed_img)
             
             if result is None:
-                # Fallback para neutral se todos os detectores falharem
-                logger.warning("Todos os detectores falharam, retornando neutral")
-                return {
-                    "dominant_emotion": "neutral",
-                    "probabilities": {"neutral": 1.0},
-                    "confidence": 0.5,
-                    "detector_used": "fallback",
-                    "calibrated": False
-                }
+                logger.warning("Todos os detectores DeepFace falharam")
+                return None
             
             return result
             
         except Exception as e:
             logger.error(f"Erro na análise DeepFace otimizada: {e}")
-            # Retornar resultado neutro em caso de erro
-            return {
-                "dominant_emotion": "neutral",
-                "probabilities": {"neutral": 1.0},
-                "confidence": 0.5,
-                "detector_used": "error_fallback",
-                "calibrated": False
-            }
+            return None
     
     def process_image(self, image_path: str) -> Optional[Dict[str, Any]]:
         """
@@ -377,6 +395,8 @@ class DeepFaceProcessor:
             
             # Usar método predict otimizado
             result = self.predict(bgr_img)
+            if result is None:
+                return None
             
             # Converter para formato compatível com API existente
             return {
@@ -385,6 +405,8 @@ class DeepFaceProcessor:
                 "confidence": result["confidence"],
                 "face_detected": True,
                 "detector": result["detector_used"],
+                "face_detector": result["detector_used"],
+                "emotion_model": "deepface",
                 "preprocessing": "enhanced",
                 "calibrated": result.get("calibrated", False)
             }
@@ -414,6 +436,8 @@ class DeepFaceProcessor:
             
             # Usar método predict otimizado
             result = self.predict(bgr_img)
+            if result is None:
+                return None
             
             # Converter para formato compatível com API existente
             return {
@@ -421,8 +445,10 @@ class DeepFaceProcessor:
                 "dominant_emotion": result["dominant_emotion"],
                 "confidence": result["confidence"],
                 "face_detected": True,
-                "landmarks_count": 6,  # Placeholder
+                "landmarks_count": 0,
                 "detector": result["detector_used"],
+                "face_detector": result["detector_used"],
+                "emotion_model": "deepface",
                 "preprocessing": "enhanced",
                 "calibrated": result.get("calibrated", False)
             }
@@ -451,4 +477,4 @@ class DeepFaceProcessor:
 
 
 # Instância global para compatibilidade
-deepface_processor = DeepFaceProcessor() 
+deepface_processor = DeepFaceProcessor()

@@ -5,7 +5,7 @@ pydantic>=2.4.0,<3.0.0
 pydantic-settings>=2.0.3,<3.0.0
 
 # Image processing essentials
-opencv-python-headless==4.8.1.78
+opencv-python==4.8.1.78
 pillow>=10.0.0,<11.0.0
 python-multipart==0.0.6
 python-dotenv==1.0.0
@@ -14,14 +14,14 @@ python-dotenv==1.0.0
 # A imagem base usa TensorFlow 2.13.0/Python 3.8; manter Keras 2.x evita o erro
 # keras.saving.legacy.serialization visto quando Keras/tf-keras mais novos entram na imagem.
 deepface==0.0.83
+tensorflow==2.13.0
 keras==2.13.1
-# TensorFlow já está incluído na imagem tensorflow/tensorflow:2.13.0-gpu.
-mediapipe==0.10.11
+# TensorFlow já está incluído na imagem tensorflow/tensorflow:2.13.0-gpu;
+# a linha acima funciona como constraint para impedir backtracking/downgrade.
 protobuf>=3.20.3,<4.0.0
 
-# Detectores adicionais para melhor precisão
-mtcnn>=0.1.1  # MTCNN detector
-retina-face>=0.0.13  # RetinaFace detector
+# Detector principal do Emotion Service
+retina-face==0.0.13
 
 # NumPy compatível
 numpy>=1.21.0,<1.25.0
@@ -33,7 +33,8 @@ httpx>=0.24.0
 requests>=2.31.0
 
 # Evaluation dependencies
-matplotlib>=3.5.0
-seaborn>=0.11.0
-scikit-learn>=1.2.0
-pandas>=1.5.0 
+matplotlib==3.7.5
+seaborn==0.13.2
+scikit-learn==1.3.2
+scipy==1.10.1
+pandas==2.0.3

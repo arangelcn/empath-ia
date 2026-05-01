@@ -14,8 +14,8 @@ from .processors.facial_emotion_processor import facial_emotion_processor
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Usar wrapper otimizado com DeepFace + Legacy fallback
-processor_type = "DeepFace + MediaPipe (with Legacy fallback)"
+# Usar wrapper otimizado com DeepFace + RetinaFace
+processor_type = "DeepFace + RetinaFace"
 use_legacy = False  # Principal é DeepFace, legacy apenas como fallback
 
 # Criar app FastAPI
@@ -50,7 +50,7 @@ async def startup_event():
     logger.info("🚀 Iniciando Emotion Service v2.0...")
     logger.info(f"📊 Processador configurado: {processor_type}")
     logger.info(f"🔧 Legacy mode: {use_legacy}")
-    logger.info(f"💻 Detector: MediaPipe (CPU optimized)")
+    logger.info("💻 Detector facial principal: RetinaFace via DeepFace")
     
     try:
         logger.info("🔄 Inicializando processador DeepFace...")
@@ -83,7 +83,7 @@ async def startup_event():
         logger.info("📋 Configuração final:")
         logger.info(f"   - Processador: {processor_type}")
         logger.info(f"   - Device: {getattr(emotion_engine, 'device', 'cpu')}")
-        logger.info(f"   - Detector: {getattr(emotion_engine, 'detector_backend', 'mediapipe')}")
+        logger.info(f"   - Detector: {getattr(emotion_engine, 'primary_detector', 'retinaface')}")
         logger.info(f"   - Status: Pronto para receber requisições")
         
     except Exception as e:
@@ -435,15 +435,24 @@ async def debug_emotions(data: Dict[str, Any]):
 @app.get("/config")
 async def get_config():
     """Retorna configurações do serviço"""
+    device_info = {}
+    if hasattr(emotion_engine, 'get_device_info'):
+        device_info = emotion_engine.get_device_info()
+
     return {
         "processor_type": processor_type,
-        "use_legacy_landmarks": use_legacy,
+        "use_legacy_fallback": os.getenv("USE_LEGACY_FALLBACK", "false").lower() == "true",
+        "force_legacy_processor": os.getenv("FORCE_LEGACY_PROCESSOR", "false").lower() == "true",
+        "face_detector": os.getenv("DEEPFACE_DETECTOR_BACKEND", "retinaface"),
+        "detector_fallbacks": os.getenv("DEEPFACE_DETECTOR_BACKENDS", "retinaface,opencv").split(","),
+        "emotion_model": "deepface",
         "emotion_model_path": os.getenv("EMOTION_MODEL_PATH"),
         "confidence_threshold": float(os.getenv("EMOTION_CONFIDENCE_THRESHOLD", "0.7")),
         "service_port": os.getenv("EMOTION_SERVICE_PORT", "8003"),
         "debug": os.getenv("DEBUG", "false").lower() == "true",
-        "device": getattr(emotion_engine, 'device', 'cpu'),
-        "cuda_available": False,  # MediaPipe usa CPU
+        "device": device_info.get("device_type", "CPU"),
+        "cuda_available": device_info.get("cuda_available", False),
+        "gpu_available": device_info.get("gpu_available", False),
         "shared_data_dir": "/shared_data"
     }
 
@@ -463,4 +472,4 @@ async def get_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8003) 
+    uvicorn.run(app, host="0.0.0.0", port=8003)

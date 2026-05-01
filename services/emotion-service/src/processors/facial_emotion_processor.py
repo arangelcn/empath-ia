@@ -1,7 +1,9 @@
 """
-Wrapper para processador de emoções faciais
-Usa DeepFace como principal e Legacy como fallback para máxima compatibilidade
-Permite forçar uso do Legacy através de variável de ambiente
+Wrapper para processador de emoções faciais.
+
+Caminho padrão: DeepFace + RetinaFace. O processador Legacy/MediaPipe fica
+disponível apenas quando explicitamente habilitado, porque ele não compartilha o
+mesmo modelo de emoção e pode mascarar falhas reais do stack DeepFace.
 """
 
 import os
@@ -10,13 +12,13 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Verificar se deve usar processador legacy como fallback ou como principal
-USE_LEGACY_FALLBACK = os.getenv("USE_LEGACY_FALLBACK", "true").lower() == "true"
+# Verificar se deve usar processador legacy como fallback ou como principal.
+USE_LEGACY_FALLBACK = os.getenv("USE_LEGACY_FALLBACK", "false").lower() == "true"
 FORCE_LEGACY_PROCESSOR = os.getenv("FORCE_LEGACY_PROCESSOR", "false").lower() == "true"
 
 
 class FacialEmotionProcessor:
-    """Wrapper que permite escolher entre DeepFace e Legacy como processador principal"""
+    """Wrapper que mantém DeepFace/RetinaFace como caminho principal."""
     
     def __init__(self):
         self.primary_processor = None
@@ -73,31 +75,39 @@ class FacialEmotionProcessor:
             
         except Exception as e:
             logger.error(f"❌ Erro ao inicializar DeepFace: {e}")
-            logger.info("Tentando apenas processador Legacy...")
-            
-            # Fallback para apenas Legacy
+            if not USE_LEGACY_FALLBACK:
+                raise RuntimeError(f"Processador DeepFace indisponível: {e}") from e
+
+            logger.info("Tentando processador Legacy porque USE_LEGACY_FALLBACK=true...")
             try:
                 from .facial_emotion_processor_legacy import FacialEmotionProcessor as LegacyProcessor
                 self.primary_processor = LegacyProcessor()
-                logger.info("✅ Usando apenas processador Legacy")
+                logger.info("✅ Usando processador Legacy como último recurso")
             except Exception as legacy_e:
                 logger.error(f"❌ Erro crítico - nenhum processador disponível: DeepFace={e}, Legacy={legacy_e}")
-                raise RuntimeError("Nenhum processador de emoções disponível")
+                raise RuntimeError("Nenhum processador de emoções disponível") from legacy_e
     
     def initialize(self):
         """Força inicialização dos processadores"""
-        try:
-            if hasattr(self.primary_processor, 'initialize'):
-                self.primary_processor.initialize()
-            
-            if self.fallback_processor and hasattr(self.fallback_processor, 'initialize'):
+        if self.primary_processor is None:
+            raise RuntimeError("Processador principal não inicializado")
+
+        if hasattr(self.primary_processor, 'initialize'):
+            self.primary_processor.initialize()
+
+        if self.fallback_processor and hasattr(self.fallback_processor, 'initialize'):
+            try:
                 self.fallback_processor.initialize()
-        except Exception as e:
-            logger.warning(f"Erro na inicialização: {e}")
+            except Exception as e:
+                logger.warning(f"Erro na inicialização do fallback: {e}")
     
     def process_image(self, image_path: str) -> Optional[Dict[str, Any]]:
         """Processa imagem usando processador principal, com fallback se falhar"""
         processor_name = "Legacy" if FORCE_LEGACY_PROCESSOR else "DeepFace"
+
+        if self.primary_processor is None:
+            logger.error("Processador principal não inicializado")
+            return None
         
         try:
             # Tentar processador principal
@@ -128,6 +138,10 @@ class FacialEmotionProcessor:
     def process_image_bytes(self, image_bytes: bytes) -> Optional[Dict[str, Any]]:
         """Processa bytes de imagem usando processador principal, com fallback se falhar"""
         processor_name = "Legacy" if FORCE_LEGACY_PROCESSOR else "DeepFace"
+
+        if self.primary_processor is None:
+            logger.error("Processador principal não inicializado")
+            return None
         
         try:
             # Tentar processador principal
@@ -160,6 +174,23 @@ class FacialEmotionProcessor:
         Método de compatibilidade - retorna emoções diretamente do au_data
         """
         return au_data.get("emotions", {"neutral": 1.0})
+
+    def get_device_info(self) -> Dict[str, Any]:
+        """Expõe informações do processador principal para health/config."""
+        if self.primary_processor and hasattr(self.primary_processor, 'get_device_info'):
+            return self.primary_processor.get_device_info()
+        return {
+            "device_type": "unknown",
+            "cuda_available": False,
+            "gpu_available": False,
+            "gpu_count": 0
+        }
+
+    @property
+    def primary_detector(self) -> str:
+        if self.primary_processor and hasattr(self.primary_processor, 'primary_detector'):
+            return self.primary_processor.primary_detector
+        return "unknown"
     
     def cleanup(self):
         """Limpar recursos de todos os processadores"""
@@ -181,9 +212,9 @@ except Exception as e:
     # Criar um processador dummy para evitar falhas de importação
     class DummyProcessor:
         def process_image(self, *args, **kwargs):
-            return {"emotions": {"neutral": 1.0}, "dominant_emotion": "neutral", "confidence": 0.5}
+            return None
         def process_image_bytes(self, *args, **kwargs):
-            return {"emotions": {"neutral": 1.0}, "dominant_emotion": "neutral", "confidence": 0.5}
+            return None
         def get_emotional_interpretation(self, *args, **kwargs):
             return {"neutral": 1.0}
         def initialize(self): pass
