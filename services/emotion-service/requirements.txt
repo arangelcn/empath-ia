@@ -7,8 +7,8 @@ typing-extensions==4.5.0
 # Image processing essentials
 opencv-python==4.8.1.78
 pillow>=10.0.0,<11.0.0
-python-multipart==0.0.6
-python-dotenv==1.0.0
+python-multipart==0.0.26
+python-dotenv==1.2.2
 
 # DeepFace com dependências.
 # A imagem base usa TensorFlow 2.13.0/Python 3.8; manter Keras 2.x evita o erro
@@ -30,7 +30,7 @@ numpy>=1.21.0,<1.25.0
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
 httpx>=0.24.0
-requests>=2.31.0
+requests>=2.33.1
 
 # Evaluation dependencies
 matplotlib==3.7.5
