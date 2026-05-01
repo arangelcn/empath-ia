@@ -200,34 +200,60 @@ Critérios de aceite:
 - Recuperação é desativável por prompt/contexto e não vira comportamento global invisível.
 - Existe avaliação mínima para medir grounding, citação correta e ausência de resposta inventada.
 
-## Prioridade 7: Voice Service e baixa latência
+## Prioridade 7 - Voice Service e Baixa Latência
 
-- [ ] Medir latência atual ponta a ponta: captura no frontend, gateway, geração LLM, TTS e reprodução.
-- [ ] Separar métricas de TTS, STT, rede, tamanho da resposta e tempo de primeira reprodução.
-- [ ] Estudar opções locais para voz: STT local, TTS local e modelos híbridos com fallback para Google Cloud.
-- [ ] Comparar candidatos locais por idioma pt-BR, qualidade, privacidade, custo, CPU/GPU e tempo de resposta.
-- [ ] Implementar modo de resposta curta para voz no AI Service via Prompt Control, com limites de tokens e frases mais naturais para áudio.
-- [ ] Avaliar streaming ou chunking de áudio para reduzir tempo até o usuário ouvir a primeira frase.
-- [ ] Adicionar cache seguro para TTS de frases comuns quando não houver dado pessoal sensível.
-- [ ] Criar health/status do Voice Service com provedor ativo, fila, latência média e fallback.
-- [ ] Documentar trade-offs entre local, cloud e híbrido antes de promover um modelo local como padrão.
+Este documento detalha o plano de ação para a evolução do serviço de voz, focando na transição de um modelo síncrono para uma arquitetura de streaming com Google Cloud TTS, visando a redução drástica da latência no acolhimento humanístico.
 
-Arquivos prováveis:
+## 🎯 Objetivo
+Reduzir a latência percebida (Time to First Byte - TTFB) de ~4s para < 800ms, permitindo uma conversação fluida e empática.
 
-- `services/voice-service/src/`
-- `services/voice-service/README.md`
-- `services/gateway-service/src/services/chat_service.py`
-- `services/gateway-service/src/main.py`
-- `services/ai-service/src/services/openai_service.py`
-- `docs/TECHNICAL.md`
+---
 
-Critérios de aceite:
+### 🛠️ Prioridade 7
 
-- Existe baseline de latência antes de alterar arquitetura.
-- Voice mode tem respostas mais curtas e adequadas à fala.
-- Pelo menos uma opção local ou híbrida é testada com métricas comparáveis.
-- O serviço expõe status suficiente para diagnosticar lentidão e falhas.
-- Otimizações de voz respeitam as versões de prompt, regras de segurança e rastreabilidade já definidas.
+- [ ] **Medição de Baseline**
+    - [ ] Medir latência atual ponta a ponta: captura no frontend, gateway, geração LLM, TTS e reprodução.
+    - [ ] Separar métricas de TTS, STT, rede, tamanho da resposta e tempo de primeira reprodução.
+
+- [ ] **Otimização de Prompt e Contexto**
+    - [ ] Implementar modo de resposta curta para voz no AI Service via Prompt Control.
+    - [ ] Configurar limites de tokens e frases mais naturais para áudio (menos listas, mais prosa).
+
+- [ ] **Arquitetura de Streaming (GCP TTS)**
+    - [ ] **AI Service:** Habilitar `stream=True` na OpenAI e usar `Async Generators`.
+    - [ ] **Chunking:** Criar buffer no Gateway para agrupar tokens em sentenças completas (antes de enviar ao TTS).
+    - [ ] **Voice Service:** Implementar `StreamingResponse` utilizando a API de streaming do Google Cloud TTS.
+    - [ ] **Gateway:** Migrar endpoint de chat para Server-Sent Events (SSE) ou WebSockets para entrega de áudio em tempo real.
+
+- [ ] **Hibridismo e Modelos Locais**
+    - [ ] Estudar opções locais para voz: Piper (leve/CPU) ou XTTS v2 (qualidade/GPU).
+    - [ ] Comparar candidatos por idioma pt-BR, qualidade, privacidade e tempo de resposta.
+    - [ ] Documentar trade-offs entre local, cloud e híbrido.
+
+- [ ] **Resiliência e Performance**
+    - [ ] Adicionar cache seguro (Redis) para TTS de frases de acolhimento comuns e genéricas.
+    - [ ] Criar health/status do Voice Service com monitoramento de provedor ativo e fallback automático.
+
+---
+
+## 📂 Arquivos Impactados
+
+| Serviço | Caminho do Arquivo | Descrição da Alteração |
+| :--- | :--- | :--- |
+| **Voice Service** | `services/voice-service/src/` | Implementação do gRPC streaming do GCP. |
+| **Gateway** | `services/gateway-service/src/services/chat_service.py` | Lógica de chunking de texto e gestão de fluxo SSE. |
+| **AI Service** | `services/ai-service/src/services/openai_service.py` | Refatoração para suporte a stream de tokens. |
+| **Frontend** | `services/web-ui/src/services/audio_manager.ts` | Fila de reprodução (Audio Queue) para chunks. |
+| **Docs** | `docs/TECHNICAL.md` | Atualização da arquitetura de eventos. |
+
+---
+
+## ✅ Critérios de Aceite
+1. Existe baseline de latência documentado antes e depois da alteração.
+2. Voice mode utiliza respostas curtas e adequadas à fala rítmica.
+3. Pelo menos uma opção local é testada como fallback funcional.
+4. O sistema não aguarda o fim da geração do LLM para iniciar a reprodução do áudio (Streaming funcional).
+5. Otimizações de voz respeitam as versões de prompt e regras de segurança pré-estabelecidas.
 
 ## Notas consolidadas
 
