@@ -5,6 +5,7 @@ import fnmatch
 import logging
 import os
 import shutil
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -28,6 +29,7 @@ class LocalLLMService:
         self.n_threads = int(os.getenv("LOCAL_LLM_N_THREADS", str(os.cpu_count() or 4)))
         self.verbose = os.getenv("LOCAL_LLM_VERBOSE", "false").lower() == "true"
         self._llm = None
+        self._generation_lock = threading.Lock()
         self._load_error: Optional[str] = None
         self._runtime_load_failed = False
 
@@ -341,13 +343,14 @@ class LocalLLMService:
         max_tokens: int,
         temperature: float,
     ) -> Optional[str]:
-        llm = self._load_model()
-        prepared_messages = self._prepare_messages_for_model(messages)
-        response = llm.create_chat_completion(
-            messages=prepared_messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
+        with self._generation_lock:
+            llm = self._load_model()
+            prepared_messages = self._prepare_messages_for_model(messages)
+            response = llm.create_chat_completion(
+                messages=prepared_messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
 
         choices = response.get("choices", [])
         if not choices:
