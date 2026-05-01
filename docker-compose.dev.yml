@@ -129,7 +129,7 @@ services:
       - LOCAL_LLM_N_CTX=${LOCAL_LLM_N_CTX:-8192}
       - LOCAL_LLM_N_GPU_LAYERS=${LOCAL_LLM_N_GPU_LAYERS:--1}
       - LOCAL_LLM_N_THREADS=${LOCAL_LLM_N_THREADS:-8}
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_VISIBLE_DEVICES=${AI_NVIDIA_VISIBLE_DEVICES:-all}
       - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - MAX_TOKENS=${MAX_TOKENS:-700}
@@ -168,9 +168,10 @@ services:
       dockerfile: Dockerfile
       network: host
     environment:
-      # Configurações NVIDIA para Docker CE
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # CPU por padrão: a GPU fica reservada para o AI Service/local LLM.
+      - NVIDIA_VISIBLE_DEVICES=${EMOTION_NVIDIA_VISIBLE_DEVICES:-none}
+      - NVIDIA_DRIVER_CAPABILITIES=${EMOTION_NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+      - CUDA_VISIBLE_DEVICES=${EMOTION_CUDA_VISIBLE_DEVICES:--1}
       # Configurações do serviço
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
@@ -182,15 +183,12 @@ services:
       - EMOTIEFF_MODEL=${EMOTIEFF_MODEL:-enet_b0_8_best_afew}
       - TORCH_HOME=/app/models
       - HF_HOME=/app/models/huggingface
-      # Configurações GPU/CUDA otimizadas para TensorFlow
+      # Configurações TensorFlow: seguras mesmo em CPU e úteis se EMOTION_* habilitar GPU.
       - TF_FORCE_GPU_ALLOW_GROWTH=true
       - TF_XLA_FLAGS=--tf_xla_enable_xla_devices
       - CUDA_CACHE_DISABLE=0
       - CUDA_CACHE_MAXSIZE=2147483648
-      # Configurações de memória GPU para evitar OOM
       - TF_GPU_MEMORY_ALLOW_GROWTH=true
-      # Forçar TensorFlow a usar GPU
-      - CUDA_VISIBLE_DEVICES=0
     volumes:
       - ./services/emotion-service/src:/app/src
       # Volume para modelos pré-treinados

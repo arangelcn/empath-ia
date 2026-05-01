@@ -96,7 +96,7 @@ services:
       - LOCAL_LLM_N_CTX=${LOCAL_LLM_N_CTX:-8192}
       - LOCAL_LLM_N_GPU_LAYERS=${LOCAL_LLM_N_GPU_LAYERS:--1}
       - LOCAL_LLM_N_THREADS=${LOCAL_LLM_N_THREADS:-8}
-      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_VISIBLE_DEVICES=${AI_NVIDIA_VISIBLE_DEVICES:-all}
       - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - MAX_TOKENS=${MAX_TOKENS:-700}
@@ -154,11 +154,16 @@ services:
     env_file:
       - .env
     environment:
+      # CPU por padrão: a GPU fica reservada para o AI Service/local LLM.
+      - NVIDIA_VISIBLE_DEVICES=${EMOTION_NVIDIA_VISIBLE_DEVICES:-none}
+      - CUDA_VISIBLE_DEVICES=${EMOTION_CUDA_VISIBLE_DEVICES:--1}
       - OPENFACE_MODEL_PATH=${OPENFACE_MODEL_PATH:-/models/openface}
       - EMOTION_CONFIDENCE_THRESHOLD=${EMOTION_CONFIDENCE_THRESHOLD:-0.7}
       - EMOTION_SERVICE_PORT=${EMOTION_SERVICE_PORT:-8003}
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TF_FORCE_GPU_ALLOW_GROWTH=true
+      - TF_GPU_MEMORY_ALLOW_GROWTH=true
     volumes:
       - ./services/emotion-service:/app
       - ./data/shared:/shared_data

@@ -10,12 +10,14 @@ pillow>=10.0.0,<11.0.0
 python-multipart==0.0.6
 python-dotenv==1.0.0
 
-# DeepFace com dependências (TensorFlow já incluído na imagem base)
-deepface>=0.0.79
-tf-keras  # Necessário para TensorFlow 2.17+
-# TensorFlow já incluído na imagem tensorflow/tensorflow:2.15.0-gpu
-mediapipe>=0.10.0
-protobuf>=3.20.0,<4.0.0
+# DeepFace com dependências.
+# A imagem base usa TensorFlow 2.13.0/Python 3.8; manter Keras 2.x evita o erro
+# keras.saving.legacy.serialization visto quando Keras/tf-keras mais novos entram na imagem.
+deepface==0.0.83
+keras==2.13.1
+# TensorFlow já está incluído na imagem tensorflow/tensorflow:2.13.0-gpu.
+mediapipe==0.10.11
+protobuf>=3.20.3,<4.0.0
 
 # Detectores adicionais para melhor precisão
 mtcnn>=0.1.1  # MTCNN detector

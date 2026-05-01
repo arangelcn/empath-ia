@@ -41,10 +41,11 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # Copiar requirements primeiro (para cache do Docker)
 COPY requirements.txt .
 
-# Remover tensorflow do requirements pois já está na imagem base
-# e instalar demais dependências
+# Não usar --ignore-installed aqui: a imagem base já traz TensorFlow 2.13.0.
+# Ignorar pacotes instalados permite que dependências transitivas reinstalem
+# TensorFlow/Keras incompatíveis com Python 3.8 e quebrem o import do DeepFace.
 RUN sed -i '/^tensorflow/d' requirements.txt && \
-    pip install --no-cache-dir --ignore-installed -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt
 
 # Criar diretórios necessários
 RUN mkdir -p /app/models /app/data /shared_data

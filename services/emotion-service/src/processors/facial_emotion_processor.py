@@ -47,8 +47,8 @@ class FacialEmotionProcessor:
             
             logger.info(f"✅ Processador inicializado - Principal: Legacy, Fallback: {'DeepFace' if self.fallback_processor else 'Nenhum'}")
             
-        except ImportError as e:
-            logger.error(f"❌ Erro ao importar Legacy (forçado): {e}")
+        except Exception as e:
+            logger.error(f"❌ Erro ao inicializar Legacy (forçado): {e}")
             logger.info("Fallback para DeepFace...")
             self._setup_deepface_as_primary()
     
@@ -71,8 +71,8 @@ class FacialEmotionProcessor:
             
             logger.info(f"✅ Processador inicializado - Principal: DeepFace, Fallback: {'Legacy' if self.fallback_processor else 'Nenhum'}")
             
-        except ImportError as e:
-            logger.error(f"❌ Erro ao importar DeepFace: {e}")
+        except Exception as e:
+            logger.error(f"❌ Erro ao inicializar DeepFace: {e}")
             logger.info("Tentando apenas processador Legacy...")
             
             # Fallback para apenas Legacy
@@ -80,7 +80,7 @@ class FacialEmotionProcessor:
                 from .facial_emotion_processor_legacy import FacialEmotionProcessor as LegacyProcessor
                 self.primary_processor = LegacyProcessor()
                 logger.info("✅ Usando apenas processador Legacy")
-            except ImportError as legacy_e:
+            except Exception as legacy_e:
                 logger.error(f"❌ Erro crítico - nenhum processador disponível: DeepFace={e}, Legacy={legacy_e}")
                 raise RuntimeError("Nenhum processador de emoções disponível")
     
