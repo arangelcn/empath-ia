@@ -212,27 +212,28 @@ Reduzir a latência percebida (Time to First Byte - TTFB) de ~4s para < 800ms, p
 ### 🛠️ Prioridade 7
 
 - [ ] **Medição de Baseline**
-    - [ ] Medir latência atual ponta a ponta: captura no frontend, gateway, geração LLM, TTS e reprodução.
-    - [ ] Separar métricas de TTS, STT, rede, tamanho da resposta e tempo de primeira reprodução.
+    - [x] Instrumentar latência ponta a ponta com `trace_id` no frontend, gateway, geração LLM, TTS e reprodução.
+    - [x] Separar métricas de TTS, STT/reconhecimento no frontend, rede, tamanho da resposta e tempo de primeira reprodução.
+    - [ ] Registrar baseline manual antes/depois com 5 interações reais em ambiente com credenciais GCP.
 
 - [ ] **Otimização de Prompt e Contexto**
-    - [ ] Implementar modo de resposta curta para voz no AI Service via Prompt Control.
-    - [ ] Configurar limites de tokens e frases mais naturais para áudio (menos listas, mais prosa).
+    - [x] Implementar modo de resposta curta para voz no AI Service via Prompt Control (`voice_short_response`) com fallback hardcoded seguro.
+    - [x] Configurar limites de tokens e frases mais naturais para áudio (menos listas, mais prosa).
 
 - [ ] **Arquitetura de Streaming (GCP TTS)**
-    - [ ] **AI Service:** Habilitar `stream=True` na OpenAI e usar `Async Generators`.
-    - [ ] **Chunking:** Criar buffer no Gateway para agrupar tokens em sentenças completas (antes de enviar ao TTS).
-    - [ ] **Voice Service:** Implementar `StreamingResponse` utilizando a API de streaming do Google Cloud TTS.
-    - [ ] **Gateway:** Migrar endpoint de chat para Server-Sent Events (SSE) ou WebSockets para entrega de áudio em tempo real.
+    - [x] **AI Service:** Habilitar `stream=True` na OpenAI e usar `Async Generators`.
+    - [x] **Chunking:** Criar buffer no Gateway para agrupar tokens em sentenças completas (antes de enviar ao TTS).
+    - [x] **Voice Service:** Implementar `StreamingResponse` utilizando a API de streaming do Google Cloud TTS.
+    - [x] **Gateway:** Criar endpoint paralelo de chat por Server-Sent Events (SSE) para entrega de texto/áudio em tempo real.
 
 - [ ] **Hibridismo e Modelos Locais**
-    - [ ] Estudar opções locais para voz: Piper (leve/CPU) ou XTTS v2 (qualidade/GPU).
-    - [ ] Comparar candidatos por idioma pt-BR, qualidade, privacidade e tempo de resposta.
-    - [ ] Documentar trade-offs entre local, cloud e híbrido.
+    - [x] Adicionar Piper como fallback local opcional por CLI (`TTS_LOCAL_PROVIDER=piper`).
+    - [ ] Comparar candidatos por idioma pt-BR, qualidade, privacidade e tempo de resposta em ambiente real.
+    - [x] Documentar trade-offs entre local, cloud e híbrido.
 
 - [ ] **Resiliência e Performance**
-    - [ ] Adicionar cache seguro (Redis) para TTS de frases de acolhimento comuns e genéricas.
-    - [ ] Criar health/status do Voice Service com monitoramento de provedor ativo e fallback automático.
+    - [x] Adicionar cache seguro (Redis) para TTS de frases de acolhimento comuns e genéricas em allowlist.
+    - [x] Criar health/status do Voice Service com monitoramento de provedor ativo, streaming disponível e fallback local.
 
 ---
 
@@ -243,7 +244,7 @@ Reduzir a latência percebida (Time to First Byte - TTFB) de ~4s para < 800ms, p
 | **Voice Service** | `services/voice-service/src/` | Implementação do gRPC streaming do GCP. |
 | **Gateway** | `services/gateway-service/src/services/chat_service.py` | Lógica de chunking de texto e gestão de fluxo SSE. |
 | **AI Service** | `services/ai-service/src/services/openai_service.py` | Refatoração para suporte a stream de tokens. |
-| **Frontend** | `services/web-ui/src/services/audio_manager.ts` | Fila de reprodução (Audio Queue) para chunks. |
+| **Frontend** | `apps/web-ui/src/hooks/useStreamingAudioQueue.js` | Fila de reprodução (Audio Queue) para chunks PCM. |
 | **Docs** | `docs/TECHNICAL.md` | Atualização da arquitetura de eventos. |
 
 ---

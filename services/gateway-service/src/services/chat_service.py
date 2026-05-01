@@ -5,10 +5,14 @@ Serviço de chat - orquestra conversas e mensagens
 import logging
 import os
 import uuid
-from typing import Dict, List, Optional, Any
+import base64
+import json
+import time
+from typing import AsyncGenerator, Dict, List, Optional, Any
 from datetime import datetime
 import httpx
 from ..models.database import get_collection
+from .streaming_utils import SentenceChunker, now_ms
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +21,7 @@ class ChatService:
     
     def __init__(self):
         self.ai_service_url = os.getenv("AI_SERVICE_URL", "http://ai-service:8001")
-        self.base_voice_url = "http://voice-service:8004"
-        # self.voice_service_url = os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004")  # Comentado temporariamente
+        self.base_voice_url = os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004")
 
     def _split_composite_session_id(self, session_id: str) -> tuple[Optional[str], str]:
         """
@@ -361,6 +364,318 @@ class ChatService:
             return {
                 "success": False,
                 "error": f"Erro ao processar mensagem: {str(e)}"
+            }
+
+    async def process_user_message_stream(
+        self,
+        session_id: str,
+        user_message: str,
+        session_objective: Optional[Dict[str, Any]] = None,
+        is_voice_mode: bool = True,
+        trace_id: Optional[str] = None,
+        client_metrics: Optional[Dict[str, Any]] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Process a voice message and emit SSE-ready events."""
+        trace_id = trace_id or f"trace_{uuid.uuid4().hex}"
+        started_at = time.perf_counter()
+        ai_done_data: Dict[str, Any] = {}
+        full_response = ""
+        audio_sequence = 0
+        tts_failed = False
+        first_audio_ms: Optional[int] = None
+        first_text_ms: Optional[int] = None
+
+        try:
+            identity = await self.resolve_conversation_ref(session_id, create=True)
+            chat_id = identity.get("chat_id")
+            legacy_session_id = identity.get("legacy_session_id") or session_id
+            username = identity.get("username") or self._extract_username_from_session_id(legacy_session_id)
+
+            if not username:
+                raise ValueError(f"Session ID inválido: {legacy_session_id}")
+
+            parsed_original_session_id = identity.get("therapeutic_session_id") or legacy_session_id.split("_")[-1]
+            if parsed_original_session_id == "session-1":
+                result = await self.process_user_message(
+                    legacy_session_id,
+                    user_message,
+                    session_objective=session_objective,
+                    is_voice_mode=is_voice_mode,
+                )
+                yield {
+                    "event": "meta",
+                    "data": {
+                        "trace_id": trace_id,
+                        "chat_id": chat_id,
+                        "session_id": legacy_session_id,
+                        "streaming": False,
+                        "fallback_reason": "registration_session",
+                    },
+                }
+                ai_response = (result.get("data") or {}).get("ai_response") or {}
+                if ai_response.get("content"):
+                    yield {"event": "text_delta", "data": {"delta": ai_response["content"], "trace_id": trace_id}}
+                if ai_response.get("audioUrl"):
+                    yield {"event": "audio_url", "data": {"audio_url": ai_response["audioUrl"], "trace_id": trace_id}}
+                yield {"event": "done", "data": {"trace_id": trace_id, "result": result, "streaming": False}}
+                return
+
+            await self.start_or_get_conversation(legacy_session_id)
+
+            users_collection = get_collection("users")
+            user = await users_collection.find_one({"username": username})
+            selected_voice = "pt-BR-Neural2-B"
+            voice_enabled = True
+            if user and user.get("preferences"):
+                preferences = user["preferences"]
+                selected_voice = preferences.get("selected_voice", selected_voice)
+                voice_enabled = preferences.get("voice_enabled", voice_enabled)
+            if is_voice_mode:
+                voice_enabled = True
+
+            initial_prompt = None
+            if not session_objective:
+                initial_prompt = await self._get_session_initial_prompt(legacy_session_id)
+
+            user_profile = await self._get_user_profile(username)
+            conversation_history = await self._get_conversation_context(legacy_session_id)
+            previous_session_context = await self._get_previous_session_context(legacy_session_id)
+
+            user_message_id = await self._save_message(legacy_session_id, "user", user_message)
+
+            yield {
+                "event": "meta",
+                "data": {
+                    "trace_id": trace_id,
+                    "chat_id": chat_id,
+                    "session_id": legacy_session_id,
+                    "therapeutic_session_id": identity.get("therapeutic_session_id"),
+                    "user_message": {"id": user_message_id, "content": user_message},
+                    "voice": selected_voice,
+                    "streaming": True,
+                    "client_metrics": client_metrics or {},
+                    "started_at": datetime.utcnow().isoformat(),
+                },
+            }
+
+            ai_request = {
+                "message": user_message,
+                "session_id": legacy_session_id,
+                "username": username,
+                "user_profile": user_profile,
+                "conversation_history": conversation_history,
+                "session_objective": session_objective,
+                "initial_prompt": initial_prompt,
+                "previous_session_context": previous_session_context,
+                "is_voice_mode": True,
+                "trace_id": trace_id,
+            }
+
+            chunker = SentenceChunker(
+                max_chars=int(os.getenv("VOICE_CHUNK_MAX_CHARS", "220")),
+                max_wait_ms=int(os.getenv("VOICE_CHUNK_MAX_WAIT_MS", "700")),
+            )
+
+            async with httpx.AsyncClient(timeout=None) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self.ai_service_url}/openai/chat/stream",
+                    json=ai_request,
+                    headers={"Content-Type": "application/json"},
+                ) as response:
+                    if response.status_code != 200:
+                        raise RuntimeError(f"AI stream HTTP {response.status_code}: {await response.aread()}")
+
+                    current_event = "message"
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        if line.startswith("event:"):
+                            current_event = line.split(":", 1)[1].strip()
+                            continue
+                        if not line.startswith("data:"):
+                            continue
+
+                        payload = json.loads(line.split(":", 1)[1].strip() or "{}")
+                        if current_event == "text_delta":
+                            delta = payload.get("delta", "")
+                            if not delta:
+                                continue
+                            if first_text_ms is None:
+                                first_text_ms = now_ms(started_at)
+                            full_response += delta
+                            yield {
+                                "event": "text_delta",
+                                "data": {
+                                    "delta": delta,
+                                    "trace_id": trace_id,
+                                    "elapsed_ms": now_ms(started_at),
+                                },
+                            }
+                            if voice_enabled and not tts_failed:
+                                for text_chunk in chunker.push(delta):
+                                    async for audio_event in self._stream_tts_chunk(
+                                        text_chunk,
+                                        selected_voice,
+                                        trace_id,
+                                        audio_sequence,
+                                        started_at,
+                                    ):
+                                        if audio_event["event"] == "audio_chunk":
+                                            audio_sequence += 1
+                                            if first_audio_ms is None:
+                                                first_audio_ms = now_ms(started_at)
+                                        elif audio_event["event"] == "error":
+                                            tts_failed = True
+                                        yield audio_event
+                        elif current_event == "done":
+                            ai_done_data = payload
+
+            remaining = chunker.flush()
+            if remaining and voice_enabled and not tts_failed:
+                async for audio_event in self._stream_tts_chunk(
+                    remaining,
+                    selected_voice,
+                    trace_id,
+                    audio_sequence,
+                    started_at,
+                ):
+                    if audio_event["event"] == "audio_chunk":
+                        audio_sequence += 1
+                        if first_audio_ms is None:
+                            first_audio_ms = now_ms(started_at)
+                    elif audio_event["event"] == "error":
+                        tts_failed = True
+                    yield audio_event
+
+            final_text = (ai_done_data.get("response") or full_response).strip()
+            audio_url = None
+            if voice_enabled and audio_sequence == 0 and final_text:
+                audio_url = await self._generate_audio(final_text, selected_voice, is_voice_mode=True)
+                if audio_url:
+                    yield {"event": "audio_url", "data": {"audio_url": audio_url, "trace_id": trace_id}}
+
+            ai_message_id = await self._save_message(legacy_session_id, "ai", final_text, audio_url)
+            await self._update_message_count(legacy_session_id)
+            await self._update_message_count(legacy_session_id)
+
+            conversation_ended = self.detect_conversation_end(user_message)
+            if conversation_ended:
+                import asyncio
+
+                asyncio.create_task(self.finalize_session_context(legacy_session_id, manual_termination=False))
+
+            metrics = {
+                "gateway_total_ms": now_ms(started_at),
+                "first_text_delta_ms": first_text_ms,
+                "first_audio_chunk_ms": first_audio_ms,
+                "audio_chunks": audio_sequence,
+                "tts_stream_failed": tts_failed,
+                "client_metrics": client_metrics or {},
+                **(ai_done_data.get("metrics") or {}),
+            }
+            yield {
+                "event": "metrics",
+                "data": {"trace_id": trace_id, "metrics": metrics},
+            }
+            yield {
+                "event": "done",
+                "data": {
+                    "trace_id": trace_id,
+                    "success": True,
+                    "data": {
+                        "chat_id": chat_id,
+                        "session_id": legacy_session_id,
+                        "therapeutic_session_id": identity.get("therapeutic_session_id"),
+                        "user_message": {"id": user_message_id, "content": user_message},
+                        "ai_response": {
+                            "id": ai_message_id,
+                            "content": final_text,
+                            "audioUrl": audio_url,
+                            "provider": ai_done_data.get("provider", "unknown"),
+                            "model": ai_done_data.get("model", "unknown"),
+                        },
+                        "conversation_ended": conversation_ended,
+                    },
+                    "metrics": metrics,
+                },
+            }
+        except Exception as exc:
+            logger.error("❌ Erro no stream de mensagem: %s", exc, exc_info=True)
+            yield {
+                "event": "error",
+                "data": {
+                    "trace_id": trace_id,
+                    "error": str(exc),
+                    "elapsed_ms": now_ms(started_at),
+                },
+            }
+
+    async def _stream_tts_chunk(
+        self,
+        text: str,
+        voice: str,
+        trace_id: str,
+        sequence: int,
+        started_at: float,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Call Voice Service streaming endpoint and emit base64 PCM chunks."""
+        if not text.strip():
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self.base_voice_url}/api/v1/synthesize-stream",
+                    json={
+                        "text": text,
+                        "voice_name": voice,
+                        "language_code": "pt-BR",
+                    },
+                ) as response:
+                    if response.status_code != 200:
+                        detail = (await response.aread()).decode("utf-8", errors="ignore")
+                        logger.warning("⚠️ Voice streaming indisponível: HTTP %s %s", response.status_code, detail)
+                        yield {
+                            "event": "error",
+                            "data": {
+                                "trace_id": trace_id,
+                                "stage": "tts_stream",
+                                "error": f"voice_stream_http_{response.status_code}",
+                                "recoverable": True,
+                            },
+                        }
+                        return
+
+                    sample_rate = int(response.headers.get("X-Audio-Sample-Rate", "24000"))
+                    encoding = response.headers.get("X-Audio-Encoding", "PCM")
+                    chunk_sequence = sequence
+                    async for chunk in response.aiter_bytes():
+                        if not chunk:
+                            continue
+                        yield {
+                            "event": "audio_chunk",
+                            "data": {
+                                "trace_id": trace_id,
+                                "sequence": chunk_sequence,
+                                "audio": base64.b64encode(chunk).decode("ascii"),
+                                "sample_rate_hz": sample_rate,
+                                "encoding": encoding,
+                                "elapsed_ms": now_ms(started_at),
+                            },
+                        }
+                        chunk_sequence += 1
+        except Exception as exc:
+            logger.warning("⚠️ Falha no streaming TTS: %s", exc)
+            yield {
+                "event": "error",
+                "data": {
+                    "trace_id": trace_id,
+                    "stage": "tts_stream",
+                    "error": str(exc),
+                    "recoverable": True,
+                },
             }
     
     async def get_conversation_history(self, session_id: str) -> Dict[str, Any]:

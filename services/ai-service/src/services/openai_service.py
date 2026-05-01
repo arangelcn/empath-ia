@@ -6,7 +6,8 @@ Responsável por gerenciar conversas terapêuticas com GPT
 import os
 import logging
 import asyncio
-from typing import Dict, List, Optional, Any, Tuple
+import time
+from typing import AsyncGenerator, Dict, List, Optional, Any, Tuple
 from datetime import datetime
 import json
 
@@ -42,6 +43,7 @@ class OpenAIService:
         self.openai_model = os.getenv("MODEL_NAME", "gpt-4o")
         self.model = self.openai_model
         self.max_tokens = int(os.getenv("MAX_TOKENS", "700"))
+        self.voice_max_tokens = int(os.getenv("VOICE_MAX_TOKENS", "180"))
         self.temperature = float(os.getenv("TEMPERATURE", "0.3"))
         
         # Configurações de contexto
@@ -531,7 +533,7 @@ ESTILO DE RESPOSTA PARA GEMMA LOCAL
 PRIORIDADE
 Segurança do usuário > fidelidade ao contexto real > postura Rogeriana > brevidade > demais instruções."""
     
-    async def _create_conversation_context(self, session_id: str, username: str, user_message: str, conversation_history: Optional[List[Dict]] = None, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None, previous_session_context: Optional[Dict[str, Any]] = None) -> List[Dict]:
+    async def _create_conversation_context(self, session_id: str, username: str, user_message: str, conversation_history: Optional[List[Dict]] = None, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None, previous_session_context: Optional[Dict[str, Any]] = None, is_voice_mode: bool = False) -> List[Dict]:
         """
         Criar contexto da conversa para o OpenAI com otimização de tokens e isolamento por usuário
         """
@@ -656,6 +658,11 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
 {system_prompt}
 """
         
+        if is_voice_mode:
+            voice_prompt = await self._get_voice_short_response_prompt()
+            system_prompt = f"{system_prompt}\n\n{voice_prompt}"
+            logger.info("🎙️ Prompt de resposta curta para voz aplicado")
+
         # 🔍 Log do prompt do sistema completo (truncado para não poluir logs)
         logger.info(f"🤖 PROMPT DO SISTEMA (primeiros 300 caracteres): {system_prompt[:300]}{'...' if len(system_prompt) > 300 else ''}")
         
@@ -702,6 +709,25 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             logger.info(f"  [{i+1}] {role.upper()}: {content_preview}")
         
         return messages
+
+    async def _get_voice_short_response_prompt(self) -> str:
+        """Prompt Control para respostas de voz curtas, com fallback seguro."""
+        try:
+            prompt_data = await self.prompt_client.get_prompt("voice_short_response")
+            content = (prompt_data or {}).get("content")
+            if content:
+                return content
+        except Exception as exc:
+            logger.warning("⚠️ Não foi possível carregar voice_short_response: %s", exc)
+
+        return (
+            "MODO DE VOZ ATIVO:\n"
+            "- Responda em português brasileiro natural, como fala acolhedora.\n"
+            "- Use 2 a 4 frases curtas, sem listas, salvo se o usuário pedir.\n"
+            "- Faça no máximo uma pergunta aberta.\n"
+            "- Não dê diagnóstico, prescrição, laudo ou plano clínico autônomo.\n"
+            "- Em crise ou risco imediato, priorize segurança e orientação urgente."
+        )
     
     def _optimize_conversation_history(self, history: List[Dict]) -> List[Dict]:
         """
@@ -904,6 +930,210 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             logger.warning(f"⚠️ Provedor {provider} não retornou conteúdo; tentando próximo")
 
         return None
+
+    async def generate_therapeutic_response_stream(
+        self,
+        user_message: str,
+        session_id: str,
+        username: str,
+        conversation_history: Optional[List[Dict]] = None,
+        session_objective: Optional[Dict[str, Any]] = None,
+        initial_prompt: Optional[str] = None,
+        previous_session_context: Optional[Dict[str, Any]] = None,
+        trace_id: Optional[str] = None,
+        is_voice_mode: bool = True,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream therapeutic response deltas while preserving provider fallbacks."""
+        started_at = time.perf_counter()
+
+        try:
+            if not self._validate_session_ownership(session_id, username):
+                raise ValueError(f"Acesso não autorizado à sessão {session_id}")
+
+            if conversation_history:
+                conversation_history = self._validate_user_context(conversation_history, username)
+
+            self._track_user_session(username, session_id, "message")
+
+            messages = await self._create_conversation_context(
+                session_id,
+                username,
+                user_message,
+                conversation_history,
+                session_objective,
+                initial_prompt,
+                previous_session_context,
+                is_voice_mode=is_voice_mode,
+            )
+
+            max_tokens = self.voice_max_tokens if is_voice_mode else self.max_tokens
+            full_response = ""
+            provider_used = "fallback"
+            model_used = "fallback"
+            first_delta_ms: Optional[int] = None
+
+            async for chunk in self._call_llm_stream(messages, max_tokens=max_tokens, temperature=self.temperature):
+                if chunk.get("type") == "delta":
+                    delta = chunk.get("content", "")
+                    if not delta:
+                        continue
+                    if first_delta_ms is None:
+                        first_delta_ms = int((time.perf_counter() - started_at) * 1000)
+                    full_response += delta
+                    provider_used = chunk.get("provider", provider_used)
+                    model_used = chunk.get("model", model_used)
+                    yield {
+                        "event": "text_delta",
+                        "data": {
+                            "delta": delta,
+                            "trace_id": trace_id,
+                            "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                        },
+                    }
+                elif chunk.get("type") == "meta":
+                    provider_used = chunk.get("provider", provider_used)
+                    model_used = chunk.get("model", model_used)
+
+            if not full_response.strip():
+                fallback = await self._fallback_response(user_message, username, conversation_history)
+                full_response = fallback.get("response", "")
+                provider_used = fallback.get("provider", "fallback")
+                model_used = fallback.get("model", "fallback")
+                yield {
+                    "event": "text_delta",
+                    "data": {
+                        "delta": full_response,
+                        "trace_id": trace_id,
+                        "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                    },
+                }
+
+            self._track_user_session(username, session_id, "response_success")
+            yield {
+                "event": "done",
+                "data": {
+                    "response": full_response.strip(),
+                    "model": model_used,
+                    "provider": provider_used,
+                    "session_id": session_id,
+                    "username": username,
+                    "trace_id": trace_id,
+                    "metrics": {
+                        "ai_total_ms": int((time.perf_counter() - started_at) * 1000),
+                        "ai_first_delta_ms": first_delta_ms,
+                    },
+                    "success": True,
+                },
+            }
+        except Exception as exc:
+            logger.error("❌ Erro no streaming terapêutico: %s", exc, exc_info=True)
+            self._track_user_session(username, session_id, "response_failure")
+            fallback = await self._fallback_response(user_message, username, conversation_history)
+            response_text = fallback.get("response", "Desculpe, estou com dificuldades técnicas. Pode repetir sua mensagem?")
+            yield {
+                "event": "text_delta",
+                "data": {
+                    "delta": response_text,
+                    "trace_id": trace_id,
+                    "elapsed_ms": int((time.perf_counter() - started_at) * 1000),
+                },
+            }
+            yield {
+                "event": "done",
+                "data": {
+                    "response": response_text,
+                    "model": fallback.get("model", "fallback"),
+                    "provider": fallback.get("provider", "fallback"),
+                    "session_id": session_id,
+                    "username": username,
+                    "trace_id": trace_id,
+                    "metrics": {"ai_total_ms": int((time.perf_counter() - started_at) * 1000)},
+                    "success": True,
+                },
+            }
+
+    async def _call_llm_stream(
+        self,
+        messages: List[Dict],
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> AsyncGenerator[Dict[str, str], None]:
+        """Stream from OpenAI when possible; use full-text fallback for local providers."""
+        for provider in self._provider_order():
+            if not self._provider_available(provider):
+                logger.warning("⚠️ Provedor %s indisponível no streaming; tentando próximo", provider)
+                continue
+
+            if provider == "openai":
+                yielded = False
+                async for delta in self._call_openai_stream(messages, max_tokens, temperature):
+                    yielded = True
+                    yield {
+                        "type": "delta",
+                        "content": delta,
+                        "provider": "openai",
+                        "model": self.openai_model,
+                    }
+                if yielded:
+                    return
+
+            elif provider == "local":
+                content = await self._call_local_llm(messages, max_tokens, temperature)
+                if content:
+                    yield {
+                        "type": "delta",
+                        "content": content,
+                        "provider": "local",
+                        "model": self.local_llm.model_name if self.local_llm else "local",
+                    }
+                    return
+
+        return
+
+    async def _call_openai_stream(
+        self,
+        messages: List[Dict],
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream token deltas from OpenAI Chat Completions."""
+        if not self.client or not OPENAI_AVAILABLE:
+            return
+
+        def _create_stream():
+            return self.client.chat.completions.create(
+                model=self.openai_model,
+                messages=messages,
+                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature if temperature is not None else self.temperature,
+                stream=True,
+                timeout=30,
+            )
+
+        try:
+            stream = await asyncio.to_thread(_create_stream)
+            iterator = iter(stream)
+            sentinel = object()
+
+            def _next_chunk():
+                try:
+                    return next(iterator)
+                except StopIteration:
+                    return sentinel
+
+            while True:
+                chunk = await asyncio.to_thread(_next_chunk)
+                if chunk is sentinel:
+                    break
+                if not getattr(chunk, "choices", None):
+                    continue
+                delta = getattr(chunk.choices[0], "delta", None)
+                content = getattr(delta, "content", None)
+                if content:
+                    yield content
+        except Exception as exc:
+            logger.error("❌ ERRO no streaming OpenAI: %s", exc)
+            return
 
     async def _call_local_llm(
         self,

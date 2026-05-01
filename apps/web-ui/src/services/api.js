@@ -113,6 +113,92 @@ export const sendMessage = async (message, sessionId, sessionObjective = null, i
   }
 };
 
+export const sendMessageStream = async (message, sessionId, sessionObjective = null, handlers = {}) => {
+  const payload = {
+    message,
+    session_id: sessionId,
+    is_voice_mode: true,
+  };
+
+  if (sessionObjective) {
+    payload.session_objective = {
+      title: sessionObjective.title,
+      subtitle: sessionObjective.subtitle,
+      objective: sessionObjective.objective,
+      initial_prompt: sessionObjective.initial_prompt,
+    };
+  }
+
+  if (handlers.clientMetrics) {
+    payload.client_metrics = handlers.clientMetrics;
+  }
+
+  const token = localStorage.getItem('empatia_access_token');
+  const response = await fetch(`${API_BASE}/chat/send-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream indisponível: HTTP ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  const dispatchFrame = (frame) => {
+    const lines = frame.split('\n');
+    let event = 'message';
+    const dataLines = [];
+
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        event = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trim());
+      }
+    }
+
+    if (!dataLines.length) return;
+
+    let data = {};
+    try {
+      data = JSON.parse(dataLines.join('\n'));
+    } catch (error) {
+      console.warn('Evento SSE inválido:', frame, error);
+      return;
+    }
+
+    handlers.onEvent?.(event, data);
+    if (event === 'meta') handlers.onMeta?.(data);
+    if (event === 'text_delta') handlers.onTextDelta?.(data);
+    if (event === 'audio_chunk') handlers.onAudioChunk?.(data);
+    if (event === 'audio_url') handlers.onAudioUrl?.(data);
+    if (event === 'metrics') handlers.onMetrics?.(data);
+    if (event === 'done') handlers.onDone?.(data);
+    if (event === 'error') handlers.onError?.(data);
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split('\n\n');
+    buffer = frames.pop() || '';
+    frames.forEach(dispatchFrame);
+  }
+
+  if (buffer.trim()) {
+    dispatchFrame(buffer);
+  }
+};
+
 /**
  * Busca o status de onboarding do usuário.
  * @param {string} sessionId - O ID da sessão atual.

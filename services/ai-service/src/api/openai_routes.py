@@ -3,8 +3,10 @@ Endpoints para integração com OpenAI
 """
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
+import json
 import logging
 from datetime import datetime
 
@@ -34,6 +36,8 @@ class ChatRequest(BaseModel):
     session_objective: Optional[Dict[str, Any]] = None
     initial_prompt: Optional[str] = None
     previous_session_context: Optional[Dict[str, Any]] = None  # ✅ NOVO: Contexto da sessão anterior
+    is_voice_mode: Optional[bool] = False
+    trace_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -86,6 +90,59 @@ async def chat_with_openai(request: ChatRequest):
     except Exception as e:
         logger.error(f"❌ Erro no endpoint OpenAI chat: {e}")
         raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+@router.post("/chat/stream")
+async def stream_chat_with_openai(request: ChatRequest):
+    """
+    Streaming de resposta terapêutica para modo de voz.
+    Emite eventos SSE: text_delta, done e error.
+    """
+    try:
+        if not request.username or not request.username.strip():
+            raise HTTPException(status_code=400, detail="Username é obrigatório")
+        if not request.session_id or not request.session_id.strip():
+            raise HTTPException(status_code=400, detail="Session ID é obrigatório")
+        if not request.message or not request.message.strip():
+            raise HTTPException(status_code=400, detail="Mensagem é obrigatória")
+
+        if request.user_profile:
+            openai_service.cache_user_profile(request.username, request.user_profile)
+
+        async def event_stream():
+            try:
+                async for item in openai_service.generate_therapeutic_response_stream(
+                    user_message=request.message,
+                    session_id=request.session_id,
+                    username=request.username,
+                    conversation_history=request.conversation_history,
+                    session_objective=request.session_objective,
+                    initial_prompt=request.initial_prompt,
+                    previous_session_context=request.previous_session_context,
+                    trace_id=request.trace_id,
+                    is_voice_mode=bool(request.is_voice_mode),
+                ):
+                    yield _sse(item["event"], item["data"])
+            except Exception as exc:
+                logger.error("❌ Erro no stream /openai/chat/stream: %s", exc, exc_info=True)
+                yield _sse("error", {"error": "Erro interno no stream", "trace_id": request.trace_id})
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro ao iniciar streaming OpenAI: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno do servidor")
+
+def _sse(event: str, data: Dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 @router.get("/cache/stats")
 async def get_cache_stats():

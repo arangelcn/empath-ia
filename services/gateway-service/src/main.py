@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
 import os
 from datetime import datetime
@@ -16,6 +16,7 @@ from .services.therapeutic_session_service import TherapeuticSessionService
 from .services.user_therapeutic_session_service import UserTherapeuticSessionService
 from .services.user_emotion_service import UserEmotionService
 from .services.prompt_service import PromptService
+from .services.streaming_utils import sse_event
 from .api.admin import router as admin_router
 from .api.auth import router as auth_router
 
@@ -32,6 +33,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     session_objective: Optional[Dict[str, Any]] = None
     is_voice_mode: Optional[bool] = False  # ✅ NOVO: Indicador de modo de voz
+    client_metrics: Optional[Dict[str, Any]] = None
 
 class ConversationRequest(BaseModel):
     session_id: str
@@ -199,6 +201,42 @@ async def send_message(request: ChatRequest):
     except Exception as e:
         logger.error(f"❌ GATEWAY: Erro ao processar mensagem: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.post("/api/chat/send-stream")
+async def send_message_stream(request: ChatRequest):
+    """
+    Enviar mensagem no modo voz com resposta SSE.
+    Mantém /api/chat/send intacto e usa fallback de áudio MP3 quando streaming TTS falha.
+    """
+    trace_id = f"trace_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}"
+    logger.info(
+        "🌐 GATEWAY STREAM: session_id=%s VoiceMode=%s trace_id=%s",
+        request.session_id,
+        request.is_voice_mode,
+        trace_id,
+    )
+
+    async def event_stream():
+        async for item in chat_service.process_user_message_stream(
+            session_id=request.session_id or "default",
+            user_message=request.message,
+            session_objective=request.session_objective,
+            is_voice_mode=True,
+            trace_id=trace_id,
+            client_metrics=request.client_metrics,
+        ):
+            yield sse_event(item["event"], item["data"])
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Trace-Id": trace_id,
+        },
+    )
 
 @app.get("/api/chat/history/{session_id}")
 async def get_chat_history(session_id: str):
@@ -1021,9 +1059,10 @@ async def voice_audio(filename: str):
             response = await client.get(f"{SERVICE_URLS['voice']}/api/v1/audio/{filename}", timeout=30)
             
             if response.status_code == 200:
+                media_type = response.headers.get("content-type", "audio/mpeg")
                 return Response(
                     content=response.content,
-                    media_type="audio/mpeg",
+                    media_type=media_type,
                     headers={"Content-Disposition": f"inline; filename={filename}"}
                 )
             else:

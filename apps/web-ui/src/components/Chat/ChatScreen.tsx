@@ -546,6 +546,14 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     setMessages(prev => [...prev, message]);
   };
 
+  const handleVoiceMessageUpdate = (messageId, update) => {
+    setMessages(prev => prev.map(message => {
+      if (message.id !== messageId) return message;
+      const patch = typeof update === 'function' ? update(message) : update;
+      return { ...message, ...patch };
+    }));
+  };
+
   // Função para obter contexto da sessão
   const getSessionContext = async () => {
     try {
@@ -831,6 +839,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
         isOpen={isVoiceModeOpen}
         onClose={handleVoiceModeClose}
         onNewMessage={handleVoiceMessage}
+        onUpdateMessage={handleVoiceMessageUpdate}
         lastAIMessage={messages.filter(msg => msg.type === 'ai').pop() || null}
       />
     </div>

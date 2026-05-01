@@ -1,11 +1,17 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { X, Mic, MicOff, Volume2, AlertCircle } from 'lucide-react';
 import { useVoiceMode } from '../../hooks/useVoiceMode.js';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer.js';
-import { sendMessage } from '../../services/api.js';
+import { useStreamingAudioQueue } from '../../hooks/useStreamingAudioQueue.js';
+import { sendMessage, sendMessageStream } from '../../services/api.js';
 
-const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMessage, lastAIMessage }) => {
+const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMessage, onUpdateMessage }) => {
   const { playAudio, isPlaying, stopAudio } = useAudioPlayer();
+  const { enqueueAudioChunk, stopStreamingAudio, isStreamingPlaying } = useStreamingAudioQueue();
+  const pendingRestartRef = useRef(false);
+  const streamAiMessageIdRef = useRef(null);
+  const receivedStreamingAudioRef = useRef(false);
+  const isAnyAudioPlaying = isPlaying || isStreamingPlaying;
 
   // ✅ PRIMEIRO: Declarar o hook useVoiceMode
   const {
@@ -28,6 +34,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
     console.log('🎯 Transcrição recebida:', transcript);
     console.log('📋 SessionId:', sessionId);
     console.log('👤 Username:', username);
+    const sttCompletedAt = performance.now();
     
     // ✅ CRÍTICO: Parar reconhecimento IMEDIATAMENTE ao receber transcrição
     console.log('🎤 Reconhecimento parado');
@@ -37,10 +44,24 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
     console.log('🔇 Mutando microfone durante processamento');
     muteMicrophone(true);
     
-    // ✅ Processar mensagem
-    console.log('📤 Enviando mensagem para IA...');
-    sendMessage(transcript, sessionId, null, true)
-      .then(response => {
+    const restartListeningAfterPlayback = () => {
+      setAudioPlaying(false);
+      resetProcessing();
+      setTimeout(() => {
+        if (isVoiceModeActive) {
+          muteMicrophone(false);
+          setTimeout(() => {
+            if (isVoiceModeActive) {
+              startListening();
+            }
+          }, 500);
+        }
+      }, 1500);
+    };
+
+    const runBatchFallback = () => {
+      sendMessage(transcript, sessionId, null, true)
+        .then(response => {
         console.log('📨 Resposta da API recebida:', response);
         
         if (response && response.success && response.data && response.data.ai_response) {
@@ -146,6 +167,99 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
           }
         }, 2000);
       });
+    };
+
+    // ✅ Processar mensagem por streaming, com fallback para o fluxo MP3 atual
+    console.log('📤 Enviando mensagem para IA por streaming...');
+    receivedStreamingAudioRef.current = false;
+    streamAiMessageIdRef.current = null;
+    setAudioPlaying(true);
+
+    sendMessageStream(transcript, sessionId, null, {
+      clientMetrics: {
+        stt_completed_at_ms: Math.round(sttCompletedAt),
+        stream_request_started_at_ms: Math.round(performance.now()),
+      },
+      onMeta: (data) => {
+        if (onNewMessage && data.user_message) {
+          onNewMessage({
+            id: data.user_message.id,
+            type: 'user',
+            content: data.user_message.content,
+          });
+        }
+
+        const aiMessageId = `ai-stream-${data.trace_id || Date.now()}`;
+        streamAiMessageIdRef.current = aiMessageId;
+        if (onNewMessage) {
+          onNewMessage({
+            id: aiMessageId,
+            type: 'ai',
+            content: '',
+          });
+        }
+      },
+      onTextDelta: (data) => {
+        if (!streamAiMessageIdRef.current && onNewMessage) {
+          streamAiMessageIdRef.current = `ai-stream-${Date.now()}`;
+          onNewMessage({ id: streamAiMessageIdRef.current, type: 'ai', content: '' });
+        }
+        if (streamAiMessageIdRef.current && onUpdateMessage) {
+          onUpdateMessage(streamAiMessageIdRef.current, (message) => ({
+            content: `${message.content || ''}${data.delta || ''}`,
+          }));
+        }
+      },
+      onAudioChunk: async (data) => {
+        receivedStreamingAudioRef.current = true;
+        await enqueueAudioChunk(data);
+      },
+      onAudioUrl: (data) => {
+        if (!data.audio_url) return;
+        receivedStreamingAudioRef.current = false;
+        playAudio(data.audio_url, restartListeningAfterPlayback);
+      },
+      onMetrics: (data) => {
+        console.log('📊 Métricas de voz:', data);
+      },
+      onError: (data) => {
+        if (data?.recoverable) {
+          console.warn('⚠️ Erro recuperável no stream:', data);
+          return;
+        }
+        console.error('❌ Erro no stream de voz:', data);
+        setAudioPlaying(false);
+        if (!streamAiMessageIdRef.current) {
+          runBatchFallback();
+        } else {
+          restartListeningAfterPlayback();
+        }
+      },
+      onDone: (data) => {
+        const finalResponse = data?.data?.ai_response;
+        if (finalResponse && streamAiMessageIdRef.current && onUpdateMessage) {
+          onUpdateMessage(streamAiMessageIdRef.current, {
+            id: finalResponse.id || streamAiMessageIdRef.current,
+            content: finalResponse.content || '',
+            audioUrl: finalResponse.audioUrl,
+          });
+        }
+
+        if (finalResponse?.audioUrl) {
+          return;
+        }
+
+        if (receivedStreamingAudioRef.current) {
+          pendingRestartRef.current = true;
+        } else {
+          restartListeningAfterPlayback();
+        }
+      },
+    }).catch(error => {
+      console.error('❌ Stream indisponível, usando fallback batch:', error);
+      setAudioPlaying(false);
+      runBatchFallback();
+    });
   });
 
   // ✅ CORRIGIDO: useRef para evitar loop infinito
@@ -162,9 +276,10 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
       isInitializedRef.current = false;
       
       // 🛑 Parar tudo ao fechar
-      if (isPlaying) {
+      if (isAnyAudioPlaying) {
         console.log('🔇 Parando áudio ao fechar');
         stopAudio();
+        stopStreamingAudio();
         setAudioPlaying(false); // ✅ Informar que o áudio parou
       }
       
@@ -176,7 +291,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
 
   // ✅ Iniciar escuta quando modo estiver ativo
   useEffect(() => {
-    if (isVoiceModeActive && isOpen && !isListening && !isPlaying && !isProcessing) {
+    if (isVoiceModeActive && isOpen && !isListening && !isAnyAudioPlaying && !isProcessing) {
       console.log('🎤 Microfone ativado - pronto para escutar');
       const timer = setTimeout(() => {
         startListening();
@@ -184,7 +299,28 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
       
       return () => clearTimeout(timer);
     }
-  }, [isVoiceModeActive, isOpen, isListening, isPlaying, isProcessing]);
+  }, [isVoiceModeActive, isOpen, isListening, isAnyAudioPlaying, isProcessing]);
+
+  useEffect(() => {
+    if (!pendingRestartRef.current || isStreamingPlaying) return;
+
+    pendingRestartRef.current = false;
+    setAudioPlaying(false);
+    resetProcessing();
+
+    const timer = setTimeout(() => {
+      if (isVoiceModeActive) {
+        muteMicrophone(false);
+        setTimeout(() => {
+          if (isVoiceModeActive) {
+            startListening();
+          }
+        }, 500);
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [isStreamingPlaying, isVoiceModeActive, muteMicrophone, resetProcessing, setAudioPlaying, startListening]);
 
   // ✅ MELHORADO: Fechar modo de voz com limpeza completa
   const handleClose = () => {
@@ -195,9 +331,10 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
       isInitializedRef.current = false;
       
       // 🛑 PASSO 2: Interromper áudio imediatamente
-      if (isPlaying) {
+      if (isAnyAudioPlaying) {
         console.log('🔇 Interrompendo reprodução de áudio');
         stopAudio();
+        stopStreamingAudio();
         setAudioPlaying(false); // ✅ Informar que o áudio parou
       }
       
@@ -280,7 +417,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
               <MicOff className="w-5 h-5 text-gray-400" />
             )}
             <p className="text-xl text-white/80">
-              {isPlaying
+              {isAnyAudioPlaying
                 ? "IA está respondendo..."
                 : isProcessing 
                   ? "Processando sua mensagem..." 
@@ -309,7 +446,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
           {/* Bola principal */}
           <div 
             className={`relative w-32 h-32 rounded-full bg-gradient-to-br shadow-2xl flex items-center justify-center transition-all duration-500 ${
-              isPlaying
+              isAnyAudioPlaying
                 ? 'scale-[1.02] shadow-green-400/50 from-green-400 to-green-600'
                 : isListening 
                   ? 'scale-100 shadow-blue-400/50 from-blue-400 to-blue-600' 
@@ -319,7 +456,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
             }`}
           >
             {/* Ícone central */}
-            {isPlaying ? (
+            {isAnyAudioPlaying ? (
               <Volume2 className="w-12 h-12 text-white animate-pulse" />
             ) : isProcessing ? (
               <div className="w-8 h-8 border-4 border-white/30 border-t-white rounded-full animate-spin" />
@@ -334,7 +471,7 @@ const VoiceConversationMode = ({ sessionId, username, isOpen, onClose, onNewMess
         {/* Instruções de uso */}
         <div className="text-center text-white/60 max-w-md mx-auto">
           <p className="text-sm leading-relaxed">
-            {isPlaying
+            {isAnyAudioPlaying
               ? "Ouça minha resposta. Voltarei a escutar você em seguida."
               : isProcessing 
                 ? "Processando sua mensagem..." 

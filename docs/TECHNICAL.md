@@ -151,6 +151,12 @@ POST /api/chat/send
      Body: { "message": "...", "session_id": "...", "session_objective": {...}, "is_voice_mode": false }
      → { "response": "...", "audio_url": "...", "session_id": "..." }
 
+POST /api/chat/send-stream
+     Body: { "message": "...", "session_id": "...", "session_objective": {...}, "is_voice_mode": true }
+     Content-Type: text/event-stream
+     Eventos: meta, text_delta, audio_chunk, audio_url, metrics, done, error
+     Usado pelo modo de voz para iniciar reprodução antes do fim da resposta completa.
+
 GET  /api/chat/history/{session_id}
      → { "history": [{ "type": "user|ai", "content": "...", "timestamp": "..." }] }
 
@@ -204,7 +210,10 @@ POST /api/emotion/analyze-realtime   Body: { "image": "<base64>", "username": ".
 ```
 POST /api/voice/speak        Body: { "text": "...", "voice": "pt-BR-Neural2-B" }
 POST /api/voice/synthesize   Alias de /speak
-GET  /api/voice/audio/{filename}   Serve o arquivo MP3 gerado
+POST /api/voice/synthesize-stream
+     Body: { "text": "...", "voice_name": "pt-BR-Neural2-B" }
+     → áudio PCM/LINEAR16 em streaming quando GCP Chirp 3 HD estiver disponível
+GET  /api/voice/audio/{filename}   Serve o arquivo MP3/WAV gerado
 GET  /api/voice/health
 GET  /api/voice/models
 ```
@@ -463,6 +472,44 @@ Frontend faz GET /api/voice/audio/{filename} e reproduz
 ```
 
 **Por que reescrever a URL?** O browser não tem acesso direto à porta 8004 do Voice Service — o gateway atua como proxy para o arquivo de áudio.
+
+### Fluxo de baixa latência para modo de voz
+
+```
+browser → POST /api/chat/send-stream
+    ↓
+Gateway emite SSE meta + text_delta
+    ↓
+AI Service → /openai/chat/stream com stream=True quando OpenAI está ativo
+    ↓
+Gateway agrega deltas em frases curtas
+    ↓
+Voice Service → /api/v1/synthesize-stream com GCP Chirp 3 HD
+    ↓
+Gateway emite audio_chunk PCM base64
+    ↓
+Frontend enfileira PCM em AudioContext
+```
+
+Eventos SSE principais:
+
+| Evento | Uso |
+|---|---|
+| `meta` | `trace_id`, ids de conversa e mensagem do usuário. |
+| `text_delta` | Trechos incrementais da resposta para atualizar a bolha de chat. |
+| `audio_chunk` | PCM base64 com `sequence`, `sample_rate_hz` e `encoding`. |
+| `audio_url` | Fallback para arquivo batch MP3/WAV quando streaming TTS falha ou não está disponível. |
+| `metrics` | Baseline de latência por etapa: primeiro texto, primeiro áudio, total gateway/AI. |
+| `done` | Resultado final persistido no histórico. |
+| `error` | Erro recuperável ou fatal do stream. |
+
+O modo streaming usa vozes GCP Chirp 3 HD, porque o streaming bidirecional do Google Cloud TTS é compatível com esse modelo. As preferências Neural2/WaveNet continuam válidas no fluxo batch e são mapeadas para uma voz Chirp 3 HD equivalente durante o streaming.
+
+Fallbacks:
+
+- Se o stream de áudio falhar, o gateway mantém o texto e tenta gerar áudio batch.
+- Se o GCP TTS falhar e `TTS_LOCAL_PROVIDER=piper` estiver configurado com `PIPER_MODEL_PATH`, o Voice Service tenta gerar WAV local com Piper.
+- Cache Redis de TTS só é usado para frases genéricas em `TTS_CACHE_ALLOWLIST`; conteúdo pessoal de conversa não entra em cache.
 
 ---
 

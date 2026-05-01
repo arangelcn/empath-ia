@@ -6,9 +6,11 @@ Documentação oficial: https://cloud.google.com/text-to-speech/docs/quickstart-
 import os
 import uuid
 import time
+import hashlib
 import logging
+import subprocess
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any, List
+from typing import Generator, Optional, Tuple, Dict, Any, List
 
 from google.cloud import texttospeech
 from google.api_core import exceptions as gcp_exceptions
@@ -47,6 +49,8 @@ class GCPTextToSpeechService:
         # Configurações de áudio
         self.audio_encoding = texttospeech.AudioEncoding.MP3
         self.sample_rate_hertz = 24000  # Taxa de amostragem para MP3
+        self.streaming_sample_rate_hertz = 24000
+        self.streaming_audio_encoding = "PCM"
         
         # Vozes disponíveis para português brasileiro
         self.available_voices = {
@@ -60,6 +64,35 @@ class GCPTextToSpeechService:
             "pt-BR-Standard-B": {"gender": "MALE", "type": "Standard", "description": "Voz masculina brasileira (Standard)"},
             "pt-BR-Standard-C": {"gender": "FEMALE", "type": "Standard", "description": "Voz feminina brasileira 2 (Standard)"},
         }
+
+        self.streaming_voice_map = {
+            "pt-BR-Neural2-A": "pt-BR-Chirp3-HD-Kore",
+            "pt-BR-Neural2-B": "pt-BR-Chirp3-HD-Orus",
+            "pt-BR-Neural2-C": "pt-BR-Chirp3-HD-Achernar",
+            "pt-BR-Wavenet-A": "pt-BR-Chirp3-HD-Kore",
+            "pt-BR-Wavenet-B": "pt-BR-Chirp3-HD-Orus",
+            "pt-BR-Wavenet-C": "pt-BR-Chirp3-HD-Achernar",
+            "pt-BR-Standard-A": "pt-BR-Chirp3-HD-Kore",
+            "pt-BR-Standard-B": "pt-BR-Chirp3-HD-Orus",
+            "pt-BR-Standard-C": "pt-BR-Chirp3-HD-Achernar",
+        }
+        self.default_streaming_voice_name = os.getenv("GCP_TTS_STREAMING_VOICE", "pt-BR-Chirp3-HD-Orus")
+        self.local_provider = os.getenv("TTS_LOCAL_PROVIDER", "").lower()
+        self.piper_binary = os.getenv("PIPER_BINARY", "piper")
+        self.piper_model_path = os.getenv("PIPER_MODEL_PATH", "")
+
+        self.redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+        self.tts_cache_enabled = os.getenv("TTS_CACHE_ENABLED", "true").lower() == "true"
+        self.tts_cache_ttl_seconds = int(os.getenv("TTS_CACHE_TTL_SECONDS", "86400"))
+        self.cache_allowlist = {
+            phrase.strip().lower()
+            for phrase in os.getenv(
+                "TTS_CACHE_ALLOWLIST",
+                "Obrigado por compartilhar isso comigo.;Pode me contar um pouco mais?;Estou ouvindo você.;Vamos com calma.",
+            ).split(";")
+            if phrase.strip()
+        }
+        self._redis = None
         
         # Cliente GCP
         self.client = None
@@ -96,6 +129,52 @@ class GCPTextToSpeechService:
         timestamp = int(time.time())
         unique_id = str(uuid.uuid4())[:8]
         return f"output_{timestamp}_{unique_id}.{extension}"
+
+    def map_to_streaming_voice(self, voice_name: Optional[str]) -> str:
+        if not voice_name:
+            return self.default_streaming_voice_name
+        if "Chirp3-HD" in voice_name:
+            return voice_name
+        return self.streaming_voice_map.get(voice_name, self.default_streaming_voice_name)
+
+    def is_streaming_supported(self) -> bool:
+        return hasattr(texttospeech, "StreamingSynthesizeRequest") and hasattr(
+            texttospeech.TextToSpeechClient,
+            "streaming_synthesize",
+        )
+
+    def _redis_client(self):
+        if not self.tts_cache_enabled:
+            return None
+        if self._redis is not None:
+            return self._redis
+        try:
+            from redis import Redis
+
+            self._redis = Redis.from_url(self.redis_url, socket_connect_timeout=0.25, socket_timeout=1.0)
+            self._redis.ping()
+            return self._redis
+        except Exception as exc:
+            logger.warning("⚠️ Cache Redis de TTS indisponível: %s", exc)
+            self._redis = False
+            return None
+
+    def _is_cacheable_text(self, text: str) -> bool:
+        normalized = " ".join((text or "").strip().lower().split())
+        return normalized in self.cache_allowlist
+
+    def _cache_key(self, text: str, voice_name: str, speaking_rate: float, pitch: float, volume_gain_db: float) -> str:
+        raw = f"{voice_name}|{speaking_rate}|{pitch}|{volume_gain_db}|{text.strip().lower()}"
+        return "tts:gcp:v1:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def _write_audio_bytes_to_file(self, audio_content: bytes, extension: str = "mp3") -> Tuple[Optional[str], Optional[Path]]:
+        filename = self.generate_filename(extension)
+        output_path = self.output_dir / filename
+        with open(output_path, "wb") as out:
+            out.write(audio_content)
+        if not output_path.exists():
+            return None, None
+        return filename, output_path
     
     def text_to_speech(
         self, 
@@ -128,6 +207,9 @@ class GCPTextToSpeechService:
             # Validar texto de entrada
             if not text or text.strip() == "":
                 return False, "Texto vazio ou inválido", None, None
+
+            if self.local_provider == "piper" and self._is_piper_available():
+                return self._text_to_speech_piper(text)
             
             # Usar valores padrão se não especificados
             voice_name = voice_name or self.default_voice_name
@@ -139,11 +221,22 @@ class GCPTextToSpeechService:
                 logger.warning(f"Voz {voice_name} não encontrada no GCP, usando padrão {self.default_voice_name}")
                 voice_name = self.default_voice_name
             
-            # Gerar nome do arquivo
-            filename = self.generate_filename("mp3")
-            output_path = self.output_dir / filename
-            
             logger.info(f"Gerando áudio para texto: '{text[:50]}...' (voz: {voice_name})")
+
+            cache_key = None
+            redis_client = None
+            if self._is_cacheable_text(text):
+                redis_client = self._redis_client()
+                cache_key = self._cache_key(text, voice_name, speaking_rate, pitch, volume_gain_db)
+                if redis_client:
+                    cached_audio = redis_client.get(cache_key)
+                    if cached_audio:
+                        filename, output_path = self._write_audio_bytes_to_file(cached_audio, "mp3")
+                        if filename and output_path:
+                            duration = self.get_audio_duration(str(output_path))
+                            audio_url = f"{self.base_url}/api/v1/audio/{filename}"
+                            logger.info("✅ Áudio servido do cache seguro de TTS: %s", filename)
+                            return True, f"Áudio gerado do cache usando {voice_name}", audio_url, duration
             
             # Configurar entrada de texto
             synthesis_input = texttospeech.SynthesisInput(text=text)
@@ -208,13 +301,16 @@ class GCPTextToSpeechService:
             if response is None:
                 return False, "Não foi possível obter resposta do GCP após várias tentativas.", None, None
 
-            # Salvar o arquivo de áudio
-            with open(output_path, "wb") as out:
-                out.write(response.audio_content)
-            
-            # Verificar se o arquivo foi criado
-            if not output_path.exists():
+            filename, output_path = self._write_audio_bytes_to_file(response.audio_content, "mp3")
+            if not filename or not output_path:
                 return False, "Arquivo de áudio não foi criado", None, None
+
+            if cache_key and redis_client:
+                try:
+                    redis_client.setex(cache_key, self.tts_cache_ttl_seconds, response.audio_content)
+                    logger.info("💾 Frase genérica salva no cache seguro de TTS")
+                except Exception as exc:
+                    logger.warning("⚠️ Falha ao salvar cache de TTS: %s", exc)
             
             # Calcular duração
             duration = self.get_audio_duration(str(output_path))
@@ -228,10 +324,92 @@ class GCPTextToSpeechService:
             
         except gcp_exceptions.GoogleAPICallError as e:
             logger.error(f"❌ Erro final na API do GCP: Status={e.code()} Details='{e.message}'")
+            if self._is_piper_available():
+                logger.warning("⚠️ Usando Piper local como fallback após erro GCP")
+                return self._text_to_speech_piper(text)
             return False, f"Erro final na API do GCP: {str(e)}", None, None
         except Exception as e:
             logger.error(f"❌ Erro inesperado ao gerar áudio: {e}", exc_info=True)
+            if self._is_piper_available():
+                logger.warning("⚠️ Usando Piper local como fallback após erro inesperado")
+                return self._text_to_speech_piper(text)
             return False, f"Erro inesperado ao gerar áudio: {str(e)}", None, None
+
+    def _is_piper_available(self) -> bool:
+        return bool(self.piper_model_path and os.path.exists(self.piper_model_path))
+
+    def _text_to_speech_piper(self, text: str) -> Tuple[bool, str, Optional[str], Optional[float]]:
+        """Fallback local opcional usando Piper CLI."""
+        try:
+            filename = self.generate_filename("wav")
+            output_path = self.output_dir / filename
+            command = [
+                self.piper_binary,
+                "--model",
+                self.piper_model_path,
+                "--output_file",
+                str(output_path),
+            ]
+            subprocess.run(
+                command,
+                input=text,
+                text=True,
+                capture_output=True,
+                timeout=30,
+                check=True,
+            )
+            if not output_path.exists():
+                return False, "Piper não criou arquivo de áudio", None, None
+
+            duration = self.get_audio_duration(str(output_path))
+            audio_url = f"{self.base_url}/api/v1/audio/{filename}"
+            logger.info("✅ Áudio gerado com Piper local: %s", filename)
+            return True, "Áudio gerado com Piper local", audio_url, duration
+        except Exception as exc:
+            logger.error("❌ Erro ao gerar áudio com Piper: %s", exc, exc_info=True)
+            return False, f"Erro ao gerar áudio com Piper: {exc}", None, None
+
+    def stream_text_to_speech(
+        self,
+        text: str,
+        voice_name: Optional[str] = None,
+        language_code: Optional[str] = None,
+    ) -> Generator[bytes, None, None]:
+        """
+        Sintetiza áudio em streaming com GCP Chirp 3 HD.
+        Retorna PCM/LINEAR16 em chunks quando a biblioteca e a voz suportam streaming.
+        """
+        if not text or not text.strip():
+            raise ValueError("Texto vazio ou inválido")
+        if not self.is_streaming_supported():
+            raise RuntimeError("Streaming TTS não suportado pela versão instalada de google-cloud-texttospeech")
+        if not self._initialize_client():
+            raise RuntimeError("Erro ao inicializar cliente GCP")
+
+        streaming_voice = self.map_to_streaming_voice(voice_name)
+        language_code = language_code or self.default_language_code
+        logger.info("🎙️ Streaming TTS: voz=%s texto='%s...'", streaming_voice, text[:50])
+
+        streaming_config = texttospeech.StreamingSynthesizeConfig(
+            voice=texttospeech.VoiceSelectionParams(
+                name=streaming_voice,
+                language_code=language_code,
+            )
+        )
+        config_request = texttospeech.StreamingSynthesizeRequest(
+            streaming_config=streaming_config
+        )
+
+        def request_generator():
+            yield config_request
+            yield texttospeech.StreamingSynthesizeRequest(
+                input=texttospeech.StreamingSynthesisInput(text=text)
+            )
+
+        responses = self.client.streaming_synthesize(request_generator())
+        for response in responses:
+            if response.audio_content:
+                yield response.audio_content
     
     def get_available_voices(self) -> Dict[str, Any]:
         """
@@ -269,6 +447,16 @@ class GCPTextToSpeechService:
             "audio_encoding": self.audio_encoding.name,
             "sample_rate": self.sample_rate_hertz,
             "available_voices": self.available_voices,
+            "streaming_supported": self.is_streaming_supported(),
+            "streaming_default_voice": self.default_streaming_voice_name,
+            "streaming_voice_map": self.streaming_voice_map,
+            "streaming_audio_encoding": self.streaming_audio_encoding,
+            "streaming_sample_rate_hertz": self.streaming_sample_rate_hertz,
+            "tts_cache_enabled": self.tts_cache_enabled,
+            "tts_cache_allowlist_count": len(self.cache_allowlist),
+            "local_provider": self.local_provider or None,
+            "piper_available": self._is_piper_available(),
+            "piper_model_path": self.piper_model_path or None,
             "output_dir": str(self.output_dir),
             "is_initialized": self.is_client_initialized(),
             "credentials_configured": bool(self.credentials_path)
