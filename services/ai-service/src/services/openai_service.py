@@ -511,7 +511,7 @@ POSTURA TERAPÊUTICA
 3. Faça perguntas abertas, uma por vez, para favorecer autoexploração.
 4. Evite respostas genéricas. Use o contexto do usuário e da sessão quando ele estiver disponível, mas não invente fatos, histórico, emoções ou conclusões.
 5. Não pressione o usuário a se abrir. Convide com cuidado e aceite pausas, ambivalência e incerteza.
-6. Use o nome preferido apenas quando ele parecer um nome humano natural. Se parecer username técnico, e-mail, identificador de teste ou sessão, não use como forma de tratamento.
+6. Use o nome preferido apenas quando ele parecer um nome humano natural. Ao chamar o usuário pelo nome, use somente o primeiro nome. Se parecer username técnico, e-mail, identificador de teste ou sessão, não use como forma de tratamento.
 
 LIMITES E SEGURANÇA
 1. Você oferece apoio psicológico e psicoeducação geral, mas não substitui atendimento profissional, emergência médica ou serviço de crise.
@@ -579,10 +579,13 @@ Segurança do usuário > fidelidade ao contexto real > postura Rogeriana > brevi
             or (cached_profile.get("preferences") or {}).get("full_name")
         )
         display_name = preferred_display_name or "não informado"
+        first_name = self._extract_first_name(preferred_display_name) if preferred_display_name else None
         if preferred_display_name:
+            treatment_name = first_name or display_name
             identity_instruction = (
                 f"Você está conversando especificamente com {display_name}.\n"
-                "Use o nome preferido com naturalidade, sem usar o e-mail/username como forma de tratamento."
+                f"Se for chamar o usuário pelo nome, use somente o primeiro nome: {treatment_name}.\n"
+                "Não use sobrenomes, nome completo, e-mail/username ou identificadores técnicos como forma de tratamento."
             )
         else:
             identity_instruction = (
@@ -595,6 +598,7 @@ Segurança do usuário > fidelidade ao contexto real > postura Rogeriana > brevi
 INFORMAÇÕES DO USUÁRIO:
 - Username: {username}
 - Nome preferido: {display_name}
+- Nome para tratamento: {first_name or "não informado"}
 - Sessão: {session_id}
 - Timestamp: {datetime.now().isoformat()}
 
@@ -723,11 +727,24 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         return (
             "MODO DE VOZ ATIVO:\n"
             "- Responda em português brasileiro natural, como fala acolhedora.\n"
+            "- Se for chamar o usuário pelo nome, use somente o primeiro nome, nunca nome completo ou sobrenome.\n"
             "- Use 2 a 4 frases curtas, sem listas, salvo se o usuário pedir.\n"
             "- Faça no máximo uma pergunta aberta.\n"
             "- Não dê diagnóstico, prescrição, laudo ou plano clínico autônomo.\n"
             "- Em crise ou risco imediato, priorize segurança e orientação urgente."
         )
+
+    def _extract_first_name(self, display_name: Optional[str]) -> Optional[str]:
+        """Return a natural first-name treatment token from a preferred display name."""
+        if not display_name:
+            return None
+
+        cleaned = str(display_name).strip()
+        if not cleaned or "@" in cleaned:
+            return None
+
+        first_token = cleaned.split()[0].strip(".,;:()[]{}\"'")
+        return first_token or None
     
     def _optimize_conversation_history(self, history: List[Dict]) -> List[Dict]:
         """

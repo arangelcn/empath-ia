@@ -26,7 +26,7 @@
 | Serviço | Porta | Runtime | Responsabilidade |
 |---------|-------|---------|------------------|
 | `gateway-service` | 8000 | Python 3.11 + FastAPI | Ponto único de entrada: roteamento, auth, chat, sessões, proxy para microserviços |
-| `ai-service` | 8001 | Python 3.11 + FastAPI | Integração OpenAI: respostas terapêuticas, geração de contexto, geração de próxima sessão |
+| `ai-service` | 8001 | Python 3.11 + FastAPI | Respostas terapêuticas via Gemma local/GGUF como padrão, fallback OpenAI, geração de contexto e próxima sessão |
 | `avatar-service` | 8002 | Python 3.11 + FastAPI | Proxy para DID.ai (avatares animados) |
 | `emotion-service` | 8003 | TensorFlow 2.13 GPU | Análise emocional facial (DeepFace, MediaPipe) e de vídeo |
 | `voice-service` | 8004 | Python 3.11 + FastAPI | Text-to-Speech via Google Cloud TTS; arquivos de áudio servidos via gateway |
@@ -68,8 +68,23 @@ Copie `.env.example` para `.env`. Variáveis marcadas com ⚠️ são obrigatór
 
 | Variável | Obrigatória | Descrição |
 |----------|-------------|-----------|
-| `OPENAI_API_KEY` | ⚠️ | Chave da API OpenAI |
-| `MODEL_NAME` | — | Modelo a usar. Padrão: `gpt-3.5-turbo`. Recomendado: `gpt-4o` |
+| `OPENAI_API_KEY` | — | Chave da API OpenAI. Usada como fallback quando `LLM_FALLBACK_PROVIDER=openai`. |
+| `MODEL_NAME` | — | Modelo OpenAI de fallback. Padrão histórico: `gpt-3.5-turbo`. |
+
+### Modelo Local / Gemma
+
+| Variável | Descrição |
+|----------|-----------|
+| `LLM_PROVIDER` | Provider primário. Padrão atual recomendado: `local`. |
+| `LLM_FALLBACK_PROVIDER` | Provider secundário. Padrão recomendado: `openai`. |
+| `ENABLE_LOCAL_LLM` | Habilita runtime local via `llama-cpp-python`. |
+| `LOCAL_MODEL_DIR` | Diretório interno para GGUF. Padrão: `/models/local-llm`. |
+| `LOCAL_MODEL_REPO_ID` | Repositório Hugging Face usado se o modelo precisar ser baixado. |
+| `LOCAL_MODEL_INCLUDE` | Arquivo GGUF esperado. Ex.: `gemma-4-E4B-it-Q4_K_M.gguf`. |
+| `LOCAL_LLM_MODEL` | Nome lógico exposto em métricas/respostas. Ex.: `gemma4:e4b`. |
+| `LOCAL_LLM_N_CTX` | Context window do modelo local. |
+| `LOCAL_LLM_N_GPU_LAYERS` | Camadas em GPU para `llama.cpp`. |
+| `LOCAL_LLM_N_THREADS` | Threads de CPU para o runtime local. |
 
 ### MongoDB
 
@@ -491,6 +506,8 @@ Gateway emite audio_chunk PCM base64
 Frontend enfileira PCM em AudioContext
 ```
 
+Este fluxo foi priorizado antes do Pipeline RAG/Admin. O objetivo desta etapa foi estabilizar a sensação conversacional: texto parcial, áudio parcial e fallback seguro, usando o modelo local como caminho principal.
+
 Eventos SSE principais:
 
 | Evento | Uso |
@@ -503,9 +520,41 @@ Eventos SSE principais:
 | `done` | Resultado final persistido no histórico. |
 | `error` | Erro recuperável ou fatal do stream. |
 
-O AI Service streama tokens tanto com OpenAI quanto com o modelo local GGUF via `llama-cpp-python` (`create_chat_completion(..., stream=True)`). Se o provider local não conseguir carregar, a cadeia de fallback continua tentando OpenAI ou o template seguro.
+O AI Service streama tokens tanto com OpenAI quanto com o modelo local GGUF via `llama-cpp-python` (`create_chat_completion(..., stream=True)`). O caminho validado atualmente usa Gemma local como provider primário:
+
+```json
+{
+  "provider": "local",
+  "model": "gemma4:e4b"
+}
+```
+
+Se o provider local não conseguir carregar, a cadeia de fallback continua tentando OpenAI ou o template seguro.
 
 O modo streaming de voz usa vozes GCP Chirp 3 HD, porque o streaming bidirecional do Google Cloud TTS é compatível com esse modelo. As preferências Neural2/WaveNet continuam válidas no fluxo batch e são mapeadas para uma voz Chirp 3 HD equivalente durante o streaming.
+
+Validação local de referência:
+
+| Etapa | Resultado observado |
+|---|---|
+| AI Service `/openai/chat/stream` | Gemma local retornou múltiplos `text_delta`; primeiro delta em ~993ms. |
+| Gateway `/api/chat/send-stream` | `text_delta` + `audio_chunk`; primeiro texto em ~1070ms e primeiro áudio em ~1742ms. |
+| Voice Service `/api/v1/synthesize-stream` | Chirp 3 HD respondeu `200 OK`, PCM 24kHz, `x-voice-used: pt-BR-Chirp3-HD-Orus`. |
+
+O alvo de primeiro áudio `< 800ms` continua sendo meta de otimização. A v1 validada garante streaming funcional e fallback sem aguardar a resposta completa.
+
+Chunking:
+
+- O Gateway faz flush imediato em pontuação de fim de frase.
+- Flush por tamanho usa `VOICE_CHUNK_MAX_CHARS`.
+- Flush por tempo usa `VOICE_CHUNK_MAX_WAIT_MS`, mas exige trecho mínimo falável por `VOICE_CHUNK_MIN_TIMED_CHARS` e `VOICE_CHUNK_MIN_TIMED_WORDS`.
+- Essa trava evita o fallback batch falando uma palavra por vez quando o TTS streaming está indisponível ou lento.
+
+Personalização de nome em voz:
+
+- O AI Service pode receber `display_name`/`full_name`, mas o prompt instrui que o tratamento use somente o primeiro nome.
+- Exemplo: `Toni Neto` deve ser tratado como `Toni`.
+- E-mails, usernames e ids técnicos não devem ser usados como forma de tratamento.
 
 Fallbacks:
 
@@ -513,6 +562,12 @@ Fallbacks:
 - Quando o stream de áudio falha em um trecho, o gateway sintetiza aquele trecho imediatamente e envia `audio_url` segmentado; o frontend enfileira esses arquivos para não esperar a resposta inteira.
 - Se o GCP TTS falhar e `TTS_LOCAL_PROVIDER=piper` estiver configurado com `PIPER_MODEL_PATH`, o Voice Service tenta gerar WAV local com Piper.
 - Cache Redis de TTS só é usado para frases genéricas em `TTS_CACHE_ALLOWLIST`; conteúdo pessoal de conversa não entra em cache.
+
+Limitações atuais:
+
+- RAG/Admin ainda não foi implementado nesta etapa; a recuperação de conhecimento aprovado continua pendente na Prioridade 6.
+- Prompt Control possui fallback seguro para `voice_short_response`, mas versionamento/auditoria completos seguem na Prioridade 5.
+- STT continua no browser via Web Speech API nesta etapa.
 
 ---
 

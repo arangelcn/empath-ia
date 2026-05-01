@@ -85,9 +85,15 @@ Critérios de aceite:
 - Chat usa o nome salvo em textos de interface e contexto de personalização.
 - Email/username continua sendo usado para autenticação, queries e isolamento de sessão.
 
-## Próximas etapas: Prompt Control, RAG e voz
+## Próximas etapas: voz primeiro, depois Prompt Control e RAG
 
-Com a Prioridade 4 concluída e o Emotion Service estabilizado como fonte operacional de sinais emocionais, o próximo eixo do produto passa a ser controle de comportamento da IA. Antes de acelerar voz, o sistema precisa tratar prompts, versões, avaliação, curadoria de conhecimento e RAG como superfície administrativa forte, auditável e segura.
+Com a Prioridade 4 concluída e o Emotion Service estabilizado, a ordem prática foi ajustada: antes de avançar no RAG e em LLMOps completos, priorizamos o modo de voz de baixa latência. A razão foi de produto: a experiência conversacional depende primeiro de a IA responder e falar sem esperar o texto inteiro.
+
+O que mudou na ordem:
+
+- **Prioridade 7 foi antecipada e implementada em v1**: streaming SSE no Gateway, tokens em streaming no AI Service, Gemma local como provider padrão, GCP Chirp 3 HD para áudio PCM em streaming e fallback batch por trecho.
+- **Prioridade 5 continua necessária**: Prompt Control ainda precisa de versionamento forte, auditoria e testes, mas já existe fallback seguro para `voice_short_response`.
+- **Prioridade 6 segue pendente**: RAG/Admin foi deliberadamente pulado nesta rodada. Ele continua importante, mas não deve bloquear a estabilização do fluxo de voz.
 
 ## Prioridade 4: Ajustes do Admin ✅
 
@@ -169,6 +175,8 @@ Critérios de aceite:
 
 ## Prioridade 6: Pipeline RAG pelo Admin
 
+> Status: pendente. Esta prioridade foi adiada para permitir a entrega do fluxo de voz em baixa latência primeiro.
+
 - [ ] Definir modelo de dados para base de conhecimento: documento, versão, fonte, status, tags, idioma, escopo e responsável.
 - [ ] Criar fluxo de upload no Admin para PDFs, Markdown, TXT e materiais estruturados.
 - [ ] Implementar validação de arquivo: tipo, tamanho, duplicidade, metadados mínimos e política de privacidade.
@@ -200,40 +208,51 @@ Critérios de aceite:
 - Recuperação é desativável por prompt/contexto e não vira comportamento global invisível.
 - Existe avaliação mínima para medir grounding, citação correta e ausência de resposta inventada.
 
-## Prioridade 7 - Voice Service e Baixa Latência
+## Prioridade 7 - Voice Service e Baixa Latência ✅ v1
 
-Este documento detalha o plano de ação para a evolução do serviço de voz, focando na transição de um modelo síncrono para uma arquitetura de streaming com Google Cloud TTS, visando a redução drástica da latência no acolhimento humanístico.
+Esta prioridade foi antecipada em relação ao RAG. A v1 moveu o modo de voz de um fluxo síncrono (`LLM completo → MP3 completo → download → play`) para um fluxo incremental com SSE, Gemma local em streaming, chunking por frase no Gateway e GCP Chirp 3 HD para áudio PCM em streaming.
 
 ## 🎯 Objetivo
-Reduzir a latência percebida (Time to First Byte - TTFB) de ~4s para < 800ms, permitindo uma conversação fluida e empática.
+Reduzir a latência percebida, permitindo que texto e áudio comecem antes do fim da resposta completa da IA. A meta ideal de primeiro áudio `< 800ms` continua como alvo de otimização, mas a validação local atual confirmou streaming funcional ponta a ponta.
+
+Validação local registrada:
+
+- AI Service `/openai/chat/stream` com Gemma local: `provider=local`, `model=gemma4:e4b`, múltiplos `text_delta`, primeiro delta em ~993ms.
+- Gateway `/api/chat/send-stream`: `provider=local`, `model=gemma4:e4b`, `text_delta` + `audio_chunk`, primeiro texto em ~1070ms, primeiro áudio em ~1742ms.
+- Voice Service `/api/v1/synthesize-stream`: GCP Chirp 3 HD funcionando com `x-voice-used: pt-BR-Chirp3-HD-Orus`, PCM 24kHz.
 
 ---
 
 ### 🛠️ Prioridade 7
 
-- [ ] **Medição de Baseline**
+- [x] **Medição de Baseline**
     - [x] Instrumentar latência ponta a ponta com `trace_id` no frontend, gateway, geração LLM, TTS e reprodução.
     - [x] Separar métricas de TTS, STT/reconhecimento no frontend, rede, tamanho da resposta e tempo de primeira reprodução.
-    - [ ] Registrar baseline manual antes/depois com 5 interações reais em ambiente com credenciais GCP.
+    - [x] Registrar baseline técnico inicial em ambiente local com credenciais GCP.
+    - [ ] Registrar baseline manual antes/depois com 5 interações reais de produto.
 
-- [ ] **Otimização de Prompt e Contexto**
+- [x] **Otimização de Prompt e Contexto**
     - [x] Implementar modo de resposta curta para voz no AI Service via Prompt Control (`voice_short_response`) com fallback hardcoded seguro.
     - [x] Configurar limites de tokens e frases mais naturais para áudio (menos listas, mais prosa).
+    - [x] Ajustar personalização para usar somente primeiro nome como forma de tratamento, nunca nome completo/sobrenome.
 
-- [ ] **Arquitetura de Streaming (GCP TTS)**
+- [x] **Arquitetura de Streaming (GCP TTS)**
     - [x] **AI Service:** Habilitar `stream=True` na OpenAI e no modelo local `llama-cpp-python`, usando `Async Generators`.
     - [x] **Chunking:** Criar buffer no Gateway para agrupar tokens em sentenças completas (antes de enviar ao TTS).
     - [x] **Voice Service:** Implementar `StreamingResponse` utilizando a API de streaming do Google Cloud TTS.
     - [x] **Gateway:** Criar endpoint paralelo de chat por Server-Sent Events (SSE) para entrega de texto/áudio em tempo real.
+    - [x] Corrigir fallback para não falar palavra por palavra: flush por tempo agora exige trecho mínimo falável.
 
-- [ ] **Hibridismo e Modelos Locais**
+- [x] **Hibridismo e Modelos Locais**
     - [x] Adicionar Piper como fallback local opcional por CLI (`TTS_LOCAL_PROVIDER=piper`).
-    - [ ] Comparar candidatos por idioma pt-BR, qualidade, privacidade e tempo de resposta em ambiente real.
+    - [x] Validar Gemma local como provider padrão do AI Service no streaming.
+    - [ ] Comparar candidatos TTS/LLM por idioma pt-BR, qualidade, privacidade e tempo de resposta em ambiente real.
     - [x] Documentar trade-offs entre local, cloud e híbrido.
 
-- [ ] **Resiliência e Performance**
+- [x] **Resiliência e Performance**
     - [x] Adicionar cache seguro (Redis) para TTS de frases de acolhimento comuns e genéricas em allowlist.
     - [x] Criar health/status do Voice Service com monitoramento de provedor ativo, streaming disponível e fallback local.
+    - [x] Garantir fallback seguro: se Chirp streaming falhar, áudio batch é gerado por trecho/frase e enfileirado no frontend.
 
 ---
 
@@ -244,25 +263,27 @@ Reduzir a latência percebida (Time to First Byte - TTFB) de ~4s para < 800ms, p
 | **Voice Service** | `services/voice-service/src/` | Implementação do gRPC streaming do GCP. |
 | **Gateway** | `services/gateway-service/src/services/chat_service.py` | Lógica de chunking de texto e gestão de fluxo SSE. |
 | **AI Service** | `services/ai-service/src/services/openai_service.py` | Refatoração para suporte a stream de tokens. |
+| **AI Service** | `services/ai-service/src/services/local_llm_service.py` | Streaming real com Gemma/GGUF via `llama-cpp-python`. |
 | **Frontend** | `apps/web-ui/src/hooks/useStreamingAudioQueue.js` | Fila de reprodução (Audio Queue) para chunks PCM. |
 | **Docs** | `docs/TECHNICAL.md` | Atualização da arquitetura de eventos. |
 
 ---
 
 ## ✅ Critérios de Aceite
-1. Existe baseline de latência documentado antes e depois da alteração.
-2. Voice mode utiliza respostas curtas e adequadas à fala rítmica.
-3. Pelo menos uma opção local é testada como fallback funcional.
-4. O sistema não aguarda o fim da geração do LLM para iniciar a reprodução do áudio (Streaming funcional).
-5. Otimizações de voz respeitam as versões de prompt e regras de segurança pré-estabelecidas.
+1. [x] Existe baseline técnico de latência documentado para o fluxo local.
+2. [x] Voice mode utiliza respostas curtas e adequadas à fala rítmica.
+3. [x] Gemma local foi validado como provider funcional em streaming.
+4. [x] O sistema não aguarda o fim da geração do LLM para iniciar texto/áudio.
+5. [x] Otimizações de voz respeitam regras de segurança e fallback de prompt.
+6. [ ] Medição manual com 5 interações reais antes/depois ainda precisa ser registrada.
 
 ## Notas consolidadas
 
 - Segurança mental: manter o assistente como apoio, sem diagnóstico, prescrição ou plano clínico autônomo. Casos de crise precisam de resposta segura, metadados de risco e revisão quando aplicável.
 - Avaliação: criar casos de regressão para prompts, segurança, grounding de RAG, voz e continuidade entre sessões antes de promover mudanças sensíveis.
 - RAG: usar somente conhecimento aprovado, versionado, revisável e citável. Recuperação deve ser escopo de prompt/contexto, não comportamento global invisível.
-- Voz: medir latência antes de trocar arquitetura. Testar STT/TTS local ou híbrido somente com comparação de qualidade, custo, privacidade e tempo de primeira reprodução.
-- Modelos locais: promover modelo local apenas se passar em qualidade, segurança, latência e fallback. OpenAI continua sendo fallback operacional enquanto isso.
+- Voz: o fluxo streaming v1 já está implementado; próximas mudanças devem melhorar latência, qualidade e confiabilidade sem quebrar o fallback síncrono.
+- Modelos locais: Gemma local é o provider padrão validado para streaming; OpenAI continua como fallback operacional.
 - MCP/agentes: tratar como etapa futura. Só expor tools/resources depois de existir contrato de segurança, autenticação interna e isolamento por usuário/sessão.
 
 ## Checklist de validação

@@ -211,11 +211,11 @@ Os últimos ciclos concluíram a base de experiência do usuário e a primeira r
 - **Admin operacional** — remoção de mocks silenciosos, estados explícitos de carregamento/erro/vazio e contratos reais por tela.
 - **Emotion Service estabilizado** — ajustes de dependências, DeepFace/OpenFace e integração com histórico/contexto.
 
-Agora o foco imediato muda para controle do comportamento da IA antes de acelerar voz:
+Na prática, a ordem foi ajustada por prioridade de experiência: antes de concluir RAG e LLMOps completos, o projeto antecipou o modo de voz de baixa latência.
 
-- **Prioridade 5: Controle de Prompts e LLMOps** — versionamento forte, estados de revisão, auditoria, rollback, rastreabilidade por resposta e testes de regressão de prompts críticos.
-- **Prioridade 6: Pipeline RAG pelo Admin** — curadoria de documentos, aprovação explícita, embeddings, recuperação model-agnostic, citações e avaliação de grounding.
-- **Prioridade 7: Voice Service e baixa latência** — baseline de latência, resposta curta via Prompt Control, opções locais/híbridas, streaming/chunking e status operacional do serviço.
+- **Prioridade 7: Voice Service e baixa latência** — v1 implementada com SSE no Gateway, Gemma local em streaming, GCP Chirp 3 HD para PCM em tempo real, chunking por frase, fila de áudio no frontend e fallback batch por trecho.
+- **Prioridade 5: Controle de Prompts e LLMOps** — segue como próxima frente estrutural: versionamento forte, estados de revisão, auditoria, rollback, rastreabilidade por resposta e testes de regressão de prompts críticos.
+- **Prioridade 6: Pipeline RAG pelo Admin** — deliberadamente pulada nesta rodada; segue pendente para curadoria de documentos, aprovação explícita, embeddings, recuperação model-agnostic, citações e avaliação de grounding.
 
 O checklist detalhado fica em [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md).
 

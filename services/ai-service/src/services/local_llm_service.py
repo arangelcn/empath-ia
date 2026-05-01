@@ -16,7 +16,7 @@ class LocalLLMService:
     """Lazy loader for a locally served GGUF model using llama.cpp."""
 
     def __init__(self) -> None:
-        self.repo_id = os.getenv("LOCAL_MODEL_REPO_ID", "ggml-org/gemma-4-E4B-it-GGUF")
+        self.repo_id = os.getenv("LOCAL_MODbora EL_REPO_ID", "ggml-org/gemma-4-E4B-it-GGUF")
         self.include_pattern = os.getenv("LOCAL_MODEL_INCLUDE", "gemma-4-E4B-it-Q4_K_M.gguf")
         self.model_dir = Path(os.getenv("LOCAL_MODEL_DIR", "/models/local-llm"))
         self.import_dir = Path(os.getenv("LOCAL_MODEL_IMPORT_DIR", "/host-lmstudio-models"))
