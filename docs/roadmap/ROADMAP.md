@@ -89,14 +89,14 @@ Critérios de aceite:
 
 As próximas prioridades devem transformar o Admin em uma ferramenta operacional real para configuração, curadoria de conhecimento e observabilidade, enquanto o Voice Service evolui para menor latência e opções locais.
 
-## Prioridade 4: Ajustes do Admin
+## Prioridade 4: Ajustes do Admin ✅
 
-- [ ] Auditar telas do Admin para identificar dados mockados, fallbacks silenciosos e endpoints ainda inexistentes.
-- [ ] Mapear cada tela para contrato real de API: Dashboard, Usuários, Sessões, Conversas, Prompts, Analytics, Status e Configurações.
-- [ ] Substituir mocks por estados explícitos de carregamento, vazio, erro e indisponibilidade do backend.
-- [ ] Garantir autenticação consistente no Admin usando o mesmo padrão de token/headers das rotas protegidas.
-- [ ] Validar permissões mínimas para separar ações administrativas de leitura, edição e operação sensível.
-- [ ] Registrar lacunas de backend em issues/tarefas pequenas antes de iniciar grandes refactors de UI.
+- [x] Auditar telas do Admin para identificar dados mockados, fallbacks silenciosos e endpoints ainda inexistentes.
+- [x] Mapear cada tela para contrato real de API: Dashboard, Usuários, Sessões, Conversas, Prompts, Analytics, Status e Configurações.
+- [x] Substituir mocks por estados explícitos de carregamento, vazio, erro e indisponibilidade do backend.
+- [x] Garantir autenticação consistente no Admin usando o mesmo padrão de token/headers das rotas protegidas.
+- [x] Validar permissões mínimas para separar ações administrativas de leitura, edição e operação sensível.
+- [x] Registrar lacunas de backend em issues/tarefas pequenas antes de iniciar grandes refactors de UI.
 
 Arquivos prováveis:
 
@@ -109,6 +109,7 @@ Arquivos prováveis:
 - `apps/admin-panel/src/pages/SystemStatus.js`
 - `apps/admin-panel/src/services/api.js`
 - `services/gateway-service/src/api/`
+- `docs/admin/ADMIN_CONTRACT_AUDIT.md`
 
 Critérios de aceite:
 

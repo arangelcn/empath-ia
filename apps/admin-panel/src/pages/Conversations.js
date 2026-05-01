@@ -11,6 +11,7 @@ import {
   ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import apiService from '../services/api';
+import { ErrorState, UnavailableState } from '../components/AdminState';
 
 function ConversationCard({ conversation, onViewDetails }) {
   const getStatusColor = (status) => {
@@ -180,12 +181,25 @@ function ConversationDetails({ conversation, onClose }) {
             <div className="text-sm text-gray-600">Mensagens do Usuário</div>
           </div>
           <div className="bg-gray-50 p-3 rounded-lg">
-            <div className={`text-2xl font-bold capitalize ${getEmotionColor(details.statistics.emotion_analysis.dominant_emotion)}`}>
-              {details.statistics.emotion_analysis.dominant_emotion}
-            </div>
+            {details.statistics.emotion_analysis ? (
+              <div className={`text-2xl font-bold capitalize ${getEmotionColor(details.statistics.emotion_analysis.dominant_emotion)}`}>
+                {details.statistics.emotion_analysis.dominant_emotion}
+              </div>
+            ) : (
+              <div className="text-sm font-semibold text-gray-500">Indisponível</div>
+            )}
             <div className="text-sm text-gray-600">Emoção Dominante</div>
           </div>
         </div>
+
+        {details.unavailable_fields?.includes('emotion_analysis') && (
+          <div className="mb-6">
+            <UnavailableState
+              title="Análise emocional indisponível"
+              message="O backend não retornou uma análise emocional real para esta conversa."
+            />
+          </div>
+        )}
 
         {/* Informações da Conversa */}
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
@@ -285,7 +299,7 @@ export default function Conversations() {
       }
     } catch (error) {
       console.error('Erro ao carregar conversas:', error);
-      setError('Erro ao carregar conversas. Verifique se o backend está rodando.');
+      setError(apiService.formatError(error, 'Erro ao carregar conversas. Verifique se o backend está rodando.'));
     } finally {
       setIsLoading(false);
     }
@@ -336,20 +350,7 @@ export default function Conversations() {
           </p>
         </div>
         
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <div className="flex">
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">Erro de Conexão</h3>
-              <p className="mt-1 text-sm text-red-700">{error}</p>
-              <button 
-                onClick={() => loadConversations()}
-                className="mt-2 text-sm text-red-600 hover:text-red-500 font-medium"
-              >
-                Tentar novamente
-              </button>
-            </div>
-          </div>
-        </div>
+        <ErrorState title="Erro de conexão" message={error} onRetry={() => loadConversations()} />
       </div>
     );
   }
@@ -439,9 +440,9 @@ export default function Conversations() {
             </div>
             <div className="ml-5 w-0 flex-1">
               <dl>
-                <dt className="text-sm font-medium text-gray-500 truncate">Com Análise Emocional</dt>
-                <dd className="text-2xl font-semibold text-gray-900">
-                  {isLoading ? '-' : Math.floor(conversations.length * 0.8)}
+                <dt className="text-sm font-medium text-gray-500 truncate">Análise Emocional</dt>
+                <dd className="text-sm font-semibold text-gray-500">
+                  Indisponível
                 </dd>
               </dl>
             </div>

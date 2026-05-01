@@ -55,10 +55,7 @@ const UserManagement = () => {
       }
       // Se filterStatus === 'all', não enviar active_only para buscar todos
 
-      console.log('Chamando API com parâmetros:', apiParams);
-      
       const response = await apiService.getUsers(apiParams);
-      console.log('Resposta da API:', response);
 
       if (response.success) {
         setUsers(response.data.users || []);
@@ -72,7 +69,7 @@ const UserManagement = () => {
       }
     } catch (err) {
       console.error('Erro ao carregar usuários:', err);
-      setError('Erro ao carregar usuários. Verifique a conexão com o servidor.');
+      setError(apiService.formatError(err, 'Erro ao carregar usuários. Verifique a conexão com o servidor.'));
       setUsers([]);
     } finally {
       setLoading(false);
@@ -96,7 +93,7 @@ const UserManagement = () => {
       }
     } catch (err) {
       console.error('Erro ao carregar detalhes do usuário:', err);
-      alert('Erro ao carregar detalhes do usuário');
+      setError(apiService.formatError(err, 'Erro ao carregar detalhes do usuário'));
     }
   };
 
@@ -199,7 +196,7 @@ const UserManagement = () => {
               Visualize e gerencie todos os usuários da plataforma
             </p>
           </div>
-          <button className="btn-primary">
+          <button className="btn-primary opacity-60 cursor-not-allowed" disabled title="Fluxo de criação aguardando contrato operacional revisado">
             <PlusIcon className="w-4 h-4 mr-2" />
             Novo Usuário
           </button>

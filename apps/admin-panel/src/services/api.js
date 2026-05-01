@@ -3,18 +3,56 @@
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const ADMIN_TOKEN_KEY = 'admin_access_token';
 
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
   }
 
+  getToken() {
+    return localStorage.getItem(ADMIN_TOKEN_KEY);
+  }
+
+  setToken(token) {
+    if (token) {
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
+    }
+  }
+
+  clearToken() {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  }
+
+  buildQuery(params = {}) {
+    const cleanParams = Object.entries(params).reduce((acc, [key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+    return new URLSearchParams(cleanParams).toString();
+  }
+
+  formatError(error, fallback = 'Erro ao comunicar com o backend.') {
+    if (error?.detail) {
+      if (Array.isArray(error.detail)) {
+        return error.detail.map((item) => item.msg || String(item)).join(' ');
+      }
+      return error.detail;
+    }
+    if (error?.message) return error.message;
+    return fallback;
+  }
+
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
+    const token = this.getToken();
     
     const config = {
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
       ...options,
@@ -22,12 +60,24 @@ class ApiService {
 
     try {
       const response = await fetch(url, config);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      const text = await response.text();
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { message: text };
+        }
       }
       
-      const data = await response.json();
+      if (!response.ok) {
+        const message = this.formatError(data, `HTTP ${response.status}`);
+        const error = new Error(message);
+        error.status = response.status;
+        error.payload = data;
+        throw error;
+      }
+      
       return data;
     } catch (error) {
       console.error('API request failed:', error);
@@ -63,14 +113,28 @@ class ApiService {
 
   // ===== ENDPOINTS ESPECÍFICOS DO ADMIN =====
 
+  async loginAdmin(credentials) {
+    const response = await this.post('/api/auth/admin/login', credentials);
+    this.setToken(response.access_token);
+    return response;
+  }
+
   // Dashboard Stats
   async getDashboardStats() {
     return this.get('/api/admin/stats');
   }
 
+  async getAnalytics(days = 7) {
+    return this.get(`/api/admin/analytics?days=${days}`);
+  }
+
+  async getSystemStatus() {
+    return this.get('/api/admin/system-status');
+  }
+
   // Conversations
   async getConversations(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/conversations${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -83,7 +147,7 @@ class ApiService {
 
   // Usuários
   async getUsers(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/users${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -112,7 +176,7 @@ class ApiService {
 
   // Sessões Terapêuticas (Templates)
   async getTherapeuticSessions(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/therapeutic-sessions${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -131,7 +195,7 @@ class ApiService {
 
   // Sessões dos Usuários
   async getUserSessions(username, params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/user/${username}/sessions${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -142,7 +206,7 @@ class ApiService {
 
   async getAllUserSessions(params = {}) {
     // Buscar todas as sessões de todos os usuários via admin
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/user-sessions${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -155,14 +219,14 @@ class ApiService {
   }
 
   async getAllSessionContexts(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/session-contexts${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
 
   // Novo endpoint otimizado para buscar todas as sessões dos usuários com contextos
   async getAllUserSessionsWithContexts(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/user-sessions${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -173,7 +237,7 @@ class ApiService {
   }
 
   async getUserEmotions(username, params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/emotions/${username}${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -196,7 +260,7 @@ class ApiService {
 
   // Prompts
   async getPrompts(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/prompts${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }

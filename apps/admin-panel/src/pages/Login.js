@@ -29,7 +29,7 @@ export default function Login() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <div className="mx-auto h-16 w-16 bg-primary-600 rounded-full flex items-center justify-center">
-            <span className="text-3xl">😊</span>
+            <span className="text-2xl font-semibold text-white">IA</span>
           </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Empat.IA - Admin
@@ -88,17 +88,8 @@ export default function Login() {
             </button>
           </div>
 
-          <div className="text-center">
-            <div className="text-sm text-gray-600 bg-green-50 border border-green-200 p-4 rounded-md">
-              <strong className="text-green-800">✅ Credenciais de acesso:</strong><br />
-              <div className="mt-2 space-y-1">
-                <div>👤 Usuário: <code className="bg-white px-2 py-1 rounded text-green-700 font-mono">admin</code></div>
-                <div>🔑 Senha: <code className="bg-white px-2 py-1 rounded text-green-700 font-mono">admin123</code></div>
-              </div>
-              <p className="text-xs text-green-600 mt-2">
-                ⚠️ Use exatamente "admin" (sem email) como usuário!
-              </p>
-            </div>
+          <div className="text-center text-xs text-gray-500">
+            As credenciais administrativas são configuradas no backend por variáveis de ambiente.
           </div>
         </form>
       </div>

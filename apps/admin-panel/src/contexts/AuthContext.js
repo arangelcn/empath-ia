@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useReducer } from 'react';
+import apiService from '../services/api';
 
 const AuthContext = createContext();
 
@@ -7,15 +8,16 @@ const authReducer = (state, action) => {
     case 'LOGIN':
       localStorage.setItem('admin_auth', JSON.stringify({
         isAuthenticated: true,
-        user: action.payload
+        user: action.payload.user
       }));
       return {
         ...state,
         isAuthenticated: true,
-        user: action.payload
+        user: action.payload.user
       };
     case 'LOGOUT':
       localStorage.removeItem('admin_auth');
+      apiService.clearToken();
       return {
         ...state,
         isAuthenticated: false,
@@ -24,12 +26,16 @@ const authReducer = (state, action) => {
     case 'INIT':
       const savedAuth = localStorage.getItem('admin_auth');
       if (savedAuth) {
-        const authData = JSON.parse(savedAuth);
-        return {
-          ...state,
-          isAuthenticated: authData.isAuthenticated,
-          user: authData.user
-        };
+        try {
+          const authData = JSON.parse(savedAuth);
+          return {
+            ...state,
+            isAuthenticated: Boolean(authData.isAuthenticated && apiService.getToken()),
+            user: authData.user
+          };
+        } catch {
+          localStorage.removeItem('admin_auth');
+        }
       }
       return state;
     default:
@@ -50,19 +56,12 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (credentials) => {
-    // Simulação de autenticação - em produção, isso seria uma chamada à API
-    if (credentials.username === 'admin' && credentials.password === 'admin123') {
-      const user = {
-        id: 1,
-        username: 'admin',
-        name: 'Administrador',
-        email: 'admin@empat-ia.io',
-        role: 'admin'
-      };
-      dispatch({ type: 'LOGIN', payload: user });
+    try {
+      const session = await apiService.loginAdmin(credentials);
+      dispatch({ type: 'LOGIN', payload: session });
       return { success: true };
-    } else {
-      return { success: false, error: 'Credenciais inválidas' };
+    } catch (error) {
+      return { success: false, error: apiService.formatError(error, 'Credenciais inválidas') };
     }
   };
 

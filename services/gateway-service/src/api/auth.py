@@ -6,7 +6,8 @@ import os
 import logging
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from jose import JWTError, jwt
 from google.oauth2 import id_token
@@ -18,10 +19,19 @@ from ..models.database import get_users_collection
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+security = HTTPBearer(auto_error=False)
 
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-must-be-at-least-32-characters-long!")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  # 7 dias
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@empat-ia.io")
+ADMIN_ALLOWED_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("ADMIN_ALLOWED_EMAILS", ADMIN_EMAIL).split(",")
+    if email.strip()
+}
 
 
 def _get_google_client_id() -> str:
@@ -33,6 +43,11 @@ class GoogleAuthRequest(BaseModel):
     credential: str
 
 
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 def _create_access_token(data: dict) -> str:
     payload = data.copy()
     payload["exp"] = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -41,6 +56,39 @@ def _create_access_token(data: dict) -> str:
     except JWTError as exc:
         logger.exception("Falha ao emitir JWT: %s", exc)
         raise HTTPException(status_code=500, detail="Erro ao criar sessão.") from exc
+
+
+def _decode_access_token(token: str) -> dict:
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail="Token inválido ou expirado.") from exc
+
+
+async def get_current_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict:
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Autenticação administrativa necessária.")
+
+    payload = _decode_access_token(credentials.credentials)
+    role = payload.get("role")
+    email = (payload.get("email") or "").lower()
+
+    if role != "admin" and email not in ADMIN_ALLOWED_EMAILS:
+        raise HTTPException(status_code=403, detail="Usuário sem permissão administrativa.")
+
+    return payload
+
+
+def require_admin_permission(permission: str):
+    async def dependency(payload: dict = Depends(get_current_admin)) -> dict:
+        permissions = payload.get("permissions") or []
+        if "*" in permissions or permission in permissions:
+            return payload
+        raise HTTPException(status_code=403, detail=f"Permissão administrativa ausente: {permission}.")
+
+    return dependency
 
 
 def _account_username(google_sub: str, email: str | None) -> str:
@@ -68,6 +116,43 @@ async def google_auth_status():
     if not available:
         logger.warning("GOOGLE_CLIENT_ID não está configurado — auth Google indisponível.")
     return {"available": available}
+
+
+@router.post("/admin/login")
+async def admin_login(body: AdminLoginRequest):
+    """
+    Login administrativo para o painel interno.
+
+    Em produção, ADMIN_USERNAME/ADMIN_PASSWORD devem vir de segredo/IdP corporativo.
+    O retorno segue o mesmo contrato de bearer token usado pelo app do usuário.
+    """
+    if body.username != ADMIN_USERNAME or body.password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Credenciais administrativas inválidas.")
+
+    permissions = ["read", "write", "sensitive"]
+    access_token = _create_access_token(
+        {
+            "sub": f"admin:{ADMIN_USERNAME}",
+            "username": ADMIN_USERNAME,
+            "email": ADMIN_EMAIL,
+            "name": "Administrador",
+            "role": "admin",
+            "permissions": permissions,
+        }
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": f"admin:{ADMIN_USERNAME}",
+            "username": ADMIN_USERNAME,
+            "name": "Administrador",
+            "email": ADMIN_EMAIL,
+            "role": "admin",
+            "permissions": permissions,
+        },
+    }
 
 
 @router.post("/google")
