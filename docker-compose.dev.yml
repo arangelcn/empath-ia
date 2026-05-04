@@ -5,8 +5,8 @@ services:
     image: mongo:7.0
     container_name: empatia-mongodb-dev
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:${MONGODB_PORT:-27017}:27017"
+    network_mode: host
+    ports: !reset []
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-admin123}
@@ -15,20 +15,19 @@ services:
     volumes:
       - mongodb_data_dev:/data/db
       - ./scripts:/docker-entrypoint-initdb.d
-    networks:
-      - empatia-network
+    networks: !reset []
 
   # MongoDB Express (interface web para MongoDB) - Mantendo para desenvolvimento
   mongo-express:
     image: mongo-express:1.0.2
     container_name: empatia-mongo-express-dev
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:${MONGO_EXPRESS_PORT:-8081}:8081"
+    network_mode: host
+    ports: !reset []
     environment:
       - ME_CONFIG_MONGODB_ADMINUSERNAME=${ME_CONFIG_MONGODB_ADMINUSERNAME:-admin}
       - ME_CONFIG_MONGODB_ADMINPASSWORD=${ME_CONFIG_MONGODB_ADMINPASSWORD:-admin123}
-      - ME_CONFIG_MONGODB_SERVER=${ME_CONFIG_MONGODB_SERVER:-mongodb}
+      - ME_CONFIG_MONGODB_SERVER=${ME_CONFIG_MONGODB_SERVER:-127.0.0.1}
       - ME_CONFIG_MONGODB_PORT=${ME_CONFIG_MONGODB_PORT:-27017}
       - ME_CONFIG_BASICAUTH_USERNAME=${ME_CONFIG_BASICAUTH_USERNAME:-admin}
       - ME_CONFIG_BASICAUTH_PASSWORD=${ME_CONFIG_BASICAUTH_PASSWORD:-admin123}
@@ -42,31 +41,28 @@ services:
       - ME_CONFIG_MONGODB_CONNECTION_TIMEOUT=5000
     depends_on:
       - mongodb
-    networks:
-      - empatia-network
+    networks: !reset []
 
   # Redis - Cache e Sessões
   redis:
     image: redis:7-alpine
     container_name: empatia-redis-dev
-    ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    network_mode: host
+    ports: !reset []
     volumes:
       - redis_data_dev:/data
-    networks:
-      - empatia-network
+    networks: !reset []
     command: redis-server --appendonly yes
 
   # Qdrant - Vector store exposed locally for development
   qdrant:
     image: qdrant/qdrant:v1.12.4
     container_name: empatia-qdrant-dev
-    ports:
-      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+    network_mode: host
+    ports: !reset []
     volumes:
       - qdrant_data_dev:/qdrant/storage
-    networks:
-      - empatia-network
+    networks: !reset []
 
   gateway:
     build:
@@ -76,26 +72,29 @@ services:
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
       - SQL_DEBUG=${DEBUG:-true}
-      - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
-      - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://knowledge-service:8005}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7860,http://localhost:3000}
+      - AI_SERVICE_URL=${AI_SERVICE_URL:-http://127.0.0.1:8001}
+      - AVATAR_SERVICE_URL=${AVATAR_SERVICE_URL:-http://127.0.0.1:8002}
+      - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://127.0.0.1:8003}
+      - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://127.0.0.1:8004}
+      - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://127.0.0.1:8005}
+      - REDIS_URL=${REDIS_URL:-redis://127.0.0.1:6379}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7860,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3001}
       - HOT_RELOAD=${HOT_RELOAD:-true}
     volumes:
       - ./data/tts_output:/app/tts_output
       - ./services/gateway-service/src:/app/src
-    ports: !override
-      - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
+    network_mode: host
+    ports: !reset []
     command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug" ]
     depends_on:
       - mongodb
       - redis
       - voice-service
       - knowledge-service
-    networks:
-      - empatia-network
+    networks: !reset []
 
   ai-service:
     build:
@@ -118,8 +117,8 @@ services:
         - hf_token
         - hugging_face_token
         - huggin_face_token
-    ports: !override
-      - "127.0.0.1:${AI_SERVICE_PORT:-8001}:8001"
+    network_mode: host
+    ports: !reset []
     volumes: !override
       - ./services/ai-service:/app
       - ./services/ai-service/src:/app/src
@@ -147,24 +146,24 @@ services:
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - MAX_TOKENS=${MAX_TOKENS:-700}
       - HOT_RELOAD=${HOT_RELOAD:-true}
-      - MONGODB_URI=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - MONGODB_URI=${MONGODB_URL:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - REDIS_URL=${REDIS_URL:-redis://127.0.0.1:6379}
+      - GATEWAY_SERVICE_URL=${GATEWAY_SERVICE_URL:-http://127.0.0.1:8000}
     command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--log-level", "debug" ]
     gpus: !override ${AI_SERVICE_GPUS:-all}
     depends_on:
       - mongodb
       - redis
-    networks:
-      - empatia-network
+    networks: !reset []
 
   avatar-service:
     build:
       context: ./services/avatar-service
       dockerfile: Dockerfile
       network: host
-    ports:
-      - "127.0.0.1:${AVATAR_SERVICE_PORT:-8002}:8002"
+    network_mode: host
+    ports: !reset []
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
@@ -172,8 +171,7 @@ services:
       - DID_API_PASSWORD=${DID_API_PASSWORD:-}
       - HOT_RELOAD=${HOT_RELOAD:-true}
     command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload", "--log-level", "debug" ]
-    networks:
-      - empatia-network
+    networks: !reset []
 
   emotion-service:
     build:
@@ -210,11 +208,11 @@ services:
       - ./services/emotion-service/src:/app/src
       # Volume para modelos pré-treinados
       - ./data/emotion_models:/app/models
-    ports: !override
-      - "127.0.0.1:${EMOTION_SERVICE_PORT:-8003}:8003"
+      - ./data/emotion_models/deepface:/root/.deepface
+    network_mode: host
+    ports: !reset []
     command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload", "--log-level", "debug" ]
-    networks:
-      - empatia-network
+    networks: !reset []
 
   voice-service:
     build:
@@ -222,8 +220,8 @@ services:
       dockerfile: Dockerfile
       network: host
     container_name: empatia-voice-service-dev
-    ports: !override
-      - "127.0.0.1:${VOICE_SERVICE_PORT:-8004}:8004"
+    network_mode: host
+    ports: !reset []
     environment:
       # Configurações básicas
       - PYTHONPATH=/app
@@ -248,8 +246,7 @@ services:
       # Volume para credenciais do GCP (mapeando o arquivo JSON real)
       - ./services/voice-service/credentials/empathia-462921-734245aa641d.json:/app/credentials/empathia-462921-734245aa641d.json:ro
     command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8004", "--reload", "--log-level", "debug" ]
-    networks:
-      - empatia-network
+    networks: !reset []
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8004/health" ]
       interval: 30s
@@ -263,17 +260,17 @@ services:
       dockerfile: Dockerfile
       network: host
     container_name: empatia-knowledge-service-dev
-    ports: !override
-      - "127.0.0.1:${KNOWLEDGE_SERVICE_PORT:-8005}:8005"
+    network_mode: host
+    ports: !reset []
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
       - KNOWLEDGE_STORAGE_BACKEND=${KNOWLEDGE_STORAGE_BACKEND:-in-memory}
       - KNOWLEDGE_STORAGE_DIR=${KNOWLEDGE_STORAGE_DIR:-/knowledge_data}
       - KNOWLEDGE_LEXICAL_INDEX=${KNOWLEDGE_LEXICAL_INDEX:-sqlite-fts5-planned}
-      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
-      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_URL=${QDRANT_URL:-http://127.0.0.1:6333}
       - HOT_RELOAD=${HOT_RELOAD:-true}
     volumes: !override
       - ./services/knowledge-service/src:/app/src
@@ -283,8 +280,7 @@ services:
     depends_on:
       - mongodb
       - qdrant
-    networks:
-      - empatia-network
+    networks: !reset []
 
   web-ui:
     build:
@@ -293,18 +289,17 @@ services:
       network: host
     environment:
       - NODE_ENV=${NODE_ENV:-development}
-      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
-      - BACKEND_URL=${BACKEND_URL:-http://gateway-service:8000}
+      - VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:8000}
+      - BACKEND_URL=${BACKEND_URL:-http://127.0.0.1:8000}
       - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
       - VITE_GOOGLE_REDIRECT_URI=${VITE_GOOGLE_REDIRECT_URI:-http://localhost:7860}
     volumes:
       - ./apps/web-ui/src:/app/src
       - ./apps/web-ui/public:/app/public
-    ports: !override
-      - "127.0.0.1:${WEB_UI_PORT:-7860}:3000"
-    command: [ "npm", "run", "dev", "--", "--host", "0.0.0.0" ]
-    networks:
-      - empatia-network
+    network_mode: host
+    ports: !reset []
+    command: [ "npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "7860" ]
+    networks: !reset []
 
   admin-panel:
     build:
@@ -312,28 +307,28 @@ services:
       dockerfile: Dockerfile.dev
       network: host
     container_name: empatia-admin-panel-dev
-    ports: !override
-      - "127.0.0.1:${ADMIN_PANEL_PORT:-3001}:3000"
+    network_mode: host
+    ports: !reset []
     environment:
       - NODE_ENV=development
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:8000}
       - VITE_EMOTION_SERVICE_URL=http://localhost:8003
       - VITE_VOICE_SERVICE_URL=http://localhost:8004
       - VITE_AI_SERVICE_URL=http://localhost:8001
       - VITE_AVATAR_SERVICE_URL=http://localhost:8002
       - VITE_KNOWLEDGE_SERVICE_URL=http://localhost:8005
-      - BACKEND_URL=${BACKEND_URL:-http://gateway-service:8000}
+      - BACKEND_URL=${BACKEND_URL:-http://127.0.0.1:8000}
     depends_on:
       - gateway
       - emotion-service
       - ai-service
       - voice-service
       - knowledge-service
-    networks:
-      - empatia-network
+    networks: !reset []
     volumes:
       - ./apps/admin-panel/src:/app/src
       - ./apps/admin-panel/public:/app/public
+    command: [ "npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3001" ]
 
 # Volumes para dados persistentes
 volumes:

@@ -39,7 +39,7 @@ services:
       - KNOWLEDGE_SERVICE_URL=http://127.0.0.1:8005
       - MONGODB_URL=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin
       - REDIS_URL=redis://127.0.0.1:6379
-      - ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3001
+      - ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3001
 
   ai-service:
     network_mode: host
@@ -81,7 +81,7 @@ services:
     networks: !reset []
     ports: !reset []
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=http://127.0.0.1:8000
       - BACKEND_URL=http://127.0.0.1:8000
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "7860"]
 
@@ -90,7 +90,7 @@ services:
     networks: !reset []
     ports: !reset []
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=http://127.0.0.1:8000
       - VITE_EMOTION_SERVICE_URL=http://localhost:8003
       - VITE_VOICE_SERVICE_URL=http://localhost:8004
       - VITE_AI_SERVICE_URL=http://localhost:8001

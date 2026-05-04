@@ -101,3 +101,40 @@ def test_content_ingestion_generates_traceable_chunks():
     assert chunks[0]["document_id"] == document["document_id"]
     assert chunks[0]["chunk_hash"].startswith("sha256:")
     assert "cohesion_score" in chunks[0]["quality"]
+
+
+def test_file_upload_ingests_txt_document():
+    create_response = client.post(
+        "/api/v1/documents",
+        json={
+            "title": "Uploaded TXT Source",
+            "source": "upload",
+            "content_type": "txt",
+            "language": "en",
+            "scopes": ["approved_psychoeducation"],
+        },
+    )
+    document = create_response.json()["data"]
+
+    upload_response = client.post(
+        f"/api/v1/documents/{document['document_id']}/upload",
+        data={
+            "section": "Introduction",
+            "ingested_by": "admin@example.com",
+        },
+        files={
+            "file": (
+                "source.txt",
+                b"Empathy is a disciplined form of understanding.\n\nReflection helps clients feel heard.",
+                "text/plain",
+            )
+        },
+    )
+
+    assert upload_response.status_code == 200
+    body = upload_response.json()["data"]
+    assert body["upload"]["filename"] == "source.txt"
+    assert body["upload"]["content_type"] == "txt"
+    assert body["upload"]["extracted_characters"] > 20
+    assert body["document"]["status"] == "indexed"
+    assert body["document"]["chunk_count"] >= 1

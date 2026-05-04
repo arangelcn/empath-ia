@@ -9,17 +9,22 @@ BLUE := \033[0;34m
 RED := \033[0;31m
 NC := \033[0m
 
-COMPOSE_FILES := -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.host.yml
-BRIDGE_FILES := -f docker-compose.yml -f docker-compose.dev.yml
+COMPOSE_FILES := -f docker-compose.yml -f docker-compose.dev.yml
+HOST_FILES := -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.host.yml
+BRIDGE_FILES := -f docker-compose.yml
 
 COMPOSE := docker compose $(COMPOSE_FILES)
+HOST_COMPOSE := docker compose $(HOST_FILES)
 BRIDGE_COMPOSE := docker compose $(BRIDGE_FILES)
+
+HOST_RUNTIME_ENV := MONGODB_URL=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin REDIS_URL=redis://127.0.0.1:6379/0 QDRANT_URL=http://127.0.0.1:6333 AI_SERVICE_URL=http://127.0.0.1:8001 AVATAR_SERVICE_URL=http://127.0.0.1:8002 EMOTION_SERVICE_URL=http://127.0.0.1:8003 VOICE_SERVICE_URL=http://127.0.0.1:8004 KNOWLEDGE_SERVICE_URL=http://127.0.0.1:8005 BACKEND_URL=http://127.0.0.1:8000 VITE_API_URL=http://127.0.0.1:8000 ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3001
+BRIDGE_RUNTIME_ENV := MONGODB_URL=mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin REDIS_URL=redis://redis:6379/0 QDRANT_URL=http://qdrant:6333 AI_SERVICE_URL=http://ai-service:8001 AVATAR_SERVICE_URL=http://avatar-service:8002 EMOTION_SERVICE_URL=http://emotion-service:8003 VOICE_SERVICE_URL=http://voice-service:8004 KNOWLEDGE_SERVICE_URL=http://knowledge-service:8005 BACKEND_URL=http://gateway-service:8000 VITE_API_URL=http://localhost:8000 ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3000,http://localhost:3001
 
 BACKEND_SERVICES := gateway ai-service avatar-service emotion-service voice-service knowledge-service
 FRONTEND_SERVICES := web-ui admin-panel
 CORE_SERVICES := mongodb redis qdrant $(BACKEND_SERVICES)
 
-.PHONY: help setup env-check env-create env-validate dev up dev-d down restart ps build build-ai-local logs shell test lint format health urls clean reset mongo-shell mongo-reset bridge bridge-d services
+.PHONY: help setup env-check env-create env-validate dev up dev-d down restart ps build build-ai-local logs shell test lint format health urls clean reset mongo-shell mongo-reset bridge bridge-d host host-d services
 
 help: ## Lista os comandos disponíveis
 	@printf "$(BLUE)empatIA - comandos$(NC)\n"
@@ -27,8 +32,8 @@ help: ## Lista os comandos disponíveis
 
 setup: ## Cria .env e pastas locais usadas pelo Docker
 	@cp -n .env.example .env 2>/dev/null || true
-	@mkdir -p data/{shared,models,uploads,logs,backups,knowledge}
-	@touch data/{shared,models,uploads,logs,knowledge}/.gitkeep
+	@mkdir -p data/{shared,models,uploads,logs,backups,knowledge,emotion_models/deepface}
+	@touch data/{shared,models,uploads,logs,knowledge,emotion_models}/.gitkeep
 	@echo "$(GREEN)Setup concluído.$(NC) Edite o .env antes de subir a stack."
 
 env-check:
@@ -45,22 +50,28 @@ env-validate: env-check ## Valida o mínimo esperado no .env
 	@grep -q '^CREDENTIALS_JSON=' .env || echo "$(YELLOW)CREDENTIALS_JSON ausente ou opcional no seu fluxo$(NC)"
 	@echo "$(GREEN).env encontrado e validado.$(NC)"
 
-dev: env-check ## Sobe a stack dev com host network
-	@set -a; . ./.env; set +a; $(COMPOSE) up --build
+dev: env-check ## Sobe a stack dev (agora em host network no docker-compose.dev.yml)
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(COMPOSE) up --build
 
 up: dev ## Alias para dev
 
 dev-d: env-check ## Sobe a stack dev em background
-	@set -a; . ./.env; set +a; $(COMPOSE) up --build -d
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(COMPOSE) up --build -d
 
 services: env-check ## Sobe backend, MongoDB, Redis e Qdrant
-	@set -a; . ./.env; set +a; $(COMPOSE) up --build $(CORE_SERVICES)
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(COMPOSE) up --build $(CORE_SERVICES)
 
-bridge: env-check ## Sobe a stack usando Docker bridge
-	@set -a; . ./.env; set +a; $(BRIDGE_COMPOSE) up --build
+bridge: env-check ## Sobe a stack base em Docker bridge (sem overrides de dev)
+	@set -a; . ./.env; set +a; $(BRIDGE_RUNTIME_ENV) $(BRIDGE_COMPOSE) up --build
 
-bridge-d: env-check ## Sobe a stack usando Docker bridge em background
-	@set -a; . ./.env; set +a; $(BRIDGE_COMPOSE) up --build -d
+bridge-d: env-check ## Sobe a stack base em Docker bridge em background
+	@set -a; . ./.env; set +a; $(BRIDGE_RUNTIME_ENV) $(BRIDGE_COMPOSE) up --build -d
+
+host: env-check ## Sobe stack com overlay host explícito (modo legado)
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(HOST_COMPOSE) up --build
+
+host-d: env-check ## Sobe stack com overlay host explícito em background
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(HOST_COMPOSE) up --build -d
 
 down: ## Para e remove containers da stack dev
 	@$(COMPOSE) down --remove-orphans

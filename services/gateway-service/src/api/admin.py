@@ -2,7 +2,7 @@
 API endpoints para o painel administrativo
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from datetime import datetime, timedelta
 import logging
 import os
@@ -75,6 +75,16 @@ class KnowledgeDocumentContentRequest(BaseModel):
     content_type: str = "txt"
     section: Optional[str] = None
     ingested_by: Optional[str] = None
+
+class KnowledgeRetrievalRequest(BaseModel):
+    query: str
+    chat_id: Optional[str] = None
+    prompt_key: Optional[str] = None
+    prompt_version: Optional[int] = None
+    allowed_scopes: list[str] = Field(default_factory=list)
+    language: Optional[str] = None
+    top_k: int = Field(default=6, ge=1, le=20)
+    trace_id: Optional[str] = None
 
 async def _call_knowledge_service(method: str, path: str, **kwargs):
     """Forward an Admin request to the internal Knowledge Service."""
@@ -192,6 +202,43 @@ async def update_knowledge_document_status(
 async def list_knowledge_audit_events():
     """List Knowledge Service audit events through the protected Admin API."""
     return await _call_knowledge_service("GET", "/api/v1/audit/events")
+
+@router.post("/knowledge/retrieve", dependencies=[Depends(require_admin_permission("write"))])
+async def retrieve_knowledge_for_admin(request: KnowledgeRetrievalRequest):
+    """Exercise the Knowledge retrieval contract through the protected Admin API."""
+    return await _call_knowledge_service(
+        "POST",
+        "/api/v1/retrieve",
+        json=request.model_dump(),
+    )
+
+@router.post("/knowledge/documents/{document_id}/upload", dependencies=[Depends(require_admin_permission("write"))])
+async def upload_knowledge_document_file(
+    document_id: str,
+    file: UploadFile = File(...),
+    section: Optional[str] = Form(default=None),
+    ingested_by: Optional[str] = Form(default=None),
+):
+    """Upload one raw file and forward it to the Knowledge Service extraction route."""
+    file_bytes = await file.read()
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.post(
+                f"{SERVICE_URLS['knowledge']}/api/v1/documents/{document_id}/upload",
+                files={"file": (file.filename, file_bytes, file.content_type)},
+                data={
+                    "section": section or "",
+                    "ingested_by": ingested_by or "",
+                },
+            )
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=503, detail=f"Knowledge Service indisponível: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    return response.json()
 
 @router.get("/conversations")
 async def get_conversations_list(

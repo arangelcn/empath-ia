@@ -14,6 +14,7 @@ from ..models.knowledge import (
     RetrievalResponse,
 )
 from .chunking_service import SemanticChunkingService
+from .file_ingestion_service import KnowledgeFileIngestionService
 
 
 class KnowledgeDocumentService:
@@ -31,6 +32,7 @@ class KnowledgeDocumentService:
         self._chunks: Dict[str, List[KnowledgeChunk]] = {}
         self._audit_events: List[dict] = []
         self._chunking_service = SemanticChunkingService()
+        self._file_ingestion_service = KnowledgeFileIngestionService()
 
     def create_document(self, payload: KnowledgeDocumentCreate) -> KnowledgeDocument:
         """Register a document and keep it in `draft` until Admin advances it."""
@@ -90,6 +92,66 @@ class KnowledgeDocumentService:
             },
         )
         return document
+
+    def ingest_uploaded_file(
+        self,
+        document_id: str,
+        filename: str,
+        file_bytes: bytes,
+        content_type: Optional[str],
+        section: Optional[str],
+        ingested_by: Optional[str],
+    ) -> Optional[dict]:
+        """Extract text from one uploaded file and ingest it into the document."""
+        document = self._documents.get(document_id)
+        if not document:
+            return None
+
+        extracted_upload = self._file_ingestion_service.extract_upload(
+            document_id=document_id,
+            filename=filename,
+            content_type=content_type,
+            file_bytes=file_bytes,
+        )
+
+        if not document.source_uri:
+            document.source_uri = extracted_upload.stored_uri
+        document.updated_at = datetime.utcnow()
+        self._documents[document_id] = document
+
+        indexed_document = self.ingest_document_content(
+            document_id=document_id,
+            payload=DocumentContentIngest(
+                content=extracted_upload.content,
+                content_type=extracted_upload.content_type,
+                section=section,
+                ingested_by=ingested_by,
+            ),
+        )
+
+        self._record_audit_event(
+            action="document.file_uploaded",
+            document_id=document_id,
+            actor=ingested_by,
+            details={
+                "filename": extracted_upload.original_filename,
+                "stored_uri": extracted_upload.stored_uri,
+                "byte_size": extracted_upload.byte_size,
+                "content_type": extracted_upload.content_type.value,
+                "section": section,
+            },
+        )
+
+        return {
+            "document": indexed_document,
+            "upload": {
+                "filename": extracted_upload.original_filename,
+                "stored_uri": extracted_upload.stored_uri,
+                "byte_size": extracted_upload.byte_size,
+                "content_type": extracted_upload.content_type.value,
+                "extracted_characters": len(extracted_upload.content),
+            },
+        }
 
     def list_documents(
         self,
@@ -198,6 +260,6 @@ class KnowledgeDocumentService:
                 "document_id": document_id,
                 "actor": actor,
                 "details": details,
-                "created_at": datetime.utcnow()_audit_events.isoformat(),
+                "created_at": datetime.utcnow().isoformat(),
             }
         )

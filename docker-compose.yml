@@ -173,6 +173,7 @@ services:
     volumes:
       - ./services/emotion-service:/app
       - ./data/shared:/shared_data
+      - ./data/emotion_models/deepface:/root/.deepface
     ports:
       - "${EMOTION_SERVICE_PORT:-8003}:8003"
     networks:
