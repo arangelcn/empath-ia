@@ -182,8 +182,8 @@ function SuggestionToggleGroup({ label, options, value, onToggle, helperText }) 
               type="button"
               onClick={() => onToggle(option)}
               className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${active
-                  ? 'border-sky-300 bg-sky-50 text-sky-700'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                ? 'border-sky-300 bg-sky-50 text-sky-700'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
                 }`}
             >
               {option}
@@ -202,8 +202,8 @@ function CreateTab({ id, label, icon: Icon, active, onClick }) {
       type="button"
       onClick={() => onClick(id)}
       className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${active
-          ? 'bg-slate-950 text-white shadow-sm'
-          : 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+        ? 'bg-slate-950 text-white shadow-sm'
+        : 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
         }`}
     >
       <Icon className="h-4 w-4" />
@@ -844,8 +844,8 @@ export default function KnowledgeBase() {
                           if (file) setSelectedCreateFile(file);
                         }}
                         className={`rounded-2xl border-2 border-dashed p-8 transition ${isDragActiveCreate
-                            ? 'border-sky-400 bg-sky-50'
-                            : 'border-slate-300 bg-slate-50/70 hover:border-slate-400 hover:bg-slate-50'
+                          ? 'border-sky-400 bg-sky-50'
+                          : 'border-slate-300 bg-slate-50/70 hover:border-slate-400 hover:bg-slate-50'
                           }`}
                       >
                         <div className="flex flex-col items-center text-center">
@@ -987,8 +987,8 @@ export default function KnowledgeBase() {
                       key={document.document_id}
                       onClick={() => setSelectedDocumentId(document.document_id)}
                       className={`w-full rounded-xl border p-4 text-left transition ${isSelected
-                          ? 'border-sky-400 bg-sky-50/70 shadow-sm'
-                          : 'border-gray-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                        ? 'border-sky-400 bg-sky-50/70 shadow-sm'
+                        : 'border-gray-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                         }`}
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -1233,8 +1233,8 @@ export default function KnowledgeBase() {
                     onDragLeave={() => setIsDragActive(false)}
                     onDrop={handleDrop}
                     className={`rounded-2xl border-2 border-dashed p-6 transition ${isDragActive
-                        ? 'border-sky-400 bg-sky-50'
-                        : 'border-slate-300 bg-slate-50/70 hover:border-slate-400 hover:bg-slate-50'
+                      ? 'border-sky-400 bg-sky-50'
+                      : 'border-slate-300 bg-slate-50/70 hover:border-slate-400 hover:bg-slate-50'
                       }`}
                   >
                     <div className="flex flex-col items-center text-center">
@@ -1324,51 +1324,6 @@ export default function KnowledgeBase() {
                     </button>
                   </div>
                 </form>
-              </section>
-
-              {/* ── Generated chunks ──────────────────────────────────────── */}
-              <section className="card space-y-5 p-6">
-                <SectionHeader
-                  title="Generated chunks"
-                  description="Semantic chunks produced from the ingested content. These are the units future vector and lexical indexes will consume."
-                />
-                {detailsLoading ? (
-                  <LoadingState message="Loading chunks…" />
-                ) : chunks.length === 0 ? (
-                  <EmptyState
-                    title="No chunks yet"
-                    message="Ingest content to generate semantic chunks for this document."
-                  />
-                ) : (
-                  <div className="space-y-3">
-                    {chunks.map((chunk) => (
-                      <div key={chunk.chunk_id} className="rounded-xl border border-gray-200 p-4">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">{chunk.chunk_id}</p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              Section: {chunk.section || 'Not set'} · Indexed {formatDate(chunk.ingested_at)}
-                            </p>
-                          </div>
-                          <span className={`shrink-0 inline-flex rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset ${getStatusTone(chunk.status)}`}>
-                            {chunk.status}
-                          </span>
-                        </div>
-                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{chunk.content}</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">
-                            cohesion {chunk.quality?.cohesion_score ?? 0}
-                          </span>
-                          {(chunk.quality?.warnings || []).map((warning) => (
-                            <span key={warning} className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">
-                              {warning}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </section>
 
               {/* ── Retrieval lab ─────────────────────────────────────────── */}
