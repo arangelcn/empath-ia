@@ -8,7 +8,7 @@ import logging
 import os
 from typing import Dict, Optional, Any
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ..models.database import get_collection, get_database, get_therapeutic_sessions_collection
 from .auth import require_admin_permission
 from ..services.chat_service import ChatService
@@ -29,6 +29,7 @@ SERVICE_URLS = {
     "avatar": os.getenv("AVATAR_SERVICE_URL", "http://avatar-service:8002"),
     "emotion": os.getenv("EMOTION_SERVICE_URL", "http://emotion-service:8003"),
     "voice": os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004"),
+    "knowledge": os.getenv("KNOWLEDGE_SERVICE_URL", "http://knowledge-service:8005"),
 }
 
 # Instâncias dos serviços
@@ -52,6 +53,41 @@ class TherapeuticSessionUpdate(BaseModel):
     objective: Optional[str] = None
     initial_prompt: Optional[str] = None
     is_active: Optional[bool] = None
+
+class KnowledgeDocumentCreateRequest(BaseModel):
+    title: str
+    source: str
+    source_uri: Optional[str] = None
+    content_type: str = "txt"
+    language: str = "en"
+    tags: list[str] = Field(default_factory=list)
+    scopes: list[str] = Field(default_factory=list)
+    review_policy: Optional[str] = None
+    created_by: Optional[str] = None
+
+class KnowledgeDocumentStatusUpdateRequest(BaseModel):
+    status: str
+    updated_by: Optional[str] = None
+    reason: Optional[str] = None
+
+class KnowledgeDocumentContentRequest(BaseModel):
+    content: str
+    content_type: str = "txt"
+    section: Optional[str] = None
+    ingested_by: Optional[str] = None
+
+async def _call_knowledge_service(method: str, path: str, **kwargs):
+    """Forward an Admin request to the internal Knowledge Service."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.request(method, f"{SERVICE_URLS['knowledge']}{path}", **kwargs)
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=503, detail=f"Knowledge Service indisponível: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    return response.json()
 
 @router.get("/stats")
 async def get_dashboard_stats():
@@ -95,6 +131,67 @@ async def get_dashboard_stats():
     except Exception as e:
         logger.error(f"Erro ao obter estatísticas: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/knowledge/documents")
+async def list_knowledge_documents(
+    status: Optional[str] = None,
+    scope: Optional[str] = None,
+):
+    """List Knowledge Service documents through the protected Admin API."""
+    params = {}
+    if status:
+        params["status"] = status
+    if scope:
+        params["scope"] = scope
+    return await _call_knowledge_service("GET", "/api/v1/documents", params=params)
+
+@router.post("/knowledge/documents", dependencies=[Depends(require_admin_permission("write"))])
+async def create_knowledge_document(request: KnowledgeDocumentCreateRequest):
+    """Register a Knowledge Service document through the protected Admin API."""
+    return await _call_knowledge_service(
+        "POST",
+        "/api/v1/documents",
+        json=request.model_dump(),
+    )
+
+@router.get("/knowledge/documents/{document_id}")
+async def get_knowledge_document(document_id: str):
+    """Fetch one Knowledge Service document through the protected Admin API."""
+    return await _call_knowledge_service("GET", f"/api/v1/documents/{document_id}")
+
+@router.post("/knowledge/documents/{document_id}/content", dependencies=[Depends(require_admin_permission("write"))])
+async def ingest_knowledge_document_content(
+    document_id: str,
+    request: KnowledgeDocumentContentRequest,
+):
+    """Ingest extracted document text and generate chunks through the Admin API."""
+    return await _call_knowledge_service(
+        "POST",
+        f"/api/v1/documents/{document_id}/content",
+        json=request.model_dump(),
+    )
+
+@router.get("/knowledge/documents/{document_id}/chunks")
+async def list_knowledge_document_chunks(document_id: str):
+    """List generated Knowledge Service chunks through the protected Admin API."""
+    return await _call_knowledge_service("GET", f"/api/v1/documents/{document_id}/chunks")
+
+@router.patch("/knowledge/documents/{document_id}/status", dependencies=[Depends(require_admin_permission("write"))])
+async def update_knowledge_document_status(
+    document_id: str,
+    request: KnowledgeDocumentStatusUpdateRequest,
+):
+    """Update a Knowledge Service document status through the protected Admin API."""
+    return await _call_knowledge_service(
+        "PATCH",
+        f"/api/v1/documents/{document_id}/status",
+        json=request.model_dump(),
+    )
+
+@router.get("/knowledge/audit/events")
+async def list_knowledge_audit_events():
+    """List Knowledge Service audit events through the protected Admin API."""
+    return await _call_knowledge_service("GET", "/api/v1/audit/events")
 
 @router.get("/conversations")
 async def get_conversations_list(

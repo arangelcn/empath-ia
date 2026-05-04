@@ -1,292 +1,445 @@
 # Empat.IA Roadmap
 
-Este roadmap registra os próximos passos imediatos do produto. O foco é aproximar a experiência do app das IAs conversacionais atuais, dar mais controle ao usuário e tornar a personalização por nome consistente sem deixar a interface pesada.
+Este roadmap consolida a evolução do Empat.IA de uma IA conversacional com voz, emoção e sessões terapêuticas para uma plataforma de engenharia cognitiva local-first. O objetivo é elevar o projeto para um padrão de Staff AI Engineering: arquitetura agêntica, memória externa rastreável, avaliação quantitativa da empatia, segurança clínica e soberania de dados.
 
-## Prioridade 1: Menu lateral no app do usuário ✅
+> Princípio de produto: o Empat.IA é uma ferramenta de apoio emocional e reflexão, não um sistema de diagnóstico, prescrição ou substituição clínica. Toda evolução técnica deve preservar segurança, privacidade, rastreabilidade e linguagem não diretiva.
 
-- [x] Criar um shell autenticado com menu lateral para `/home`, `/chat` e futuras páginas do usuário.
-- [x] Exibir sessões/conversas recentes no menu lateral.
-- [x] Adicionar ação principal para continuar conversa, iniciar próxima sessão ou voltar à Home.
-- [x] Incluir atalho para Home, acesso único de perfil/configurações e Sair.
-- [x] Remover acesso a chat sem sessão; `/chat` redireciona para `/home`.
-- [x] Usar sidebar fixa em desktop e drawer/overlay em mobile.
-- [x] Garantir que a navegação use `chat_id` opaco e preserve isolamento por usuário no gateway/banco.
+## Estado Atual
 
-Arquivos principais:
+Já foram entregues as bases de experiência e infraestrutura que sustentam as próximas fases:
+
+- [x] Shell autenticado com sidebar, Home, Chat e sessões recentes.
+- [x] Isolamento por usuário usando `chat_id` opaco e sessão terapêutica separada.
+- [x] Perfil inicial com nome exibido e preferência de voz.
+- [x] Onboarding pós-Google OAuth para capturar nome completo quando ausente.
+- [x] Admin sem mocks silenciosos nas telas principais.
+- [x] Emotion Service estabilizado como sinal auxiliar, não diagnóstico.
+- [x] Streaming de voz v1 com SSE no Gateway, tokens em streaming no AI Service e áudio incremental no Voice Service.
+- [x] Gemma/GGUF local validado como provider padrão para streaming.
+- [x] Fallback operacional para OpenAI, TTS batch e respostas curtas de voz.
+
+Arquivos centrais já afetados:
 
 - `apps/web-ui/src/App.jsx`
 - `apps/web-ui/src/components/Layout/AuthenticatedShell.jsx`
 - `apps/web-ui/src/components/Home/HomeScreen.jsx`
 - `apps/web-ui/src/components/Chat/ChatScreen.tsx`
-- `docs/FRONTEND.md`
-
-## Prioridade 2: Dados pessoais e configurações rápidas ✅
-
-- [x] Trocar os placeholders inferiores da sidebar por uma área compacta de conta.
-- [x] Exibir na parte inferior da sidebar: avatar/inicial, nome exibido ou email, um único botão de ícone para "Perfil e voz" e botão "Sair".
-- [x] Criar uma experiência simples para "Perfil e voz" em página leve autenticada.
-- [x] Exibir email/username técnico, nome de exibição e voz preferida.
-- [x] Permitir editar nome de exibição e voz preferida.
-- [x] Manter configurações avançadas fora desta etapa; foco em identidade e voz.
-- [x] Salvar alterações no perfil/preferências do usuário via gateway.
-- [x] Mostrar feedback de carregamento, sucesso e erro.
-
-Direção de UX:
-
-- A sidebar deve continuar limpa: navegação e sessões em cima/meio, conta e saída no rodapé, sem bloco de progresso.
-- "Dados pessoais" e "Configurações" podem ser consolidados em um único acesso inicial chamado "Perfil e voz".
-- O acesso a "Perfil e voz" pode ser apenas um botão de ícone no rodapé da sidebar.
-- A escolha de voz deve ser uma lista simples com estado selecionado, sem fluxo longo de onboarding.
-- Em mobile, o acesso deve abrir bem como drawer/tela curta, sem quebrar a navegação do chat.
-
-Campos iniciais sugeridos:
-
-| Campo | Uso |
-|---|---|
-| `username` | Identificador técnico, hoje baseado no email/Google. |
-| `email` | Conta autenticada via Google, quando disponível. |
-| `full_name` | Nome completo informado pelo usuário. |
-| `display_name` | Nome usado na interface e na personalização da IA. Pode derivar de `full_name`. |
-| `selected_voice` | Voz TTS preferida. |
-
-Arquivos prováveis:
-
-- `apps/web-ui/src/App.jsx`
-- `apps/web-ui/src/components/Layout/AuthenticatedShell.jsx`
-- `apps/web-ui/src/components/Profile/ProfileVoicePage.jsx`
-- `apps/web-ui/src/services/api.js`
-- `services/gateway-service/src/api/`
-- `services/gateway-service/src/services/`
-- `docs/TECHNICAL.md`
-
-Critérios de aceite:
-
-- Usuário acessa "Perfil e voz" pela parte inferior da sidebar.
-- A sidebar mostra uma identidade mínima do usuário sem ocupar espaço das sessões.
-- Usuário vê o email/username técnico, mas edita apenas nome exibido e voz.
-- Alterar voz atualiza a preferência usada nas próximas conversas.
-- Feedback de sucesso/erro aparece sem redirecionar o usuário para fora do fluxo atual.
-
-## Prioridade 3: Nome completo no login/onboarding ✅
-
-- [x] Depois do Google OAuth, verificar se o perfil já possui `full_name` ou `display_name`.
-- [x] Se estiver ausente, pedir o nome completo antes de concluir o onboarding.
-- [x] Persistir o nome completo no perfil do usuário.
-- [x] Manter `username`/email como identificador técnico e não usar nome completo em `session_id`.
-- [x] Passar `display_name` para Home e Chat.
-- [x] Incluir `display_name` no contexto enviado à IA para que ela chame o usuário pelo nome.
-- [x] Tratar usuários existentes sem quebrar sessões antigas.
-
-Critérios de aceite:
-
-- Usuário novo faz login, informa nome completo e chega à Home com o nome correto.
-- Usuário existente sem nome completo recebe o pedido uma única vez.
-- Usuário existente com nome salvo não repete o fluxo.
-- Chat usa o nome salvo em textos de interface e contexto de personalização.
-- Email/username continua sendo usado para autenticação, queries e isolamento de sessão.
-
-## Próximas etapas: voz primeiro, depois Prompt Control e RAG
-
-Com a Prioridade 4 concluída e o Emotion Service estabilizado, a ordem prática foi ajustada: antes de avançar no RAG e em LLMOps completos, priorizamos o modo de voz de baixa latência. A razão foi de produto: a experiência conversacional depende primeiro de a IA responder e falar sem esperar o texto inteiro.
-
-O que mudou na ordem:
-
-- **Prioridade 7 foi antecipada e implementada em v1**: streaming SSE no Gateway, tokens em streaming no AI Service, Gemma local como provider padrão, GCP Chirp 3 HD para áudio PCM em streaming e fallback batch por trecho.
-- **Prioridade 5 continua necessária**: Prompt Control ainda precisa de versionamento forte, auditoria e testes, mas já existe fallback seguro para `voice_short_response`.
-- **Prioridade 6 segue pendente**: RAG/Admin foi deliberadamente pulado nesta rodada. Ele continua importante, mas não deve bloquear a estabilização do fluxo de voz.
-
-## Prioridade 4: Ajustes do Admin ✅
-
-- [x] Auditar telas do Admin para identificar dados mockados, fallbacks silenciosos e endpoints ainda inexistentes.
-- [x] Mapear cada tela para contrato real de API: Dashboard, Usuários, Sessões, Conversas, Prompts, Analytics, Status e Configurações.
-- [x] Substituir mocks por estados explícitos de carregamento, vazio, erro e indisponibilidade do backend.
-- [x] Garantir autenticação consistente no Admin usando o mesmo padrão de token/headers das rotas protegidas.
-- [x] Validar permissões mínimas para separar ações administrativas de leitura, edição e operação sensível.
-- [x] Registrar lacunas de backend em issues/tarefas pequenas antes de iniciar grandes refactors de UI.
-
-Arquivos prováveis:
-
-- `apps/admin-panel/src/pages/Dashboard.js`
-- `apps/admin-panel/src/pages/UserManagement.js`
-- `apps/admin-panel/src/pages/SessionManagement.js`
-- `apps/admin-panel/src/pages/Conversations.js`
-- `apps/admin-panel/src/pages/PromptManagement.js`
-- `apps/admin-panel/src/pages/Analytics.js`
-- `apps/admin-panel/src/pages/SystemStatus.js`
-- `apps/admin-panel/src/services/api.js`
-- `services/gateway-service/src/api/`
-- `docs/TECHNICAL.md`
-
-Critérios de aceite:
-
-- Admin deixa claro quando um dado é real, vazio ou indisponível.
-- Dashboard e páginas principais não usam dados simulados como se fossem produção.
-- Falhas de API são visíveis e acionáveis, sem mascarar problemas com métricas falsas.
-- Cada tela possui contrato documentado e endpoint correspondente ou tarefa técnica aberta.
-
-## Pós-Prioridade 4: Emotion Service estabilizado ✅
-
-- [x] Ajustar dependências e inicialização do Emotion Service para reduzir falhas de runtime.
-- [x] Corrigir integração DeepFace/OpenFace e compatibilidade do processador facial.
-- [x] Manter política de GPU clara: AI Service como dono padrão da GPU e Emotion Service operando em CPU quando necessário.
-- [x] Preservar o Emotion Service como sinal auxiliar de experiência, não como diagnóstico clínico.
-- [x] Conectar análise emocional ao histórico/contexto sem quebrar isolamento por usuário e sessão.
-
-Critérios de aceite:
-
-- Emotion Service sobe de forma previsível no ambiente local/containerizado.
-- Falhas de análise emocional degradam a experiência de forma controlada.
-- O gateway consegue registrar/consultar sinais emocionais sem depender de dados simulados.
-- Documentação continua deixando claro que emoção detectada não equivale a diagnóstico.
-
-## Prioridade 5: Controle de Prompts e LLMOps
-
-- [ ] Separar endpoints administrativos de prompts em namespace protegido, por exemplo `/api/admin/prompts`, ou adicionar autenticação service-to-service para manter `/api/prompts` seguro.
-- [ ] Criar versionamento de prompts: versão, status, autor, data de publicação, changelog, tags e motivo da alteração.
-- [ ] Diferenciar estados operacionais: rascunho, em revisão, ativo, arquivado e rollback disponível.
-- [ ] Registrar em cada resposta da IA: `prompt_key`, `prompt_version`, modelo, provedor, latência, fallback e flags de segurança.
-- [ ] Adicionar preview/teste de prompt no Admin com variáveis reais/sintéticas controladas.
-- [ ] Criar suite mínima de regressão para prompts críticos: segurança, tom Rogeriano, não diagnóstico, crise, voz e continuidade de sessão.
-- [ ] Criar metadados mínimos de segurança por resposta: nível de risco, categorias, necessidade de revisão e motivo resumido.
-- [ ] Permitir comparação entre versões de prompt com resultado esperado, resultado obtido e observações de revisão.
-- [ ] Mapear variáveis permitidas por prompt para evitar interpolação livre e vazamento de dados sensíveis.
-- [ ] Definir prompts por contexto de uso: chat, voz, geração de sessão, resumo, fallback, análise, RAG e crise.
-- [ ] Criar trilha de auditoria para criação, edição, ativação, arquivamento e rollback.
-
-Arquivos prováveis:
-
-- `apps/admin-panel/src/pages/PromptManagement.js`
-- `apps/admin-panel/src/services/api.js`
+- `apps/web-ui/src/hooks/useStreamingAudioQueue.js`
+- `apps/admin-panel/src/pages/`
 - `services/gateway-service/src/main.py`
-- `services/gateway-service/src/api/admin.py`
+- `services/gateway-service/src/services/chat_service.py`
 - `services/gateway-service/src/services/prompt_service.py`
 - `services/ai-service/src/services/openai_service.py`
-- `services/gateway-service/src/services/chat_service.py`
+- `services/ai-service/src/services/local_llm_service.py`
+- `services/voice-service/src/`
+- `services/emotion-service/src/`
 - `docs/TECHNICAL.md`
+- `docs/FRONTEND.md`
 
-Critérios de aceite:
+## Norte Técnico
 
-- Admin diferencia prompt em rascunho, ativo, arquivado e versão anterior.
-- Toda resposta gerada pela IA pode ser rastreada até a versão de prompt usada.
-- Mudanças de prompt têm auditoria, revisão mínima e caminho de rollback.
-- Prompts críticos têm testes de regressão antes de serem ativados.
-- Respostas sensíveis possuem metadados suficientes para avaliação e revisão administrativa.
-- O AI Service não depende de strings hardcoded para comportamento principal quando houver prompt ativo no banco.
+A próxima versão deve priorizar quatro linhas de evolução:
 
-## Prioridade 6: Pipeline RAG pelo Admin
+- **Memória externa e dados contextuais:** transformar o RAG básico em um backbone de conhecimento, sessão e emoção.
+- **Arquitetura cognitiva:** sair de fluxo linear para grafo de estados com reflexão, checkpointing e políticas de segurança.
+- **Evals-first:** validar tom Rogeriano, empatia percebida, grounding e segurança com métricas e golden sets.
+- **Industrialização local-first:** servir modelos locais com baixa latência, governança, privacidade e red teaming contínuo.
 
-> Status: pendente. Esta prioridade foi adiada para permitir a entrega do fluxo de voz em baixa latência primeiro.
+## Track 0: Fundação Arquitetural do Sistema RAG
 
-- [ ] Definir modelo de dados para base de conhecimento: documento, versão, fonte, status, tags, idioma, escopo e responsável.
-- [ ] Criar fluxo de upload no Admin para PDFs, Markdown, TXT e materiais estruturados.
-- [ ] Implementar validação de arquivo: tipo, tamanho, duplicidade, metadados mínimos e política de privacidade.
-- [ ] Criar pipeline de ingestão: extração de texto, limpeza, chunking, embeddings, indexação vetorial e auditoria.
-- [ ] Expor status do processamento no Admin: pendente, processando, indexado, falhou, arquivado.
-- [ ] Permitir revisão/ativação manual de materiais antes de ficarem disponíveis para o assistente.
-- [ ] Integrar recuperação ao AI Service de forma model-agnostic, para funcionar com OpenAI ou modelo local.
-- [ ] Registrar citações/metadados de origem nas respostas quando conhecimento aprovado for usado.
-- [ ] Adicionar avaliação mínima de grounding para evitar respostas desconectadas dos documentos.
-- [ ] Conectar RAG ao Prompt Control: prompts devem declarar quando podem recuperar conhecimento, qual escopo podem consultar e como citar fontes.
-- [ ] Definir política de expiração/revisão de documentos para impedir conhecimento obsoleto em respostas sensíveis.
+Objetivo: definir a arquitetura do novo sistema de conhecimento antes de implementar chunking, embeddings e recuperação. O RAG deve ser controlável pelo Admin, auditável por documento/chunk/versão e desacoplado o suficiente para evoluir sem tornar o AI Service um monólito de ingestão, busca e geração.
+
+### Tarefa 0.1: Decisão de Arquitetura do Knowledge/RAG Service
+
+- [x] Avaliar arquitetura dedicada para um novo `knowledge-service` ou `rag-service`.
+- [x] Definir ownership claro entre Gateway, AI Service, Admin Panel, banco de metadados, vector store e fila de processamento.
+- [x] Separar fluxos de ingestão/indexação dos fluxos de recuperação usados durante o chat.
+- [x] Definir contratos internos: upload, validação, aprovação, ingestão, indexação, busca, re-ranking, auditoria e rollback.
+- [x] Decidir estratégia local-first de vector store e busca lexical, priorizando operação local e rastreável.
 
 Arquivos prováveis:
 
+- `services/knowledge-service/`
+- `services/gateway-service/src/api/admin.py`
+- `services/gateway-service/src/services/knowledge_client_service.py`
+- `services/ai-service/src/services/rag_client_service.py`
 - `apps/admin-panel/src/pages/`
 - `apps/admin-panel/src/services/api.js`
+- `docker-compose.yml`
+- `docs/TECHNICAL.md`
+- `docs/architecture/KNOWLEDGE_SERVICE.md`
+
+Critérios de aceite:
+
+- Existe decisão documentada sobre criar ou não um microserviço dedicado.
+- O Admin controla documentos, versões, status, escopos, reprocessamento e ativação.
+- O AI Service consome contexto recuperado por contrato interno, sem possuir o pipeline de ingestão.
+- Cada uso de RAG em resposta é rastreável até documento, versão, seção, chunk e scores.
+
+### Tarefa 0.2: Admin Control Plane para Conhecimento
+
+- [x] Criar modelo administrativo para documentos: título, fonte, versão, idioma, tags, escopo, status, responsável e política de revisão.
+- [x] Definir estados operacionais: rascunho, aguardando validação, processando, indexado, aprovado, ativo, falhou, arquivado e substituído.
+- [x] Permitir ingestão inicial de TXT, Markdown e conteúdo estruturado já extraído sem ativação automática.
+- [x] Expor ações administrativas de lifecycle: aprovar, ativar, desativar, arquivar e revisar chunks.
+- [x] Registrar auditoria de quem alterou documento, status, escopo e política de uso.
+- [ ] Adicionar upload binário e extração nativa para PDF, Markdown e TXT.
+- [ ] Adicionar comparação visual de versões e reprocessamento assíncrono com fila.
+
+Arquivos prováveis:
+
+- `apps/admin-panel/src/pages/KnowledgeBase.js`
+- `apps/admin-panel/src/pages/KnowledgeDocuments.js`
+- `apps/admin-panel/src/services/api.js`
 - `services/gateway-service/src/api/admin.py`
-- `services/ai-service/src/services/`
-- `services/ai-service/src/services/rag_service.py`
-- `services/ai-service/src/services/embedding_service.py`
+- `services/gateway-service/src/models/database.py`
 - `docs/TECHNICAL.md`
 
 Critérios de aceite:
 
-- Admin consegue cadastrar e acompanhar documentos da base de conhecimento.
-- Documentos só entram no índice após validação e aprovação explícita.
-- Assistente consegue recuperar conhecimento aprovado sem depender do provedor do LLM.
-- Respostas que usam RAG preservam fonte, versão e rastreabilidade.
-- Recuperação é desativável por prompt/contexto e não vira comportamento global invisível.
-- Existe avaliação mínima para medir grounding, citação correta e ausência de resposta inventada.
+- Nenhum documento entra no escopo do assistente sem aprovação explícita no Admin.
+- O Admin mostra status real de processamento, erro, warnings de baixa coesão e data de última indexação.
+- Operações sensíveis têm autenticação administrativa, auditoria e rollback possível.
 
-## Prioridade 7 - Voice Service e Baixa Latência ✅ v1
+### Tarefa 0.3: Contratos de Recuperação para Chat e Prompts
 
-Esta prioridade foi antecipada em relação ao RAG. A v1 moveu o modo de voz de um fluxo síncrono (`LLM completo → MP3 completo → download → play`) para um fluxo incremental com SSE, Gemma local em streaming, chunking por frase no Gateway e GCP Chirp 3 HD para áudio PCM em streaming.
+- [x] Definir contrato interno para quando o AI Service solicita recuperação de conhecimento.
+- [x] Modelar política RAG de Prompt Control: habilitado, escopos, `top_k`, confiança mínima, citações e fallback.
+- [x] Definir resposta interna de retrieval com chunks, scores, metadados, trechos citáveis e motivos de recuperação.
+- [x] Registrar tentativa de retrieval para auditoria administrativa.
+- [x] Definir comportamento seguro quando o RAG falhar, retornar baixa confiança ou não encontrar fonte adequada.
+- [ ] Conectar o AI Service ao endpoint `/api/v1/retrieve` em runtime.
 
-## 🎯 Objetivo
-Reduzir a latência percebida, permitindo que texto e áudio comecem antes do fim da resposta completa da IA. A meta ideal de primeiro áudio `< 800ms` continua como alvo de otimização, mas a validação local atual confirmou streaming funcional ponta a ponta.
+Arquivos prováveis:
 
-Validação local registrada:
+- `services/gateway-service/src/services/prompt_service.py`
+- `services/gateway-service/src/services/chat_service.py`
+- `services/ai-service/src/services/openai_service.py`
+- `services/ai-service/src/services/rag_client_service.py`
+- `docs/TECHNICAL.md`
 
-- AI Service `/openai/chat/stream` com Gemma local: `provider=local`, `model=gemma4:e4b`, múltiplos `text_delta`, primeiro delta em ~993ms.
-- Gateway `/api/chat/send-stream`: `provider=local`, `model=gemma4:e4b`, `text_delta` + `audio_chunk`, primeiro texto em ~1070ms, primeiro áudio em ~1742ms.
-- Voice Service `/api/v1/synthesize-stream`: GCP Chirp 3 HD funcionando com `x-voice-used: pt-BR-Chirp3-HD-Orus`, PCM 24kHz.
+Critérios de aceite:
 
----
+- O uso de RAG não é global nem invisível; ele depende de prompt, escopo e contexto.
+- Falhas de retrieval degradam com segurança e não inventam fonte.
+- Respostas com RAG incluem rastreabilidade suficiente para auditoria administrativa.
 
-### 🛠️ Prioridade 7
+## Track 1: Engenharia de Contexto e Backbone de Dados
 
-- [x] **Medição de Baseline**
-    - [x] Instrumentar latência ponta a ponta com `trace_id` no frontend, gateway, geração LLM, TTS e reprodução.
-    - [x] Separar métricas de TTS, STT/reconhecimento no frontend, rede, tamanho da resposta e tempo de primeira reprodução.
-    - [x] Registrar baseline técnico inicial em ambiente local com credenciais GCP.
-    - [ ] Registrar baseline manual antes/depois com 5 interações reais de produto.
+Objetivo: transformar o RAG em um sistema de memória externa que respeite a densidade teórica da psicologia humanista e preserve rastreabilidade.
 
-- [x] **Otimização de Prompt e Contexto**
-    - [x] Implementar modo de resposta curta para voz no AI Service via Prompt Control (`voice_short_response`) com fallback hardcoded seguro.
-    - [x] Configurar limites de tokens e frases mais naturais para áudio (menos listas, mais prosa).
-    - [x] Ajustar personalização para usar somente primeiro nome como forma de tratamento, nunca nome completo/sobrenome.
+### Tarefa 1.1: Chunking Semântico Adaptativo
 
-- [x] **Arquitetura de Streaming (GCP TTS)**
-    - [x] **AI Service:** Habilitar `stream=True` na OpenAI e no modelo local `llama-cpp-python`, usando `Async Generators`.
-    - [x] **Chunking:** Criar buffer no Gateway para agrupar tokens em sentenças completas (antes de enviar ao TTS).
-    - [x] **Voice Service:** Implementar `StreamingResponse` utilizando a API de streaming do Google Cloud TTS.
-    - [x] **Gateway:** Criar endpoint paralelo de chat por Server-Sent Events (SSE) para entrega de texto/áudio em tempo real.
-    - [x] Corrigir fallback para não falar palavra por palavra: flush por tempo agora exige trecho mínimo falável.
+- [x] Substituir divisão por contagem fixa de caracteres por chunking hierárquico e semanticamente coeso.
+- [x] Usar `RecursiveCharacterTextSplitter` via `langchain-text-splitters`, com separadores por seção, parágrafo, frase e palavra.
+- [x] Validar coesão de chunks com heurística local antes da indexação.
+- [x] Evitar cortes óbvios no meio de citações e frases por heurística local.
+- [x] Registrar metadados por chunk: documento, versão, fonte, seção, idioma, hash e data de ingestão.
+- [ ] Adicionar validação específica para conceitos sensíveis e explicações teóricas de Carl Rogers.
 
-- [x] **Hibridismo e Modelos Locais**
-    - [x] Adicionar Piper como fallback local opcional por CLI (`TTS_LOCAL_PROVIDER=piper`).
-    - [x] Validar Gemma local como provider padrão do AI Service no streaming.
-    - [ ] Comparar candidatos TTS/LLM por idioma pt-BR, qualidade, privacidade e tempo de resposta em ambiente real.
-    - [x] Documentar trade-offs entre local, cloud e híbrido.
+Arquivos prováveis:
 
-- [x] **Resiliência e Performance**
-    - [x] Adicionar cache seguro (Redis) para TTS de frases de acolhimento comuns e genéricas em allowlist.
-    - [x] Criar health/status do Voice Service com monitoramento de provedor ativo, streaming disponível e fallback local.
-    - [x] Garantir fallback seguro: se Chirp streaming falhar, áudio batch é gerado por trecho/frase e enfileirado no frontend.
+- `services/knowledge-service/src/services/chunking_service.py`
+- `services/knowledge-service/src/services/document_service.py`
+- `services/knowledge-service/src/models/knowledge.py`
+- `services/gateway-service/src/api/admin.py`
+- `apps/admin-panel/src/pages/`
+- `docs/TECHNICAL.md`
 
----
+Critérios de aceite:
 
-## 📂 Arquivos Impactados
+- Chunks preservam unidade semântica mínima em materiais longos.
+- Cada chunk é rastreável até documento, versão e seção de origem.
+- O pipeline rejeita ou marca chunks com baixa coesão.
 
-| Serviço | Caminho do Arquivo | Descrição da Alteração |
-| :--- | :--- | :--- |
-| **Voice Service** | `services/voice-service/src/` | Implementação do gRPC streaming do GCP. |
-| **Gateway** | `services/gateway-service/src/services/chat_service.py` | Lógica de chunking de texto e gestão de fluxo SSE. |
-| **AI Service** | `services/ai-service/src/services/openai_service.py` | Refatoração para suporte a stream de tokens. |
-| **AI Service** | `services/ai-service/src/services/local_llm_service.py` | Streaming real com Gemma/GGUF via `llama-cpp-python`. |
-| **Frontend** | `apps/web-ui/src/hooks/useStreamingAudioQueue.js` | Fila de reprodução (Audio Queue) para chunks PCM. |
-| **Docs** | `docs/TECHNICAL.md` | Atualização da arquitetura de eventos. |
+### Tarefa 1.2: Dados Multimodais com Pixeltable
 
----
+- [ ] Avaliar Pixeltable como camada declarativa para vincular logs textuais, embeddings e vetores emocionais.
+- [ ] Criar uma tabela de eventos conversacionais com `chat_id`, `message_id`, texto, timestamp, emoção detectada e confiança.
+- [ ] Conectar sinais do `emotion-service` ao histórico sem tratar emoção como diagnóstico.
+- [ ] Permitir consultas como "momentos de alta ansiedade", "desabafo" ou "mudança emocional na sessão".
+- [ ] Definir política de retenção e consentimento para dados emocionais multimodais.
 
-## ✅ Critérios de Aceite
-1. [x] Existe baseline técnico de latência documentado para o fluxo local.
-2. [x] Voice mode utiliza respostas curtas e adequadas à fala rítmica.
-3. [x] Gemma local foi validado como provider funcional em streaming.
-4. [x] O sistema não aguarda o fim da geração do LLM para iniciar texto/áudio.
-5. [x] Otimizações de voz respeitam regras de segurança e fallback de prompt.
-6. [ ] Medição manual com 5 interações reais antes/depois ainda precisa ser registrada.
+Arquivos prováveis:
 
-## Notas consolidadas
+- `services/emotion-service/src/`
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/models/database.py`
+- `services/ai-service/src/services/`
+- `docs/TECHNICAL.md`
 
-- Segurança mental: manter o assistente como apoio, sem diagnóstico, prescrição ou plano clínico autônomo. Casos de crise precisam de resposta segura, metadados de risco e revisão quando aplicável.
-- Avaliação: criar casos de regressão para prompts, segurança, grounding de RAG, voz e continuidade entre sessões antes de promover mudanças sensíveis.
-- RAG: usar somente conhecimento aprovado, versionado, revisável e citável. Recuperação deve ser escopo de prompt/contexto, não comportamento global invisível.
-- Voz: o fluxo streaming v1 já está implementado; próximas mudanças devem melhorar latência, qualidade e confiabilidade sem quebrar o fallback síncrono.
-- Modelos locais: Gemma local é o provider padrão validado para streaming; OpenAI continua como fallback operacional.
-- MCP/agentes: tratar como etapa futura. Só expor tools/resources depois de existir contrato de segurança, autenticação interna e isolamento por usuário/sessão.
+Critérios de aceite:
 
-## Checklist de validação
+- Eventos emocionais são associados a mensagens sem quebrar isolamento por usuário.
+- Consultas por emoção usam metadados, confiança e janela temporal.
+- Falha no Emotion Service degrada com segurança e não bloqueia o chat.
+
+### Tarefa 1.3: Recuperação Híbrida e Re-ranking Local
+
+- [ ] Combinar busca vetorial com BM25 para equilibrar semântica e termos exatos.
+- [ ] Adicionar re-ranking local com Cross-Encoder do Sentence-Transformers.
+- [ ] Filtrar top-k antes de inserir contexto no prompt.
+- [ ] Registrar score vetorial, score lexical, score final e fontes usadas.
+- [ ] Criar avaliação de grounding para medir citações corretas e ausência de resposta inventada.
+
+Arquivos prováveis:
+
+- `services/ai-service/src/services/rag_service.py`
+- `services/ai-service/src/services/embedding_service.py`
+- `services/gateway-service/src/services/prompt_service.py`
+- `services/gateway-service/src/services/chat_service.py`
+
+Critérios de aceite:
+
+- Recuperação híbrida melhora respostas para conceitos semânticos e termos específicos.
+- Respostas com RAG incluem fonte, versão e motivo de recuperação.
+- Prompt Control define quando RAG está habilitado e qual escopo pode ser consultado.
+
+## Track 2: Arquitetura Cognitiva e Orquestração Agêntica
+
+Objetivo: migrar o sistema de um fluxo linear para um grafo de estados capaz de decisão, reflexão, segurança e continuidade entre sessões.
+
+### Tarefa 2.1: Migração para LangGraph
+
+- [ ] Modelar a conversa como grafo de estados no `gateway-service`.
+- [ ] Definir `GraphState` com histórico, `chat_id`, sessão terapêutica, último estado emocional, risco detectado e metadados de prompt.
+- [ ] Criar nós para triagem, suporte Rogeriano, crise, recuperação de memória, resposta de voz e encerramento.
+- [ ] Adicionar transições explícitas para entradas de crise, pedidos médicos, baixa confiança e fallback.
+- [ ] Manter compatibilidade com o fluxo atual de chat e streaming.
+
+Arquivos prováveis:
+
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/agent_service.py`
+- `services/gateway-service/src/services/prompt_service.py`
+- `services/gateway-service/src/api/`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Cada resposta passa por um estado rastreável do grafo.
+- O grafo preserva streaming de texto e voz.
+- Estados de crise e segurança são explícitos e testáveis.
+
+### Tarefa 2.2: Loop de Reflexão Actor-Critic
+
+- [ ] Criar um "Agente Ator" para gerar resposta Rogeriana inicial.
+- [ ] Criar um "Agente Crítico" com rubricas de não diretividade, validação emocional, ausência de julgamento e segurança clínica.
+- [ ] Reescrever respostas quando a avaliação interna ficar abaixo do limiar configurado.
+- [ ] Registrar crítica interna, score, versão de rubrica e motivo do rewrite.
+- [ ] Impedir que o crítico exponha raciocínio interno ao usuário final.
+
+Arquivos prováveis:
+
+- `services/ai-service/src/services/local_llm_service.py`
+- `services/ai-service/src/services/openai_service.py`
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/eval_service.py`
+- `services/gateway-service/src/services/prompt_service.py`
+
+Critérios de aceite:
+
+- Respostas julgadoras, instrutivas ou prescritivas são detectadas antes de chegar ao usuário.
+- O rewrite melhora o score sem aumentar demais a latência.
+- A trilha de auditoria mostra prompt, modelo, score e versão da rubrica.
+
+### Tarefa 2.3: Memória Persistente e Checkpointing
+
+- [ ] Implementar checkpointing do grafo em SQLite, Redis ou MongoDB, conforme o desenho final.
+- [ ] Permitir retomada de conversa a partir de pontos relevantes sem expor dados de outro usuário.
+- [ ] Persistir padrões emocionais agregados entre sessões com consentimento e minimização de dados.
+- [ ] Adicionar "time travel" administrativo para revisão terapêutica autorizada.
+- [ ] Definir política de expiração, anonimização e exclusão de memória.
+
+Arquivos prováveis:
+
+- `services/gateway-service/src/models/database.py`
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/user_therapeutic_session_service.py`
+- `services/gateway-service/src/services/agent_checkpoint_service.py`
+- `apps/admin-panel/src/pages/Conversations.js`
+
+Critérios de aceite:
+
+- Checkpoints são retomáveis por `chat_id` e usuário autenticado.
+- Revisão administrativa respeita permissões.
+- Dados persistentes têm retenção e exclusão documentadas.
+
+## Track 3: Framework de Avaliação e Rigor Científico
+
+Objetivo: substituir validação manual por métricas quantitativas, testes de regressão e avaliação alinhada com segurança clínica.
+
+### Tarefa 3.1: Evals com DeepEval e Rubrica HEART
+
+- [ ] Implementar DeepEval para testes de tom, segurança, grounding, voz e continuidade.
+- [ ] Definir uma rubrica HEART interna: Human Alignment, Empathic Responsiveness, Attunement, Resonance e Task-Following.
+- [ ] Penalizar respostas que invalidam sentimentos, dão conselhos médicos indevidos, diagnosticam ou ignoram risco.
+- [ ] Rodar evals no CI para prompts críticos antes de ativação.
+- [ ] Publicar score mínimo por contexto: chat, voz, crise, resumo, RAG e fallback.
+
+Arquivos prováveis:
+
+- `tests/evals/`
+- `services/gateway-service/src/services/prompt_service.py`
+- `services/gateway-service/src/services/chat_service.py`
+- `services/ai-service/src/services/`
+- `.github/workflows/`
+
+Critérios de aceite:
+
+- Prompts críticos têm suíte automatizada.
+- Mudanças de prompt falham no CI quando reduzem segurança ou empatia.
+- Scores ficam ligados a `prompt_key`, `prompt_version`, modelo e provedor.
+
+### Tarefa 3.2: Calibração de LLM-as-a-Judge
+
+- [ ] Criar golden set com pelo menos 50 diálogos revisados por humanos qualificados.
+- [ ] Definir escala humana para empatia, não diretividade, segurança, grounding e clareza.
+- [ ] Ajustar prompts do juiz até atingir correlação de Spearman maior que `0.85` com notas humanas.
+- [ ] Comparar juiz remoto e juiz local quando possível.
+- [ ] Versionar golden set, prompts de juiz e resultados.
+
+Arquivos prováveis:
+
+- `tests/evals/golden_sets/`
+- `tests/evals/judges/`
+- `services/gateway-service/src/services/eval_service.py`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Existe relatório de calibração com correlação, amostra e limitações.
+- O juiz não é promovido sem concordância mínima com avaliação humana.
+- Casos sensíveis são revisados manualmente antes de virar golden set.
+
+### Tarefa 3.3: Score de Empatia Inspirado no BLRI
+
+- [ ] Implementar métrica de compreensão empática percebida inspirada no Barrett-Lennard Relationship Inventory.
+- [ ] Modelar 12 dimensões avaliadas em escala de `-3` a `+3`.
+- [ ] Calcular score agregado:
+
+```text
+E_score = sum(V_i for i in 1..12)
+```
+
+- [ ] Registrar dimensão, valor, justificativa curta e versão da rubrica.
+- [ ] Usar o score como sinal de qualidade, não como diagnóstico clínico.
+
+Arquivos prováveis:
+
+- `tests/evals/rubrics/`
+- `services/gateway-service/src/services/eval_service.py`
+- `apps/admin-panel/src/pages/Analytics.js`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- O score é reproduzível para o mesmo diálogo e mesma versão de juiz.
+- A métrica aparece em relatórios internos sem rotular o usuário.
+- O sistema documenta limitações e uso não clínico da métrica.
+
+## Track 4: Operações, Governança e Escala
+
+Objetivo: preparar o Empat.IA para uso confiável, seguro, eficiente e auditável em produção.
+
+### Tarefa 4.1: Model Serving com vLLM
+
+- [ ] Avaliar vLLM com PagedAttention para servir múltiplos usuários com baixa latência.
+- [ ] Comparar vLLM, `llama-cpp-python` e OpenAI fallback para custo, privacidade e latência.
+- [ ] Definir estratégia de quantização compatível com o hardware disponível, como AWQ ou GGUF.
+- [ ] Adicionar métricas de throughput, tempo até primeiro token, tokens por segundo e uso de memória.
+- [ ] Manter provider local como padrão quando qualidade e latência forem aceitáveis.
+
+Arquivos prováveis:
+
+- `services/ai-service/src/services/local_llm_service.py`
+- `services/ai-service/src/main.py`
+- `infrastructure/`
+- `docker-compose.yml`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- O AI Service suporta concorrência real sem degradar drasticamente a experiência.
+- A configuração de modelo local é documentada por hardware.
+- Fallback remoto continua disponível e auditável.
+
+### Tarefa 4.2: Gateway de Privacidade e Mascaramento de PII
+
+- [ ] Criar middleware de privacidade no `gateway-service`.
+- [ ] Detectar e mascarar PII antes de qualquer fallback externo.
+- [ ] Combinar Regex para padrões óbvios com NER local para nomes, endereços e entidades sensíveis.
+- [ ] Registrar quando houve mascaramento sem persistir o dado sensível em logs.
+- [ ] Avaliar LiteLLM Proxy apenas se ajudar governança sem reduzir controle local.
+
+Arquivos prováveis:
+
+- `services/gateway-service/src/main.py`
+- `services/gateway-service/src/middleware/`
+- `services/gateway-service/src/services/privacy_service.py`
+- `services/ai-service/src/services/openai_service.py`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Nenhum fallback externo recebe PII bruta quando mascaramento está habilitado.
+- Logs preservam auditoria sem vazar dados sensíveis.
+- O usuário mantém controle sobre dados persistidos e exclusão.
+
+### Tarefa 4.3: Red Teaming de Segurança Clínica
+
+- [ ] Automatizar ataques de prompt injection contra persona, segurança e limites clínicos.
+- [ ] Testar pedidos de diagnóstico, prescrição, automutilação, violência, manipulação emocional e conteúdo ilegal.
+- [ ] Validar que respostas preservam neutralidade, acolhimento e orientação segura.
+- [ ] Integrar casos de red team aos evals de regressão.
+- [ ] Criar painel administrativo de falhas críticas, severidade e status de correção.
+
+Arquivos prováveis:
+
+- `tests/evals/red_team/`
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/prompt_service.py`
+- `apps/admin-panel/src/pages/Analytics.js`
+- `.github/workflows/`
+
+Critérios de aceite:
+
+- Casos de red team rodam antes de ativar prompts ou modelos novos.
+- Falhas críticas bloqueiam deploy ou ativação de prompt.
+- Toda exceção de segurança tem severidade, dono e status.
+
+## Prioridades Operacionais Imediatas
+
+Ordem recomendada para execução:
+
+1. **Fundação arquitetural do RAG:** decidir `knowledge-service`/`rag-service`, contratos internos, vector store, auditoria e controle pelo Admin.
+2. **Prompt Control e LLMOps:** concluir versionamento, auditoria, rollback e testes mínimos para prompts críticos.
+3. **RAG/Admin:** implementar ingestão aprovada, chunking coeso, embeddings e rastreabilidade de fontes.
+4. **Evals-first:** criar golden set inicial e rubricas de segurança/empatia antes de expandir agentes.
+5. **LangGraph:** introduzir grafo de estados preservando compatibilidade com streaming e voz.
+6. **Privacidade e PII:** proteger fallback externo antes de aumentar uso de modelos remotos ou ferramentas.
+7. **Model serving local:** avaliar vLLM e concorrência depois que evals e segurança estiverem mensuráveis.
+
+## Métricas de Sucesso
+
+- Tempo até primeiro token em voz abaixo de `1s` em ambiente local otimizado.
+- Tempo até primeiro áudio abaixo de `1.5s` como meta inicial, com alvo futuro menor que `800ms`.
+- Correlação de Spearman maior que `0.85` entre juiz automático e avaliação humana no golden set.
+- Zero respostas com diagnóstico, prescrição médica ou instrução perigosa em testes críticos.
+- Respostas com RAG sempre rastreáveis por fonte, versão e chunk.
+- Prompts críticos sempre versionados, auditados e cobertos por regressão.
+- Fallback externo sempre precedido por política de privacidade e mascaramento de PII.
+
+## Notas de Segurança e Governança
+
+- O assistente deve manter postura Rogeriana: acolhimento, escuta, reflexão e não diretividade.
+- O sistema não deve inferir diagnóstico clínico a partir de texto, voz, rosto ou emoção detectada.
+- Emotion Service é sinal auxiliar de experiência, nunca fonte de decisão clínica autônoma.
+- RAG deve usar somente conhecimento aprovado, versionado e citável.
+- Memória persistente exige consentimento, retenção definida e mecanismo de exclusão.
+- Agentes, MCPs e tools só devem ser expostos depois de existir contrato de autenticação, autorização e isolamento por usuário/sessão.
+
+## Checklist Vivo de Validação
 
 - [x] Login Google para usuário novo.
 - [x] Login Google para usuário existente.
@@ -296,3 +449,10 @@ Validação local registrada:
 - [x] Abertura de sessão existente via sidebar.
 - [x] Início/finalização de sessão pela jornada terapêutica.
 - [x] Histórico e mensagens continuam isolados por usuário.
+- [x] Streaming local de texto com Gemma/GGUF.
+- [x] Streaming de áudio via Gateway e Voice Service.
+- [ ] Baseline manual com 5 interações reais antes/depois.
+- [ ] Suite mínima de evals para prompts críticos.
+- [ ] Golden set inicial com 50 diálogos.
+- [ ] Pipeline RAG com aprovação e fontes.
+- [ ] Mascaramento de PII antes de fallback externo.

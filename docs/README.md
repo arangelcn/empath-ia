@@ -13,6 +13,7 @@ Este diretório mantém apenas a documentação operacional do projeto. O README
 | [CODEBASE_MAP.md](CODEBASE_MAP.md) | Onde encontrar os principais arquivos e responsabilidades no código. |
 | [CONVENTIONS.md](CONVENTIONS.md) | Padrões de código, endpoints, componentes, banco, erros e commits. |
 | [AGENTS.md](AGENTS.md) | Guia rápido para agentes de desenvolvimento neste repositório. |
+| [architecture/KNOWLEDGE_SERVICE.md](architecture/KNOWLEDGE_SERVICE.md) | Decisão arquitetural do novo `knowledge-service` e do sistema RAG controlado pelo Admin. |
 
 ## Regra simples
 

@@ -30,10 +30,12 @@
 | `avatar-service` | 8002 | Python 3.11 + FastAPI | Proxy para DID.ai (avatares animados) |
 | `emotion-service` | 8003 | TensorFlow 2.13 GPU | Análise emocional facial (DeepFace, MediaPipe) e de vídeo |
 | `voice-service` | 8004 | Python 3.11 + FastAPI | Text-to-Speech via Google Cloud TTS; arquivos de áudio servidos via gateway |
+| `knowledge-service` | 8005 | Python 3.11 + FastAPI | Fundação do RAG controlado pelo Admin: lifecycle de documentos, contrato de retrieval, proveniência e futura indexação |
 | `web-ui` | 3000→7860 | Node 18 → nginx | Frontend principal do usuário (React + Vite) |
 | `admin-panel` | 3000→3001 | Node 18 → nginx | Painel administrativo do terapeuta (React + Vite) |
 | `mongodb` | 27017 | MongoDB 7 | Banco de dados principal |
 | `redis` | 6379 | Redis 7 | Cache e filas (AI service) |
+| `qdrant` | 6333 | Qdrant | Vector store local planejado para embeddings do Knowledge Service |
 
 ### Dependências entre serviços
 
@@ -44,10 +46,38 @@ gateway → ai-service:8001
 gateway → voice-service:8004
 gateway → emotion-service:8003
 gateway → avatar-service:8002
+gateway → knowledge-service:8005
 gateway → mongodb:27017
 ai-service → mongodb:27017
 ai-service → redis:6379
+knowledge-service → mongodb:27017
+knowledge-service → qdrant:6333
 ```
+
+### Decisão RAG / Knowledge Service
+
+O novo sistema de RAG será implementado como um microserviço interno dedicado, chamado `knowledge-service`, em vez de ficar embutido no `ai-service`.
+
+Referência arquitetural: [`architecture/KNOWLEDGE_SERVICE.md`](architecture/KNOWLEDGE_SERVICE.md).
+
+Resumo da decisão:
+
+- Admin Panel controla upload, revisão, aprovação, ativação, arquivamento, reindexação e auditoria.
+- Gateway mantém autenticação, autorização e roteamento das APIs administrativas.
+- Knowledge Service possui ingestão, chunking, embeddings, busca vetorial, busca lexical, re-ranking e proveniência.
+- AI Service consome contexto recuperado por contrato interno e continua focado em geração.
+- A primeira estratégia local-first combina MongoDB para metadados, Qdrant para vetores e SQLite FTS5 para busca lexical.
+
+Status atual da fundação:
+
+- `services/knowledge-service/` existe como microserviço FastAPI.
+- `GET /health` expõe estado operacional para Gateway/Admin.
+- `POST /api/v1/documents` registra documentos em estado `draft`.
+- `POST /api/v1/documents/{document_id}/content` recebe texto extraído e gera chunks semânticos rastreáveis com `langchain-text-splitters`.
+- `GET /api/v1/documents/{document_id}/chunks` permite revisar chunks antes de ativação.
+- `PATCH /api/v1/documents/{document_id}/status` move documentos pelo lifecycle administrativo.
+- `POST /api/v1/retrieve` já define o contrato de recuperação usado futuramente pelo AI Service.
+- O Gateway expõe proxy protegido em `/api/admin/knowledge/*`.
 
 ---
 
@@ -123,6 +153,18 @@ Copie `.env.example` para `.env`. Variáveis marcadas com ⚠️ são obrigatór
 | `AI_SERVICE_URL` | URL interna do AI service. Padrão: `http://ai-service:8001` |
 | `VOICE_SERVICE_URL` | URL interna do Voice service. Padrão: `http://voice-service:8004` |
 | `EMOTION_SERVICE_URL` | URL interna do Emotion service. Padrão: `http://emotion-service:8003` |
+| `KNOWLEDGE_SERVICE_URL` | URL interna do Knowledge service. Padrão: `http://knowledge-service:8005` |
+
+### Knowledge Service
+
+| Variável | Descrição |
+|----------|-----------|
+| `KNOWLEDGE_SERVICE_PORT` | Porta do Knowledge Service. Padrão: `8005`. |
+| `KNOWLEDGE_STORAGE_BACKEND` | Backend atual de metadados. Fundação inicial: `in-memory`. |
+| `KNOWLEDGE_STORAGE_DIR` | Diretório para artefatos locais de conhecimento. Padrão: `/knowledge_data`. |
+| `KNOWLEDGE_LEXICAL_INDEX` | Estratégia de índice lexical. Fundação inicial: `sqlite-fts5-planned`. |
+| `QDRANT_URL` | URL interna do Qdrant para o futuro vector store. Padrão: `http://qdrant:6333`. |
+| `QDRANT_PORT` | Porta local do Qdrant em desenvolvimento. Padrão: `6333`. |
 
 ### DID (Avatares — opcional)
 
@@ -788,4 +830,4 @@ No Docker Compose, `VITE_GOOGLE_CLIENT_ID` é passado como build arg a partir de
 
 ---
 
-*Última atualização: Abril 2026*
+*Última atualização: Maio 2026*

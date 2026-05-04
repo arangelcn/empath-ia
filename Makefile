@@ -15,9 +15,9 @@ BRIDGE_FILES := -f docker-compose.yml -f docker-compose.dev.yml
 COMPOSE := docker compose $(COMPOSE_FILES)
 BRIDGE_COMPOSE := docker compose $(BRIDGE_FILES)
 
-BACKEND_SERVICES := gateway ai-service avatar-service emotion-service voice-service
+BACKEND_SERVICES := gateway ai-service avatar-service emotion-service voice-service knowledge-service
 FRONTEND_SERVICES := web-ui admin-panel
-CORE_SERVICES := mongodb redis $(BACKEND_SERVICES)
+CORE_SERVICES := mongodb redis qdrant $(BACKEND_SERVICES)
 
 .PHONY: help setup env-check env-create env-validate dev up dev-d down restart ps build build-ai-local logs shell test lint format health urls clean reset mongo-shell mongo-reset bridge bridge-d services
 
@@ -27,8 +27,8 @@ help: ## Lista os comandos disponíveis
 
 setup: ## Cria .env e pastas locais usadas pelo Docker
 	@cp -n .env.example .env 2>/dev/null || true
-	@mkdir -p data/{shared,models,uploads,logs,backups}
-	@touch data/{shared,models,uploads,logs}/.gitkeep
+	@mkdir -p data/{shared,models,uploads,logs,backups,knowledge}
+	@touch data/{shared,models,uploads,logs,knowledge}/.gitkeep
 	@echo "$(GREEN)Setup concluído.$(NC) Edite o .env antes de subir a stack."
 
 env-check:
@@ -53,7 +53,7 @@ up: dev ## Alias para dev
 dev-d: env-check ## Sobe a stack dev em background
 	@set -a; . ./.env; set +a; $(COMPOSE) up --build -d
 
-services: env-check ## Sobe só backend, MongoDB e Redis
+services: env-check ## Sobe backend, MongoDB, Redis e Qdrant
 	@set -a; . ./.env; set +a; $(COMPOSE) up --build $(CORE_SERVICES)
 
 bridge: env-check ## Sobe a stack usando Docker bridge
@@ -110,7 +110,7 @@ format: ## Roda black nos backends
 	done; exit $$status
 
 health: ## Verifica endpoints /health locais
-	@for port in 8000 8001 8002 8003 8004; do \
+	@for port in 8000 8001 8002 8003 8004 8005; do \
 		printf ":%s " "$$port"; \
 		curl -fsS "http://localhost:$$port/health" | jq . || true; \
 	done
@@ -123,6 +123,7 @@ urls: ## Mostra URLs locais úteis
 	@echo "Avatar Service: http://localhost:8002/docs"
 	@echo "Emotion API:    http://localhost:8003/docs"
 	@echo "Voice API:      http://localhost:8004/docs"
+	@echo "Knowledge API:  http://localhost:8005/docs"
 	@echo "Mongo Express:  http://localhost:8081"
 
 mongo-shell: ## Abre o shell do MongoDB

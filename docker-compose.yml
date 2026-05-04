@@ -25,6 +25,7 @@ services:
       - AVATAR_SERVICE_URL=${AVATAR_SERVICE_URL:-http://avatar-service:8002}
       - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://emotion-service:8003}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
+      - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://knowledge-service:8005}
       - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -47,6 +48,7 @@ services:
       - avatar-service
       - emotion-service
       - voice-service
+      - knowledge-service
     networks:
       - empatia-network
     develop:
@@ -220,6 +222,46 @@ services:
           ignore:
             - __pycache__/
 
+  # Knowledge Service - Admin-controlled RAG and provenance
+  knowledge-service:
+    build: ./services/knowledge-service
+    container_name: empatia-knowledge-service
+    env_file:
+      - .env
+    environment:
+      - KNOWLEDGE_SERVICE_PORT=${KNOWLEDGE_SERVICE_PORT:-8005}
+      - KNOWLEDGE_STORAGE_BACKEND=${KNOWLEDGE_STORAGE_BACKEND:-in-memory}
+      - KNOWLEDGE_STORAGE_DIR=${KNOWLEDGE_STORAGE_DIR:-/knowledge_data}
+      - KNOWLEDGE_LEXICAL_INDEX=${KNOWLEDGE_LEXICAL_INDEX:-sqlite-fts5-planned}
+      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - DATABASE_NAME=${DATABASE_NAME:-empatia}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./services/knowledge-service:/app
+      - ./data/knowledge:/knowledge_data
+    ports:
+      - "${KNOWLEDGE_SERVICE_PORT:-8005}:8005"
+    depends_on:
+      - mongodb
+      - qdrant
+    networks:
+      - empatia-network
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health', timeout=5).read()" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    develop:
+      watch:
+        - action: sync
+          path: ./services/knowledge-service/src
+          target: /app/src
+          ignore:
+            - __pycache__/
+
   # Web UI - React + Vite Frontend
   web-ui:
     build:
@@ -276,6 +318,15 @@ services:
       - empatia-network
     command: redis-server --appendonly yes
 
+  # Qdrant - Vector store for the future Knowledge Service index
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: empatia-qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - empatia-network
+
   # PostgreSQL - Banco de dados (opcional)
   postgres:
     image: postgres:15-alpine
@@ -301,6 +352,8 @@ volumes:
   redis_data:
   postgres_data:
   local_llm_models:
+  qdrant_data:
+  knowledge_data:
   voice_cache:
     # Cache para modelos TTS
 

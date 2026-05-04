@@ -16,6 +16,7 @@ empath-ia/
 │   ├── ai-service/       # Integração OpenAI (FastAPI)
 │   ├── avatar-service/   # Proxy DID.ai (FastAPI)
 │   ├── emotion-service/  # Análise emocional (TensorFlow + DeepFace)
+│   ├── knowledge-service/ # RAG controlado pelo Admin: lifecycle, contratos e futura indexação
 │   └── voice-service/    # Text-to-Speech (Google Cloud TTS)
 ├── infrastructure/
 │   ├── k8s/              # Manifests Kubernetes
@@ -23,6 +24,7 @@ empath-ia/
 │   └── README.md
 ├── scripts/              # Utilitários: bootstrap GCP, migrações, seeds
 ├── data/                 # Volumes Docker (compartilhados entre serviços)
+│   └── knowledge/        # Arquivos e artefatos locais do Knowledge Service
 ├── docs/                 # Documentação (você está aqui)
 ├── .github/workflows/    # CI/CD (pipeline.yml, deploy.yml)
 ├── docker-compose.yml
@@ -109,6 +111,36 @@ services/ai-service/
 3. Monta contexto: histórico + perfil do usuário + dados emocionais + contexto de sessões anteriores
 4. Chama OpenAI API via `openai_service.py`
 5. Retorna resposta estruturada
+
+## `services/knowledge-service/`
+
+Decisão arquitetural: [`docs/architecture/KNOWLEDGE_SERVICE.md`](architecture/KNOWLEDGE_SERVICE.md).
+
+```
+services/knowledge-service/
+├── src/
+│   ├── main.py                         # App FastAPI, health e inclusão do router principal
+│   ├── api/
+│   │   └── knowledge_routes.py         # Endpoints /api/v1/documents, /retrieve e /audit/events
+│   ├── models/
+│   │   └── knowledge.py                # Contratos Pydantic de documentos, status e retrieval
+│   └── services/
+│       └── document_service.py         # Regras de lifecycle e contrato inicial de retrieval
+├── tests/
+│   └── test_knowledge_service.py       # Testes de health, lifecycle e retrieval contract
+├── requirements.txt
+└── Dockerfile
+```
+
+Este serviço será dono do pipeline de RAG:
+
+- ingestão e validação de documentos enviados pelo Admin;
+- extração, normalização e chunking semântico;
+- embeddings, busca vetorial, busca lexical e re-ranking;
+- versionamento de documentos e índices;
+- auditoria de quais chunks foram usados em cada resposta.
+
+O AI Service deverá consumir apenas o contrato interno de recuperação, sem acessar diretamente vector store ou índice lexical.
 
 ---
 

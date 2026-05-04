@@ -57,6 +57,17 @@ services:
       - empatia-network
     command: redis-server --appendonly yes
 
+  # Qdrant - Vector store exposed locally for development
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: empatia-qdrant-dev
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant_data_dev:/qdrant/storage
+    networks:
+      - empatia-network
+
   gateway:
     build:
       context: ./services/gateway-service
@@ -69,6 +80,7 @@ services:
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
       - SQL_DEBUG=${DEBUG:-true}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
+      - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://knowledge-service:8005}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7860,http://localhost:3000}
       - HOT_RELOAD=${HOT_RELOAD:-true}
     volumes:
@@ -81,6 +93,7 @@ services:
       - mongodb
       - redis
       - voice-service
+      - knowledge-service
     networks:
       - empatia-network
 
@@ -244,6 +257,35 @@ services:
       retries: 3
       start_period: 60s
 
+  knowledge-service:
+    build:
+      context: ./services/knowledge-service
+      dockerfile: Dockerfile
+      network: host
+    container_name: empatia-knowledge-service-dev
+    ports: !override
+      - "127.0.0.1:${KNOWLEDGE_SERVICE_PORT:-8005}:8005"
+    environment:
+      - DEBUG=${DEBUG:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - KNOWLEDGE_STORAGE_BACKEND=${KNOWLEDGE_STORAGE_BACKEND:-in-memory}
+      - KNOWLEDGE_STORAGE_DIR=${KNOWLEDGE_STORAGE_DIR:-/knowledge_data}
+      - KNOWLEDGE_LEXICAL_INDEX=${KNOWLEDGE_LEXICAL_INDEX:-sqlite-fts5-planned}
+      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - DATABASE_NAME=${DATABASE_NAME:-empatia}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - HOT_RELOAD=${HOT_RELOAD:-true}
+    volumes: !override
+      - ./services/knowledge-service/src:/app/src
+      - ./services/knowledge-service/tests:/app/tests
+      - ./data/knowledge:/knowledge_data
+    command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8005", "--reload", "--log-level", "debug" ]
+    depends_on:
+      - mongodb
+      - qdrant
+    networks:
+      - empatia-network
+
   web-ui:
     build:
       context: ./apps/web-ui
@@ -279,12 +321,14 @@ services:
       - VITE_VOICE_SERVICE_URL=http://localhost:8004
       - VITE_AI_SERVICE_URL=http://localhost:8001
       - VITE_AVATAR_SERVICE_URL=http://localhost:8002
+      - VITE_KNOWLEDGE_SERVICE_URL=http://localhost:8005
       - BACKEND_URL=${BACKEND_URL:-http://gateway-service:8000}
     depends_on:
       - gateway
       - emotion-service
       - ai-service
       - voice-service
+      - knowledge-service
     networks:
       - empatia-network
     volumes:
@@ -296,6 +340,8 @@ volumes:
   mongodb_data_dev:
   local_llm_models_dev:
   redis_data_dev:
+  qdrant_data_dev:
+  knowledge_data_dev:
   postgres_data_dev: # Novos volumes para o voice-service
 
   voice_output_dev:

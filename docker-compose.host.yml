@@ -22,6 +22,11 @@ services:
     networks: !reset []
     ports: !reset []
 
+  qdrant:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+
   gateway:
     network_mode: host
     networks: !reset []
@@ -31,6 +36,7 @@ services:
       - AVATAR_SERVICE_URL=http://127.0.0.1:8002
       - EMOTION_SERVICE_URL=http://127.0.0.1:8003
       - VOICE_SERVICE_URL=http://127.0.0.1:8004
+      - KNOWLEDGE_SERVICE_URL=http://127.0.0.1:8005
       - MONGODB_URL=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin
       - REDIS_URL=redis://127.0.0.1:6379
       - ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3001
@@ -61,6 +67,15 @@ services:
     environment:
       - VOICE_SERVICE_BASE_URL=http://localhost:8004
 
+  knowledge-service:
+    network_mode: host
+    networks: !reset []
+    ports: !reset []
+    environment:
+      - MONGODB_URL=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin
+      - QDRANT_URL=http://127.0.0.1:6333
+      - KNOWLEDGE_STORAGE_DIR=/knowledge_data
+
   web-ui:
     network_mode: host
     networks: !reset []
@@ -80,4 +95,5 @@ services:
       - VITE_VOICE_SERVICE_URL=http://localhost:8004
       - VITE_AI_SERVICE_URL=http://localhost:8001
       - VITE_AVATAR_SERVICE_URL=http://localhost:8002
+      - VITE_KNOWLEDGE_SERVICE_URL=http://localhost:8005
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3001"]

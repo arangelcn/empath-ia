@@ -71,7 +71,8 @@ SERVICE_URLS = {
     "ai": os.getenv("AI_SERVICE_URL", "http://ai-service:8001"),
     "avatar": os.getenv("AVATAR_SERVICE_URL", "http://avatar-service:8002"),
     "emotion": os.getenv("EMOTION_SERVICE_URL", "http://emotion-service:8003"),
-    "voice": os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004")
+    "voice": os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004"),
+    "knowledge": os.getenv("KNOWLEDGE_SERVICE_URL", "http://knowledge-service:8005"),
 }
 
 # Instâncias dos serviços
