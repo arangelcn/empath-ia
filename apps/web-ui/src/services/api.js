@@ -81,7 +81,7 @@ export const sendMessage = async (message, sessionId, sessionObjective = null, i
       session_id: sessionId,
       is_voice_mode: isVoiceMode, // ✅ NOVO: Indicador de modo de voz
     };
-    
+
     // Adicionar objetivo da sessão se fornecido
     if (sessionObjective) {
       payload.session_objective = {
@@ -91,18 +91,18 @@ export const sendMessage = async (message, sessionId, sessionObjective = null, i
         initial_prompt: sessionObjective.initial_prompt
       };
     }
-    
+
     console.log(`🚀 API - Iniciando envio de mensagem`);
     console.log(`📋 API - SessionId: ${sessionId}`);
     console.log(`💬 API - Mensagem: "${message}"`);
     console.log(`🎤 API - VoiceMode: ${isVoiceMode ? 'ATIVO' : 'INATIVO'}`);
     console.log(`📦 API - Payload completo:`, payload);
-    
+
     const response = await apiClient.post('/chat/send', payload);
-    
+
     console.log(`✅ API - Resposta recebida:`, response.data);
     console.log(`🔍 API - Status: ${response.status}`);
-    
+
     return response.data;
   } catch (error) {
     console.error('❌ API - Erro completo:', error);
@@ -243,7 +243,7 @@ export const saveUserPreferences = async (sessionId, username, selectedVoice, vo
           language: 'pt-BR'
         }
       };
-      
+
       try {
         await apiClient.post('/user/create', userPayload);
       } catch (error) {
@@ -253,7 +253,7 @@ export const saveUserPreferences = async (sessionId, username, selectedVoice, vo
       }
 
       await apiClient.put(`/user/${username}/preferences`, userPayload.preferences);
-      
+
       // Registrar login
       await apiClient.post(`/user/${username}/login`);
     }
@@ -326,7 +326,7 @@ export const createUser = async (username, email = null, preferences = null) => 
     const payload = { username };
     if (email) payload.email = email;
     if (preferences) payload.preferences = preferences;
-    
+
     const response = await apiClient.post('/user/create', payload);
     return response.data;
   } catch (error) {
@@ -451,10 +451,10 @@ export const getUserSessions = async (username, status = null) => {
   try {
     const params = new URLSearchParams();
     if (status) params.append('status', status);
-    
+
     const url = `/user/${username}/sessions?${params}`;
     const response = await apiClient.get(url);
-    
+
     return response.data;
   } catch (error) {
     console.error('Erro ao buscar sessões do usuário:', error.response?.data || error.message);
@@ -530,6 +530,22 @@ export const getInitialMessage = async (sessionId) => {
   } catch (error) {
     console.error('Erro ao buscar mensagem inicial:', error);
     throw error;
+  }
+};
+
+/**
+ * Gerar título e subtítulo para uma sessão de chat usando IA.
+ * @param {string} chatId - ID do chat (chat_id ou session_id).
+ * @param {'initial'|'final'} mode - 'initial' usa a 1ª troca; 'final' usa toda a conversa.
+ * @returns {Promise<{success: boolean, title: string|null, subtitle: string|null}>}
+ */
+export const generateChatTitle = async (chatId, mode = 'initial') => {
+  try {
+    const response = await apiClient.post(`/chat/generate-title/${chatId}`, { mode });
+    return response.data;
+  } catch (error) {
+    console.warn('Erro ao gerar título do chat:', error?.response?.data || error.message);
+    return { success: false, title: null, subtitle: null };
   }
 };
 

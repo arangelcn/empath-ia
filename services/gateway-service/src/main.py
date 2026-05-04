@@ -1155,6 +1155,15 @@ async def get_user_emotion_timeline(username: str, session_id: Optional[str] = N
 
 # ===== ENDPOINTS DE CONTEXTO DE SESSÃO =====
 
+class GenerateTitleRequest(BaseModel):
+    mode: str = "initial"  # "initial" | "final"
+
+@app.post("/api/chat/generate-title/{chat_id}")
+async def generate_chat_title(chat_id: str, request: GenerateTitleRequest):
+    """Generate a contextual AI title and subtitle for a chat session."""
+    result = await chat_service.generate_chat_title(chat_id, request.mode)
+    return result
+
 @app.post("/api/chat/finalize/{session_id}")
 async def finalize_session(session_id: str):
     """

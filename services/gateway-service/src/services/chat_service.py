@@ -2426,6 +2426,73 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             logger.error(f"❌ Erro ao buscar conversa por session_id: {e}")
             raise
 
+    async def generate_chat_title(self, chat_id: str, mode: str = "initial") -> Dict[str, Any]:
+        """Generate a contextual title and subtitle for a chat session using AI.
+
+        mode='initial' uses the first user+AI exchange (called after first message).
+        mode='final'   uses up to 12 recent messages (called on session finalize).
+        Returns { success, title, subtitle }.
+        """
+        import re as _re
+
+        try:
+            messages = await self._get_conversation_context(chat_id)
+            if not messages:
+                return {"success": False, "title": None, "subtitle": None}
+
+            if mode == "initial":
+                context_messages = messages[:4]
+            else:
+                context_messages = messages[-12:]
+
+            conversation_text = ""
+            for msg in context_messages:
+                role = "Usuário" if msg.get("type") == "user" else "Terapeuta"
+                snippet = (msg.get("content") or "")[:300]
+                conversation_text += f"{role}: {snippet}\n"
+
+            if not conversation_text.strip():
+                return {"success": False, "title": None, "subtitle": None}
+
+            prompt = (
+                "Você é um assistente especializado em sessões terapêuticas. "
+                "Com base no trecho abaixo, crie um título e um subtítulo que ajudem o usuário a lembrar desta conversa.\n\n"
+                "Regras obrigatórias:\n"
+                "- Título: máximo 60 caracteres, específico, empático e evocativo do tema ou emoção central. "
+                "Não use frases genéricas como 'Sessão terapêutica'.\n"
+                "- Subtítulo: máximo 100 caracteres, complementa o título com contexto emocional ou temático.\n"
+                "- Responda SOMENTE com JSON válido no formato: {\"title\": \"...\", \"subtitle\": \"...\"}\n\n"
+                f"Trecho da sessão:\n{conversation_text}"
+            )
+
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    f"{self.ai_service_url}/chat",
+                    json={"message": prompt, "session_id": f"_title_gen_{chat_id}"},
+                    timeout=20.0,
+                )
+
+            if response.status_code != 200:
+                logger.warning(f"⚠️ AI service retornou {response.status_code} ao gerar título para {chat_id}")
+                return {"success": False, "title": None, "subtitle": None}
+
+            ai_text = response.json().get("response", "")
+            json_match = _re.search(r'\{[^{}]+\}', ai_text, _re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                title = (parsed.get("title") or "").strip()[:60]
+                subtitle = (parsed.get("subtitle") or "").strip()[:100]
+                if title:
+                    logger.info(f"🏷️ Título gerado para {chat_id} ({mode}): {title!r}")
+                    return {"success": True, "title": title, "subtitle": subtitle}
+
+            logger.warning(f"⚠️ Não foi possível extrair JSON do título gerado para {chat_id}: {ai_text[:120]}")
+            return {"success": False, "title": None, "subtitle": None}
+
+        except Exception as exc:
+            logger.warning(f"⚠️ Erro ao gerar título para {chat_id}: {exc}")
+            return {"success": False, "title": None, "subtitle": None}
+
     # ✅ NOVO: Sistema de cadastro/onboarding para session-1
     async def _handle_registration_session(self, session_id: str, user_message: str, is_voice_mode: bool = False) -> Dict[str, Any]:
         """
