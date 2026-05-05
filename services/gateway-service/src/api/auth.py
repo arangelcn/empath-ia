@@ -2,7 +2,6 @@
 Autenticação Google — verifica ID Token, faz upsert do usuário e emite JWT próprio.
 """
 
-import os
 import logging
 from datetime import datetime, timedelta
 
@@ -14,6 +13,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from pymongo.errors import DuplicateKeyError
 
+from ..config import get_google_client_id, settings
 from ..models.database import get_users_collection
 
 logger = logging.getLogger(__name__)
@@ -21,22 +21,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "changeme-must-be-at-least-32-characters-long!")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  # 7 dias
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@empat-ia.io")
-ADMIN_ALLOWED_EMAILS = {
-    email.strip().lower()
-    for email in os.getenv("ADMIN_ALLOWED_EMAILS", ADMIN_EMAIL).split(",")
-    if email.strip()
-}
+SECRET_KEY = settings.jwt_secret_key
+ALGORITHM = settings.jwt_algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
+ADMIN_USERNAME = settings.admin.username
+ADMIN_PASSWORD = settings.admin.password
+ADMIN_EMAIL = settings.admin.email
+ADMIN_ALLOWED_EMAILS = settings.admin.allowed_emails
 
 
 def _get_google_client_id() -> str:
     """Lê GOOGLE_CLIENT_ID em tempo de execução para suportar injeção tardia de env vars."""
-    return (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
+    return get_google_client_id()
 
 
 class GoogleAuthRequest(BaseModel):
@@ -107,7 +103,6 @@ def _user_name_fields(user: dict | None) -> tuple[str | None, str | None]:
     full_name = user.get("full_name") or preferences.get("full_name")
     display_name = user.get("display_name") or preferences.get("display_name")
     return full_name, display_name
-
 
 @router.get("/google/status")
 async def google_auth_status():
