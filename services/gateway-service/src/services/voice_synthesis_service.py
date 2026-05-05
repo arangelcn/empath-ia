@@ -32,7 +32,8 @@ class VoiceSynthesisService:
         """
         try:
             # Timeout otimizado para VoiceMode (conversação fluida)
-            timeout_seconds = 15.0 if is_voice_mode else 30.0
+            # O fallback batch precisa de mais folga que o streaming; 15s ficava curto demais.
+            timeout_seconds = 30.0 if is_voice_mode else 45.0
 
             if is_voice_mode:
                 logger.info("🎤 Gerando áudio para VoiceMode - Timeout otimizado: %ss", timeout_seconds)

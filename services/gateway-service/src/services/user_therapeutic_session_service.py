@@ -150,7 +150,7 @@ class UserTherapeuticSessionService:
             if status:
                 filter_query["status"] = status
             
-            cursor = self.user_sessions_collection.find(filter_query).sort("created_at", 1)
+            cursor = self.user_sessions_collection.find(filter_query).sort("created_at", -1)
             sessions = await cursor.to_list(length=100)
             
             # Formatar dados

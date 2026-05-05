@@ -106,6 +106,41 @@ def test_get_user_sessions_keeps_status_filter_after_registration_seed():
     assert collection.docs[0]["status"] == "unlocked"
 
 
+def test_get_user_sessions_orders_by_created_at_descending():
+    collection = FakeUserSessionsCollection()
+    collection.docs = [
+        {
+            "_id": "id-1",
+            "username": "ana",
+            "session_id": "session-1",
+            "status": "completed",
+            "created_at": datetime(2026, 5, 1, 10, 0, 0),
+            "updated_at": datetime(2026, 5, 1, 10, 0, 0),
+        },
+        {
+            "_id": "id-2",
+            "username": "ana",
+            "session_id": "session-2",
+            "status": "completed",
+            "created_at": datetime(2026, 5, 3, 10, 0, 0),
+            "updated_at": datetime(2026, 5, 3, 10, 0, 0),
+        },
+        {
+            "_id": "id-3",
+            "username": "ana",
+            "session_id": "session-3",
+            "status": "completed",
+            "created_at": datetime(2026, 5, 2, 10, 0, 0),
+            "updated_at": datetime(2026, 5, 2, 10, 0, 0),
+        },
+    ]
+    service = make_service(collection)
+
+    sessions = asyncio.run(service.get_user_sessions("ana", status="completed"))
+
+    assert [session["session_id"] for session in sessions] == ["session-2", "session-3", "session-1"]
+
+
 def test_can_create_next_session_blocks_until_registration_is_completed():
     collection = FakeUserSessionsCollection()
     service = make_service(collection)

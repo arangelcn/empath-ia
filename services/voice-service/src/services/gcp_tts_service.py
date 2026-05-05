@@ -406,10 +406,21 @@ class GCPTextToSpeechService:
                 input=texttospeech.StreamingSynthesisInput(text=text)
             )
 
-        responses = self.client.streaming_synthesize(request_generator())
-        for response in responses:
-            if response.audio_content:
-                yield response.audio_content
+        try:
+            responses = self.client.streaming_synthesize(request_generator())
+            for response in responses:
+                if response.audio_content:
+                    yield response.audio_content
+        except Exception as exc:
+            logger.error(
+                "❌ Erro no streaming GCP TTS: %s: %s (voz=%s, linguagem=%s)",
+                type(exc).__name__,
+                exc,
+                streaming_voice,
+                language_code,
+                exc_info=True,
+            )
+            raise
     
     def get_available_voices(self) -> Dict[str, Any]:
         """

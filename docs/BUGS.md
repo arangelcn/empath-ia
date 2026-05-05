@@ -8,6 +8,14 @@ Os logs mostram uma cadeia de falhas conectadas entre front, gateway, AI Service
 
 Em paralelo, o modo de voz esta degradado: o streaming TTS falha, o fallback batch tambem nao gera audio, e isso repete por trecho, adicionando latencia e deixando a experiencia sem voz. Ha ainda divergencias menores de contrato: prompt `voice_short_response` ausente no banco de prompts, chamadas antigas para `/api/sessions/session-4`, e parser de titulo que nao entende JSON dentro de `text.content`.
 
+## Status Atual
+
+- P0 contexto de sessao: mitigado no codigo, com parse robusto de JSON no AI Service e recuperacao de contexto no Gateway.
+- P1 prompt `voice_short_response`: corrigido no bootstrap do Gateway.
+- P2 parser de titulo: corrigido para aceitar `text.content`.
+- P2 rota global de sessao no web-ui: mitigada com fallback para `/api/user/{username}/sessions/{sessionId}`.
+- P1 TTS/streaming: continua como proximo foco principal.
+
 ## Fluxo observado
 
 1. Sessao 3 finaliza e tenta gerar contexto.
@@ -20,6 +28,8 @@ Em paralelo, o modo de voz esta degradado: o streaming TTS falha, o fallback bat
 8. Ao finalizar sessao 4, o AI Service retorna 500 em `/openai/generate-session-context`, e o Gateway devolve 500 para `/api/chat/finalize/{chat_id}`.
 
 ## P0 - Finalizacao da sessao falha com 500
+
+Status: mitigado.
 
 Evidencia nos logs:
 
@@ -67,6 +77,8 @@ Correcao recomendada:
 
 ## P0 - Contexto anterior rejeitado e nao enviado ao AI Service
 
+Status: mitigado.
+
 Evidencia nos logs:
 
 ```text
@@ -113,6 +125,8 @@ Correcao recomendada:
 
 ## P1 - TTS falha no streaming e no fallback batch
 
+Status: em aberto.
+
 Evidencia nos logs:
 
 ```text
@@ -149,6 +163,8 @@ Correcao recomendada:
 
 ## P1 - Prompt `voice_short_response` ausente no Gateway
 
+Status: corrigido.
+
 Evidencia nos logs:
 
 ```text
@@ -181,6 +197,8 @@ Correcao recomendada:
 
 ## P2 - web-ui chama rota global de sessao dinamica e recebe 404
 
+Status: mitigado.
+
 Evidencia nos logs:
 
 ```text
@@ -212,6 +230,8 @@ Correcao recomendada:
 3. Se a rota global continuar necessaria, renomear no front para `getCatalogTherapeuticSession` e deixar claro que nao serve para sessoes dinamicas.
 
 ## P2 - Parser de titulo nao entende `text.content`
+
+Status: corrigido.
 
 Evidencia nos logs:
 

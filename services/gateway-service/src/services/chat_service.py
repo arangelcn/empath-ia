@@ -391,6 +391,7 @@ class ChatService:
         full_response = ""
         audio_sequence = 0
         tts_stream_failed = False
+        tts_stream_disabled = False
         audio_url = None
         first_audio_ms: Optional[int] = None
         first_text_ms: Optional[int] = None
@@ -543,7 +544,7 @@ class ChatService:
                                     "elapsed_ms": now_ms(started_at),
                                 },
                             }
-                            if voice_enabled:
+                            if voice_enabled and not tts_stream_disabled:
                                 for text_chunk in chunker.push(delta):
                                     async for audio_event in self._stream_tts_or_batch_chunk(
                                         text_chunk,
@@ -563,12 +564,13 @@ class ChatService:
                                                 first_audio_ms = now_ms(started_at)
                                         elif audio_event["event"] == "error" and audio_event["data"].get("stage") == "tts_stream":
                                             tts_stream_failed = True
+                                            tts_stream_disabled = True
                                         yield audio_event
                         elif current_event == "done":
                             ai_done_data = payload
 
             remaining = chunker.flush()
-            if remaining and voice_enabled:
+            if remaining and voice_enabled and not tts_stream_disabled:
                 async for audio_event in self._stream_tts_or_batch_chunk(
                     remaining,
                     selected_voice,
@@ -587,6 +589,7 @@ class ChatService:
                             first_audio_ms = now_ms(started_at)
                     elif audio_event["event"] == "error" and audio_event["data"].get("stage") == "tts_stream":
                         tts_stream_failed = True
+                        tts_stream_disabled = True
                     yield audio_event
 
             final_text = (ai_done_data.get("response") or full_response).strip()
