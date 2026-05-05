@@ -3,6 +3,7 @@ Serviço cliente para buscar prompts do Gateway Service
 """
 
 import os
+import time
 import logging
 import httpx
 from typing import Dict, Any, Optional, List
@@ -270,8 +271,6 @@ class PromptClientService:
         Buscar prompt do cache em memória
         """
         try:
-            import time
-            
             if prompt_key in self._prompts_cache:
                 timestamp = self._cache_timestamps.get(prompt_key, 0)
                 if time.time() - timestamp < self._cache_ttl:
@@ -292,8 +291,6 @@ class PromptClientService:
         Salvar prompt no cache em memória
         """
         try:
-            import time
-            
             self._prompts_cache[prompt_key] = prompt_data
             self._cache_timestamps[prompt_key] = time.time()
             
@@ -309,7 +306,6 @@ class PromptClientService:
         Limpar cache antigo
         """
         try:
-            import time
             current_time = time.time()
             
             expired_keys = []

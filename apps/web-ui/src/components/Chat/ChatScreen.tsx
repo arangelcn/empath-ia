@@ -526,13 +526,13 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
         setShowSessionSummary(true);
         setShowFinalizeButton(false);
 
-        // Revisar título ao final da sessão (não bloqueia o modal de resumo)
-        generateChatTitle(currentChatId, 'final').then(result => {
-          if (result.success && result.title) {
-            setDynamicTitle(result.title);
-            if (result.subtitle) setDynamicSubtitle(result.subtitle);
-          }
-        }).catch(() => { });
+        // Usar título gerado server-side (já persistido no banco)
+        const generatedTitle = result.data?.generated_title;
+        const generatedSubtitle = result.data?.generated_subtitle;
+        if (generatedTitle) {
+          setDynamicTitle(generatedTitle);
+          if (generatedSubtitle) setDynamicSubtitle(generatedSubtitle);
+        }
 
         console.log('🎯 States atualizados - Modal deve aparecer agora');
       } else {
