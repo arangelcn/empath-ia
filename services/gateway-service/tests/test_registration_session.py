@@ -32,6 +32,7 @@ class FakeCollection:
 
 saved_messages = []
 finalize_called = []
+generated_audio_calls = []
 
 
 async def fake_save_message(session_id, msg_type, content, audio_url=None):
@@ -45,6 +46,7 @@ async def fake_finalize(session_id, manual_termination=False):
 
 
 async def fake_generate_audio(text, voice, is_voice_mode=False):
+    generated_audio_calls.append({"text": text, "voice": voice, "is_voice_mode": is_voice_mode})
     return None
 
 
@@ -143,3 +145,27 @@ def test_registration_new_conversation_is_created_when_missing():
     assert result["success"] is True
     assert len(fake_conv.inserted) == 1
     assert fake_conv.inserted[0]["username"] == "novo"
+
+
+def test_registration_voice_mode_uses_current_default_voice():
+    saved_messages.clear()
+    generated_audio_calls.clear()
+
+    conversation = {
+        "session_id": "joao_session-1",
+        "username": "joao",
+        "registration_data": {},
+        "registration_step": 0,
+        "is_registration_complete": False,
+    }
+    fake_conv = FakeCollection(existing_conversation=conversation)
+    service, reg_module, orig = make_service(fake_conv)
+
+    try:
+        result = asyncio.run(service.handle_session("joao_session-1", "28", is_voice_mode=True))
+    finally:
+        reg_module.get_collection = orig
+
+    assert result["success"] is True
+    assert generated_audio_calls
+    assert generated_audio_calls[0]["voice"] == "pt-BR-Neural2-B"

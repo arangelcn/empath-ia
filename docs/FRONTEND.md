@@ -25,7 +25,7 @@
 
 ```
 /             → LandingScreen     (não autenticado)
-/login        → ComingSoonScreen  (placeholder — login via Google está na LandingScreen)
+/login        → LoginScreen       (Google + nome completo + voz)
 /home         → HomeScreen        (autenticado — Home da jornada terapêutica)
 /profile      → ProfileVoicePage  (autenticado — perfil, dados básicos e voz)
 /chat         → redireciona para /home (chat exige sessão)
@@ -78,6 +78,7 @@ O `username`/email continua sendo o identificador técnico. O nome salvo é usad
 - Carrega sessões e progresso via `GET /api/user/{username}/sessions` e `GET /api/user/{username}/progress`
 - Abre sessões usando `POST /api/user/{username}/sessions/{session_id}/start` quando necessário
 - Abre `/chat/{chat_id}` usando o identificador opaco retornado por `POST /api/chat/start`
+- A lista de sessões já vem com `session-1` garantida pelo gateway quando ainda não existe no banco
 - Exibe `displayName` quando disponível, sem alterar o identificador técnico
 
 #### `HomeScreen.jsx` (`components/Home/`)
@@ -85,7 +86,7 @@ O `username`/email continua sendo o identificador técnico. O nome salvo é usad
 - Exibe progresso detalhado e sessões terapêuticas do usuário
 - Estados visuais por sessão: `locked`, `unlocked`, `in_progress`, `completed`
 - Usa os dados carregados pelo `AuthenticatedShell`
-- Botão "Iniciar/Continuar/Ver conversa" navega para `/chat/{username}_{session_id}`
+- Botão "Iniciar/Continuar/Ver conversa" inicia/recupera a conversa no gateway e navega para `/chat/{chat_id}`
 - Usa `displayName` no cabeçalho quando disponível
 
 #### `ProfileVoicePage.jsx` (`components/Profile/`)
@@ -115,12 +116,12 @@ O `username`/email continua sendo o identificador técnico. O nome salvo é usad
 3. POST /api/auth/google → recebe JWT de sessão
 4. JWT armazenado em localStorage ("empatia_access_token")
 5. Se necessário, informa nome completo
-6. POST /api/user/{username}/login → cria session-1
+6. POST /api/user/{username}/login → garante session-1
 7. Seleção de voz + nome completo → POST /api/user/preferences
 8. Redireciona para /home
-9. AuthenticatedShell carrega progresso e sessões; HomeScreen exibe a Home
+9. AuthenticatedShell carrega progresso e sessões; o gateway garante session-1 se ela ainda não existir
 10. POST /api/user/{username}/sessions/{session_id}/start
-11. Navega para /chat/{username}_{session_id}
+11. POST /api/chat/start retorna `chat_id`; navega para `/chat/{chat_id}`
 12. ChatScreen carrega → GET /api/chat/initial-message/{full_session_id}
 13. Conversa... POST /api/chat/send (vai e volta)
 14. Análise emocional em background (webcam → POST /api/emotion/analyze-realtime)

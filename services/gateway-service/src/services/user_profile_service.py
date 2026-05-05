@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List
 
+from ..domain.user_display import first_name_from_user
 from ..models.database import get_collection
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class UserProfileService:
             user = await users.find_one({"username": username})
             user_profile = {}
             preferences = (user or {}).get("preferences", {})
+            preferred_name = first_name_from_user(user, username)
             display_name = (
                 (user or {}).get("display_name")
                 or preferences.get("display_name")
@@ -39,6 +41,8 @@ class UserProfileService:
 
             user_profile["username"] = username
             user_profile["preferences"] = preferences
+            if preferred_name:
+                user_profile["preferred_name"] = preferred_name
             if display_name:
                 user_profile["display_name"] = display_name
                 user_profile["full_name"] = (user or {}).get("full_name") or preferences.get("full_name") or display_name
@@ -75,6 +79,7 @@ class UserProfileService:
             logger.warning("⚠️ Nenhum dado de perfil encontrado para %s", username)
             return {
                 "username": username,
+                "preferred_name": preferred_name,
                 "display_name": display_name,
                 "full_name": (user or {}).get("full_name") or preferences.get("full_name") or display_name,
                 "preferences": preferences,

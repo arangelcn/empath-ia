@@ -47,7 +47,13 @@ Notas:
 - Se o download do modelo falhar, `LOCAL_MODEL_DOWNLOAD_REQUIRED=false` permite iniciar o serviço e usar OpenAI em runtime.
 - Para builds rápidos sem modelo local, use `ENABLE_LOCAL_LLM=false` e `LLM_PROVIDER=openai`.
 
-## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**
+## 🚀 **ATUALIZAÇÕES RECENTES (2026-05-05)**
+
+### ✅ **Contrato pós-refactor com Gateway Service**
+- **Gateway enxuto**: o Gateway mantém routers e orquestração; o AI Service concentra geração terapêutica, contexto estruturado, streaming e próxima sessão.
+- **Session-1 garantida no Gateway**: o AI Service continua tratando `session-1` como cadastro especial via `registration_data`, mas a criação/listagem da sessão inicial é responsabilidade do `UserTherapeuticSessionService`.
+- **Prompts centralizados**: prompts ativos continuam buscados no Gateway por `prompt_client_service.py`, com fallback local quando necessário.
+- **LLM local/OpenAI**: `llm_service.py` escolhe provedor conforme configuração, usando Gemma/GGUF local quando habilitado e OpenAI como fallback permitido.
 
 ### ✅ **SessionContextService - Totalmente Funcional**
 - **Problema Resolvido**: SessionContextService estava salvando na coleção incorreta

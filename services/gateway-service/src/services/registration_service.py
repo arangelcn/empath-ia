@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Dict, Optional
 
+from ..domain.user_display import first_name_from_user
 from ..models.database import get_collection
 from .user_profile_service import UserProfileService
 from .user_therapeutic_session_service import UserTherapeuticSessionService
@@ -109,6 +110,7 @@ class RegistrationService:
                 logger.info("🎤 VoiceMode ativo na sessão de cadastro")
 
             username = self.extract_username_from_session_id(session_id) or "usuario"
+            user_label = await self._get_user_label(username)
             conversations = get_collection("conversations")
             conversation = await conversations.find_one({"session_id": session_id})
 
@@ -154,6 +156,7 @@ class RegistrationService:
                     conversations,
                     session_id,
                     username,
+                    user_label,
                     user_message,
                     user_message_id,
                     registration_data,
@@ -161,7 +164,11 @@ class RegistrationService:
                     is_voice_mode,
                 )
 
-            ai_response = f"Olá novamente, {username}! Como posso te ajudar hoje?"
+            ai_response = (
+                f"Olá novamente, {user_label}! Como posso te ajudar hoje?"
+                if user_label
+                else "Olá novamente! Como posso te ajudar hoje?"
+            )
             user_message_id = await self.save_message(session_id, "user", user_message, None)
             ai_message_id = await self.save_message(session_id, "ai", ai_response, None)
 
@@ -235,6 +242,7 @@ class RegistrationService:
         conversations,
         session_id: str,
         username: str,
+        user_label: Optional[str],
         user_message: str,
         user_message_id: str,
         registration_data: Dict[str, Any],
@@ -243,7 +251,12 @@ class RegistrationService:
     ) -> Dict[str, Any]:
         logger.info("🎯 INICIANDO FINALIZAÇÃO DO CADASTRO para %s", username)
 
-        ai_response = f"""Perfeito! Muito obrigado por compartilhar todas essas informações comigo, {username}! 
+        thanks = (
+            f"Perfeito! Muito obrigado por compartilhar todas essas informações comigo, {user_label}!"
+            if user_label
+            else "Perfeito! Muito obrigado por compartilhar todas essas informações comigo!"
+        )
+        ai_response = f"""{thanks}
 
 Agora eu te conheço melhor e posso oferecer um apoio mais personalizado. Suas informações estão seguras e serão usadas apenas para tornar nossas conversas mais significativas.
 
@@ -331,6 +344,15 @@ Você agora pode acessar as outras sessões terapêuticas na sua jornada de auto
             logger.error("❌ CADASTRO: Erro ao finalizar contexto da session-1: %s", finalize_error)
             return False
 
+    async def _get_user_label(self, username: str) -> Optional[str]:
+        try:
+            users_collection = get_collection("users")
+            user = await users_collection.find_one({"username": username})
+            return first_name_from_user(user, username)
+        except Exception as exc:
+            logger.warning("⚠️ CADASTRO: não foi possível resolver nome humano para %s: %s", username, exc)
+            return first_name_from_user(None, username)
+
     async def _generate_audio_for_registration(
         self,
         ai_response: str,
@@ -347,7 +369,7 @@ Você agora pode acessar as outras sessões terapêuticas na sua jornada de auto
             users_collection = get_collection("users")
             user = await users_collection.find_one({"username": username})
 
-            selected_voice = "pt-BR-Neural2-A"
+            selected_voice = "pt-BR-Neural2-B"
             if user and user.get("preferences"):
                 selected_voice = user["preferences"].get("selected_voice", selected_voice)
 

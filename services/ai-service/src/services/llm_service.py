@@ -570,7 +570,8 @@ class LLMService:
         user_profile_context = self._get_user_profile_context(username)
         cached_profile = self._get_cached_user_profile(username) or {}
         preferred_display_name = (
-            cached_profile.get("display_name")
+            cached_profile.get("preferred_name")
+            or cached_profile.get("display_name")
             or cached_profile.get("full_name")
             or (cached_profile.get("preferences") or {}).get("display_name")
             or (cached_profile.get("preferences") or {}).get("full_name")
@@ -739,6 +740,8 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             return None
 
         first_token = cleaned.split()[0].strip(".,;:()[]{}\"'")
+        if any(char.isdigit() for char in first_token):
+            return None
         return first_token or None
     
     def _optimize_conversation_history(self, history: List[Dict]) -> List[Dict]:
@@ -2173,14 +2176,18 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             context_parts = []
 
             display_name = (
-                profile.get("display_name")
+                profile.get("preferred_name")
+                or profile.get("display_name")
                 or profile.get("full_name")
                 or (profile.get("preferences") or {}).get("display_name")
                 or (profile.get("preferences") or {}).get("full_name")
             )
             if display_name:
+                first_name = self._extract_first_name(display_name)
                 context_parts.append("👤 IDENTIDADE:")
                 context_parts.append(f"- Nome preferido: {display_name}")
+                if first_name:
+                    context_parts.append(f"- Nome para tratamento: {first_name}")
                 if profile.get("username"):
                     context_parts.append(f"- Identificador técnico: {profile['username']}")
             
@@ -2604,4 +2611,3 @@ PERFIL DO USUÁRIO:
         except Exception as e:
             logger.error(f"❌ Erro ao identificar padrão: {e}")
             return ""
-

@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from typing import Any, Callable, Dict, Optional
 
+from ..domain.session_subjects import join_subjects, meaningful_subjects_from_values
 from ..models.database import get_collection
 from .user_profile_service import UserProfileService
 from .user_therapeutic_session_service import UserTherapeuticSessionService
@@ -107,14 +108,20 @@ class NextSessionService:
         session_number = self.extract_session_number(current_session_id)
         next_session_number = session_number + 1
         next_session_id = f"session-{next_session_number}"
-        main_themes = session_context.get("main_themes", ["desenvolvimento pessoal"])
+        main_themes = meaningful_subjects_from_values([session_context.get("main_themes", [])], limit=3)
 
         user_objectives = []
         if user_profile and user_profile.get("therapeutic_info"):
             therapeutic_info = user_profile["therapeutic_info"]
             user_objectives = therapeutic_info.get("objetivos_identificados", [])
 
-        combined_themes = list(set(main_themes + user_objectives[:2]))
+        combined_themes = []
+        seen_themes = set()
+        for theme in main_themes + user_objectives[:2]:
+            if theme in seen_themes:
+                continue
+            combined_themes.append(theme)
+            seen_themes.add(theme)
 
         if next_session_number == 2:
             session_title = f"Sessão {next_session_number}: Aprofundando nosso conhecimento"
@@ -129,9 +136,11 @@ class NextSessionService:
             objective = "Continuar o processo de autoconhecimento e desenvolvimento pessoal"
 
         if main_themes and next_session_number == 2:
-            initial_prompt = f"Olá! Como você está se sentindo desde nossa primeira conversa? Na nossa sessão anterior, conversamos sobre {', '.join(main_themes[:2])}. Gostaria de continuar explorando esses temas ou há algo específico que te trouxe aqui hoje?"
+            subjects_text = join_subjects(main_themes[:2])
+            initial_prompt = f"Olá! Como você está se sentindo desde nossa primeira conversa? Na nossa sessão anterior, apareceram temas como {subjects_text}. Gostaria de continuar por aí ou há algo mais presente para você hoje?"
         elif main_themes:
-            initial_prompt = f"Olá! Como você está se sentindo desde nossa última conversa? Vamos continuar explorando os temas que identificamos: {', '.join(main_themes[:2])}?"
+            subjects_text = join_subjects(main_themes[:2])
+            initial_prompt = f"Olá! Como você está se sentindo desde nossa última conversa? Na sessão anterior, apareceram temas como {subjects_text}. Gostaria de continuar por aí ou trazer algo novo hoje?"
         else:
             initial_prompt = f"Olá! Como você está se sentindo hoje? O que gostaria de explorar em nossa sessão {next_session_number}?"
 

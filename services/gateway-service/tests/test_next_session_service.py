@@ -33,3 +33,20 @@ def test_extract_session_number_defaults_to_one_for_invalid_ids():
 
     assert service.extract_session_number("toni_session-12") == 12
     assert service.extract_session_number("chat_abc") == 1
+
+
+def test_build_next_session_initial_prompt_ignores_generic_themes():
+    service = NextSessionService(
+        extract_username_from_session_id=lambda session_id: "toni",
+        user_profile_service=UserProfileService(),
+    )
+
+    next_session = service.build_next_session(
+        {},
+        {"main_themes": ["conversa terapêutica", "apoio emocional"]},
+        "toni_session-1",
+    )
+
+    assert "conversa terapêutica" not in next_session["initial_prompt"]
+    assert "apoio emocional" not in next_session["initial_prompt"]
+    assert "O que gostaria de explorar" in next_session["initial_prompt"]

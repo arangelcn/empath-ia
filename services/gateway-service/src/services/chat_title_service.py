@@ -53,15 +53,13 @@ class ChatTitleService:
                 logger.warning("⚠️ AI service não gerou texto para título de %s", chat_id)
                 return {"success": False, "title": None, "subtitle": None}
 
-            ai_text = completion_data.get("text", "")
-            json_match = re.search(r'\{[^{}]+\}', ai_text, re.DOTALL)
-            if not json_match:
-                logger.warning("⚠️ Não foi possível extrair JSON do título gerado para %s: %s", chat_id, ai_text[:120])
+            parsed = self._parse_title_payload(completion_data)
+            if not parsed:
+                logger.warning("⚠️ Não foi possível extrair JSON do título gerado para %s: %s", chat_id, completion_data)
                 return {"success": False, "title": None, "subtitle": None}
 
-            parsed = json.loads(json_match.group())
-            title = (parsed.get("title") or "").strip()[:60]
-            subtitle = (parsed.get("subtitle") or "").strip()[:100]
+            title = self._coerce_text(parsed.get("title"))[:60]
+            subtitle = self._coerce_text(parsed.get("subtitle"))[:100]
             if not title:
                 return {"success": False, "title": None, "subtitle": None}
 
@@ -77,9 +75,77 @@ class ChatTitleService:
         conversation_text = ""
         for msg in context_messages:
             role = "Usuário" if msg.get("type") == "user" else "Terapeuta"
-            snippet = (msg.get("content") or "")[:300]
+            snippet = self._coerce_text(msg.get("content"))[:300]
             conversation_text += f"{role}: {snippet}\n"
         return conversation_text
+
+    def _parse_title_payload(self, completion_data: Dict[str, Any]) -> Dict[str, Any] | None:
+        candidates = [
+            completion_data.get("text"),
+            completion_data.get("data"),
+            completion_data.get("result"),
+            completion_data,
+        ]
+
+        for candidate in candidates:
+            parsed = self._parse_title_candidate(candidate)
+            if parsed:
+                return parsed
+        return None
+
+    def _parse_title_candidate(self, candidate: Any) -> Dict[str, Any] | None:
+        if isinstance(candidate, dict):
+            if candidate.get("title") or candidate.get("subtitle"):
+                return candidate
+            for nested_key in ("text", "data", "result", "response"):
+                nested = self._parse_title_candidate(candidate.get(nested_key))
+                if nested:
+                    return nested
+            return None
+
+        if not isinstance(candidate, str):
+            return None
+
+        text = candidate.strip()
+        if not text:
+            return None
+
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                nested = self._parse_title_candidate(parsed)
+                if nested:
+                    return nested
+        except json.JSONDecodeError:
+            pass
+
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if not json_match:
+            return None
+
+        try:
+            parsed = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def _coerce_text(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, (int, float, bool)):
+            return str(value).strip()
+        if isinstance(value, dict):
+            for key in ("text", "content", "value", "title", "subtitle"):
+                if key in value:
+                    text = self._coerce_text(value.get(key))
+                    if text:
+                        return text
+            return json.dumps(value, ensure_ascii=False).strip()
+        if isinstance(value, list):
+            return " ".join(self._coerce_text(item) for item in value).strip()
+        return str(value).strip()
 
     async def _request_title_completion(self, conversation_text: str):
         prompt = (

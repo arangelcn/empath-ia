@@ -301,21 +301,7 @@ class ChatService:
             username = self._extract_username_from_session_id(session_id) or 'default'
             
             # Carregar preferências do usuário (voz, etc.)
-            users_collection = get_collection("users")
-            user = await users_collection.find_one({"username": username})
-            
-            selected_voice = "pt-BR-Neural2-B"  # padrão masculino
-            voice_enabled = True
-            
-            if user and user.get("preferences"):
-                preferences = user["preferences"]
-                selected_voice = preferences.get("selected_voice", selected_voice)
-                voice_enabled = preferences.get("voice_enabled", voice_enabled)
-            
-            # ✅ NOVO: Forçar voice_enabled=True quando em VoiceMode
-            if is_voice_mode:
-                voice_enabled = True
-                logger.info(f"🎤 VoiceMode detectado - Forçando síntese de voz (voice_enabled=True)")
+            selected_voice, voice_enabled = await self._get_voice_config(username, is_voice_mode)
             
             logger.info(f"🔊 Configuração de voz - voice_enabled: {voice_enabled}, selected_voice: {selected_voice}")
             
@@ -420,11 +406,12 @@ class ChatService:
 
             parsed_original_session_id = identity.get("therapeutic_session_id") or legacy_session_id.split("_")[-1]
             if parsed_original_session_id == "session-1":
+                selected_voice, voice_enabled = await self._get_voice_config(username, is_voice_mode)
                 result = await self.process_user_message(
                     legacy_session_id,
                     user_message,
                     session_objective=session_objective,
-                    is_voice_mode=is_voice_mode,
+                    is_voice_mode=False,
                 )
                 yield {
                     "event": "meta",
@@ -432,6 +419,7 @@ class ChatService:
                         "trace_id": trace_id,
                         "chat_id": chat_id,
                         "session_id": legacy_session_id,
+                        "user_message": (result.get("data") or {}).get("user_message"),
                         "streaming": False,
                         "fallback_reason": "registration_session",
                     },
@@ -439,23 +427,40 @@ class ChatService:
                 ai_response = (result.get("data") or {}).get("ai_response") or {}
                 if ai_response.get("content"):
                     yield {"event": "text_delta", "data": {"delta": ai_response["content"], "trace_id": trace_id}}
-                if ai_response.get("audioUrl"):
+
+                audio_streamed = False
+                if ai_response.get("content") and voice_enabled:
+                    async for audio_event in self._stream_tts_chunk(
+                        ai_response["content"],
+                        selected_voice,
+                        trace_id,
+                        audio_sequence,
+                        started_at,
+                    ):
+                        if audio_event["event"] == "audio_chunk":
+                            audio_streamed = True
+                        yield audio_event
+
+                if not audio_streamed and ai_response.get("content") and voice_enabled:
+                    audio_url = await self._generate_audio(ai_response["content"], selected_voice, is_voice_mode=True)
+                    if audio_url:
+                        yield {"event": "audio_url", "data": {"audio_url": audio_url, "trace_id": trace_id}}
+                elif ai_response.get("audioUrl"):
                     yield {"event": "audio_url", "data": {"audio_url": ai_response["audioUrl"], "trace_id": trace_id}}
-                yield {"event": "done", "data": {"trace_id": trace_id, "result": result, "streaming": False}}
+                yield {
+                    "event": "done",
+                    "data": {
+                        "trace_id": trace_id,
+                        "result": result,
+                        "data": result.get("data"),
+                        "streaming": False,
+                    },
+                }
                 return
 
             await self.start_or_get_conversation(legacy_session_id)
 
-            users_collection = get_collection("users")
-            user = await users_collection.find_one({"username": username})
-            selected_voice = "pt-BR-Neural2-B"
-            voice_enabled = True
-            if user and user.get("preferences"):
-                preferences = user["preferences"]
-                selected_voice = preferences.get("selected_voice", selected_voice)
-                voice_enabled = preferences.get("voice_enabled", voice_enabled)
-            if is_voice_mode:
-                voice_enabled = True
+            selected_voice, voice_enabled = await self._get_voice_config(username, is_voice_mode)
 
             initial_prompt = None
             if not session_objective:
@@ -744,6 +749,7 @@ class ChatService:
             # ✅ NOVO: Buscar perfil completo do usuário para enviar ao AI Service
             user_profile = await self.user_profile_service.get_user_profile(username)
             logger.info(f"👤 Perfil do usuário {username}: {'encontrado' if user_profile else 'não encontrado'}")
+            preferred_name = (user_profile or {}).get("preferred_name")
             
             # ✅ NOVO: Obter contexto da conversa atual
             conversation_history = await self._get_conversation_context(session_id)
@@ -756,6 +762,7 @@ class ChatService:
                 "message": user_message,
                 "session_id": session_id,
                 "username": username,  # ✅ NOVO: Incluir username
+                "preferred_name": preferred_name,
                 "user_profile": user_profile,  # ✅ NOVO: Perfil completo do usuário
                 "conversation_history": conversation_history,
                 "session_objective": session_objective,
@@ -893,6 +900,23 @@ class ChatService:
 
     async def _generate_audio(self, text: str, voice: str, is_voice_mode: bool = False) -> Optional[str]:
         return await self.voice_synthesis_service.generate_audio(text, voice, is_voice_mode)
+
+    async def _get_voice_config(self, username: str, is_voice_mode: bool = False) -> tuple[str, bool]:
+        selected_voice = "pt-BR-Neural2-B"
+        voice_enabled = True
+
+        users_collection = get_collection("users")
+        user = await users_collection.find_one({"username": username})
+        if user and user.get("preferences"):
+            preferences = user["preferences"]
+            selected_voice = preferences.get("selected_voice", selected_voice)
+            voice_enabled = preferences.get("voice_enabled", voice_enabled)
+
+        if is_voice_mode:
+            voice_enabled = True
+            logger.info("🎤 VoiceMode detectado - forçando síntese de voz")
+
+        return selected_voice, voice_enabled
 
     def _gateway_audio_url(self, audio_url: str) -> str:
         return self.voice_synthesis_service.gateway_audio_url(audio_url)
