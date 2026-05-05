@@ -418,6 +418,22 @@ export const getActiveTherapeuticSessions = async (limit = 50) => {
  */
 export const getTherapeuticSession = async (sessionId) => {
   try {
+    const storedUserRaw = localStorage.getItem('empatia_user');
+    let storedUser = null;
+    if (storedUserRaw) {
+      try {
+        storedUser = JSON.parse(storedUserRaw);
+      } catch {
+        storedUser = null;
+      }
+    }
+    const storedUsername = storedUser?.username || storedUser?.email || storedUser?.name;
+
+    if (sessionId?.startsWith('session-') && storedUsername) {
+      const response = await apiClient.get(`/user/${storedUsername}/sessions/${sessionId}`);
+      return response.data;
+    }
+
     const response = await apiClient.get(`/sessions/${sessionId}`);
     return response.data;
   } catch (error) {

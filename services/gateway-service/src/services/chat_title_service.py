@@ -97,7 +97,7 @@ class ChatTitleService:
         if isinstance(candidate, dict):
             if candidate.get("title") or candidate.get("subtitle"):
                 return candidate
-            for nested_key in ("text", "data", "result", "response"):
+            for nested_key in ("text", "data", "result", "response", "content"):
                 nested = self._parse_title_candidate(candidate.get(nested_key))
                 if nested:
                     return nested

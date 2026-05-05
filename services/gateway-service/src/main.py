@@ -89,15 +89,12 @@ async def auto_initialize_prompts():
     Auto-inicializar prompts padrão na startup se não existirem
     """
     try:
-        # Verificar se prompt principal existe
-        system_prompt = await prompt_service.get_prompt("system_rogers")
-        
-        if not system_prompt:
-            logger.info("🔍 Prompts não encontrados. Inicializando prompts padrão...")
-            result = await prompt_service.create_default_prompts()
-            logger.info(f"✅ Auto-inicialização concluída: {result.get('created_count', 0)} prompts criados")
-        else:
-            logger.info("✅ Prompts já existem no banco de dados")
+        result = await prompt_service.create_default_prompts()
+        logger.info(
+            "✅ Auto-inicialização concluída: %s prompts criados de %s",
+            result.get("created_count", 0),
+            result.get("total_prompts", 0),
+        )
             
     except Exception as e:
         logger.error(f"❌ Erro na auto-inicialização de prompts: {e}")

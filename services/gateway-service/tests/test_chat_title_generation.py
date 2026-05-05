@@ -144,3 +144,58 @@ def test_generate_chat_title_accepts_dict_text_payload(monkeypatch):
         "title": "Cansaço no trabalho",
         "subtitle": "Reconhecendo limites e energia emocional",
     }
+
+
+def test_generate_chat_title_parses_fenced_json_inside_content(monkeypatch):
+    conversations = FakeCollection()
+    user_sessions = FakeCollection()
+
+    def fake_get_collection(name):
+        return {
+            "conversations": conversations,
+            "user_therapeutic_sessions": user_sessions,
+        }[name]
+
+    async def fake_context(chat_id):
+        return [
+            {"type": "user", "content": "Estou sem energia no trabalho."},
+            {"type": "ai", "content": "Parece que sua energia tem sido muito exigida."},
+        ]
+
+    FakeAsyncClient.requests = []
+    FakeResponse.payload = {
+        "success": True,
+        "text": {
+            "content": """```json
+{
+  "title": "Cansaço no trabalho",
+  "subtitle": "Reconhecendo limites e energia emocional"
+}
+```"""
+        },
+    }
+    monkeypatch.setattr(chat_service_module, "get_collection", fake_get_collection)
+    monkeypatch.setattr(chat_service_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    service = ChatService()
+    service.ai_service_url = "http://ai-service:8001"
+    monkeypatch.setattr(service, "_get_conversation_context", fake_context)
+
+    try:
+        result = asyncio.run(service.generate_chat_title("chat_123", "initial"))
+    finally:
+        FakeResponse.payload = {
+            "success": True,
+            "text": json.dumps(
+                {
+                    "title": "Ansiedade no trabalho",
+                    "subtitle": "Explorando pressões e limites no dia a dia",
+                }
+            ),
+        }
+
+    assert result == {
+        "success": True,
+        "title": "Cansaço no trabalho",
+        "subtitle": "Reconhecendo limites e energia emocional",
+    }

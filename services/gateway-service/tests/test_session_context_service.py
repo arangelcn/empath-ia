@@ -47,6 +47,15 @@ def test_estimate_conversation_duration_uses_timestamp_delta():
     assert result == 15
 
 
+def test_estimate_conversation_duration_accepts_iso_strings():
+    svc = make_service()
+    messages = [
+        {"content": "oi", "created_at": "2025-01-01T10:00:00"},
+        {"content": "como vai?", "created_at": "2025-01-01T10:18:00"},
+    ]
+    assert svc._estimate_conversation_duration(messages) == 18
+
+
 def test_analyze_basic_emotions_detects_tristeza():
     svc = make_service()
     messages = [{"content": "estou muito triste hoje", "type": "user"}]

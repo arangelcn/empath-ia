@@ -64,10 +64,16 @@ class SessionContextService:
             if conversation.get("session_context"):
                 existing_context = conversation["session_context"]
                 if not self._is_valid_saved_context(existing_context, session_id):
-                    return {
-                        "success": False,
-                        "error": "Contexto salvo inválido ou genérico; gere a sessão novamente com IA disponível",
-                    }
+                    recovered_context = await self._recover_context_from_history(
+                        session_id,
+                        manual_termination=manual_termination,
+                    )
+                    if not recovered_context:
+                        return {
+                            "success": False,
+                            "error": "Contexto salvo inválido ou genérico; gere a sessão novamente com IA disponível",
+                        }
+                    existing_context = recovered_context
                 logger.info(f"✅ Sessão já possui contexto: {session_id}")
                 next_session_result = await self._next_session_service.create_next_session_automatically(
                     session_id,
@@ -101,45 +107,18 @@ class SessionContextService:
 
             # ✅ CORREÇÃO: Salvar contexto apenas na coleção session_contexts (eliminar duplicação)
             if context_data:
-                session_contexts = get_collection("session_contexts")
-                conversations = get_collection("conversations")
+                await self._persist_generated_context(session_id, context_data, messages, manual_termination)
 
-                # Verificar se o contexto já foi salvo na coleção session_contexts pelo SessionContextService
+                conversations = get_collection("conversations")
+                session_contexts = get_collection("session_contexts")
                 context_doc = await session_contexts.find_one({"session_id": session_id})
 
-                if not context_doc:
-                    logger.info(f"💾 Salvando contexto gerado por IA na coleção session_contexts: {session_id}")
-
-                    # Extrair username do session_id
-                    username = self._extract_username(session_id)
-
-                    # Criar documento para session_contexts
-                    context_document = {
-                        "session_id": session_id,
-                        "username": username,
-                        "context": context_data,
-                        "conversation_text": self._format_conversation_for_analysis(
-                            (await self._repo.get_history(session_id)).get("history", [])
-                        ),
-                        "created_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow(),
-                        "emotions_data": [],
-                        "is_active": True,
-                        "source": "gateway_ai_finalization",
-                        "version": 1
-                    }
-
-                    # Salvar na coleção session_contexts
-                    result = await session_contexts.insert_one(context_document)
-                    context_doc = {"_id": result.inserted_id}
-                    logger.info(f"✅ Contexto salvo na coleção session_contexts: {session_id}")
-
                 # Salvar apenas referência na coleção conversations
-                update_result = await conversations.update_one(
+                await conversations.update_one(
                     {"session_id": session_id},
                     {
                         "$set": {
-                            "session_context_ref": context_doc["_id"],  # Referência ao documento
+                            "session_context_ref": context_doc["_id"] if context_doc else None,
                             "context_generated_at": datetime.utcnow(),
                             "session_finalized": True,
                             "manual_termination": manual_termination,
@@ -148,21 +127,17 @@ class SessionContextService:
                     }
                 )
 
-                if update_result.modified_count > 0:
-                    logger.info(f"✅ Contexto referenciado para sessão: {session_id}")
+                logger.info(f"✅ Contexto referenciado para sessão: {session_id}")
 
-                    # ✅ NOVO: Criar próxima sessão automaticamente
-                    next_session_result = await self._next_session_service.create_next_session_automatically(session_id, context_data)
+                # ✅ NOVO: Criar próxima sessão automaticamente
+                next_session_result = await self._next_session_service.create_next_session_automatically(session_id, context_data)
 
-                    return {
-                        "success": True,
-                        "context": context_data,
-                        "manual_termination": manual_termination,
-                        "next_session": next_session_result
-                    }
-                else:
-                    logger.error(f"❌ Falha ao referenciar contexto: {session_id}")
-                    return {"success": False, "error": "Falha ao referenciar contexto"}
+                return {
+                    "success": True,
+                    "context": context_data,
+                    "manual_termination": manual_termination,
+                    "next_session": next_session_result
+                }
             else:
                 logger.error(f"❌ Falha ao gerar contexto: {session_id}")
                 return {"success": False, "error": "Falha ao gerar contexto"}
@@ -187,6 +162,9 @@ class SessionContextService:
                 context = context_doc.get("context", {})
                 if self._is_valid_saved_context(context, session_id):
                     return context
+                recovered_context = await self._recover_context_from_history(session_id)
+                if recovered_context:
+                    return recovered_context
                 return None
             else:
                 # ✅ FALLBACK: Para sessões antigas que ainda têm contexto na coleção conversations
@@ -198,8 +176,14 @@ class SessionContextService:
                     context = conversation["session_context"]
                     if self._is_valid_saved_context(context, session_id):
                         return context
+                    recovered_context = await self._recover_context_from_history(session_id)
+                    if recovered_context:
+                        return recovered_context
                     return None
                 else:
+                    recovered_context = await self._recover_context_from_history(session_id)
+                    if recovered_context:
+                        return recovered_context
                     logger.warning(f"⚠️ Contexto não encontrado para sessão: {session_id}")
                     return None
 
@@ -270,26 +254,16 @@ class SessionContextService:
             if context_doc:
                 context = context_doc.get("context", {})
                 if not self._is_valid_saved_context(context, previous_session_id):
-                    return None
+                    logger.warning(
+                        "⚠️ Contexto salvo rejeitado para sessão anterior %s; tentando regenerar",
+                        previous_session_id,
+                    )
+                    context = await self._recover_context_from_history(previous_session_id)
+                    if not context:
+                        return None
                 logger.info(f"✅ Contexto encontrado da sessão anterior: {len(str(context))} chars")
 
-                # Buscar registration_data da conversation se necessário
-                conversations = get_collection("conversations")
-                previous_conversation = await conversations.find_one({"session_id": previous_session_id})
-
-                # Retornar contexto completo incluindo registration_data
-                return {
-                    "session_id": previous_session_id,
-                    "registration_data": previous_conversation.get("registration_data", {}) if previous_conversation else {},  # ✅ NOVO: Dados de registro
-                    "session_context": context,  # ✅ NOVO: Contexto completo da sessão
-                    # Campos principais para compatibilidade
-                    "summary": context.get("summary", ""),
-                    "main_themes": context.get("main_themes", []),
-                    "key_insights": context.get("key_insights", []),
-                    "emotional_state": context.get("emotional_state", {}),
-                    "future_sessions": context.get("future_sessions", {}),
-                    "user_progress": context.get("user_progress", {})
-                }
+                return await self._build_previous_context_payload(previous_session_id, context)
             else:
                 # ✅ FALLBACK: Para sessões antigas que ainda têm contexto na coleção conversations
                 logger.warning(f"⚠️ Contexto não encontrado em session_contexts, tentando fallback para {previous_session_id}")
@@ -299,23 +273,23 @@ class SessionContextService:
                 if previous_conversation and previous_conversation.get("session_context"):
                     context = previous_conversation["session_context"]
                     if not self._is_valid_saved_context(context, previous_session_id):
-                        return None
+                        logger.warning(
+                            "⚠️ Contexto fallback rejeitado para %s; tentando regenerar",
+                            previous_session_id,
+                        )
+                        context = await self._recover_context_from_history(previous_session_id)
+                        if not context:
+                            return None
                     logger.info(f"✅ Contexto encontrado via fallback da sessão anterior: {len(str(context))} chars")
-
-                    # Retornar contexto completo incluindo registration_data
-                    return {
-                        "session_id": previous_session_id,
-                        "registration_data": previous_conversation.get("registration_data", {}),  # ✅ NOVO: Dados de registro
-                        "session_context": context,  # ✅ NOVO: Contexto completo da sessão
-                        # Campos principais para compatibilidade
-                        "summary": context.get("summary", ""),
-                        "main_themes": context.get("main_themes", []),
-                        "key_insights": context.get("key_insights", []),
-                        "emotional_state": context.get("emotional_state", {}),
-                        "future_sessions": context.get("future_sessions", {}),
-                        "user_progress": context.get("user_progress", {})
-                    }
+                    return await self._build_previous_context_payload(
+                        previous_session_id,
+                        context,
+                        previous_conversation,
+                    )
                 else:
+                    recovered_context = await self._recover_context_from_history(previous_session_id)
+                    if recovered_context:
+                        return await self._build_previous_context_payload(previous_session_id, recovered_context)
                     logger.warning(f"⚠️ Contexto não encontrado para sessão anterior: {previous_session_id}")
                     return None
 
@@ -651,8 +625,8 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             first_message = messages[0]
             last_message = messages[-1]
 
-            start_time = first_message.get("created_at")
-            end_time = last_message.get("created_at")
+            start_time = self._coerce_datetime(first_message.get("created_at"))
+            end_time = self._coerce_datetime(last_message.get("created_at"))
 
             if start_time and end_time:
                 duration = end_time - start_time
@@ -664,3 +638,122 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
         except Exception as e:
             logger.error(f"❌ Erro ao calcular duração: {e}")
             return len(messages)  # Fallback simples
+
+    def _coerce_datetime(self, value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value
+
+        if isinstance(value, (int, float)):
+            try:
+                return datetime.utcfromtimestamp(value)
+            except (OverflowError, OSError, ValueError):
+                return None
+
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return None
+
+            if cleaned.endswith("Z"):
+                cleaned = f"{cleaned[:-1]}+00:00"
+
+            try:
+                return datetime.fromisoformat(cleaned)
+            except ValueError:
+                return None
+
+        return None
+
+    async def _persist_generated_context(
+        self,
+        session_id: str,
+        context_data: Dict[str, Any],
+        messages: List[Dict[str, Any]],
+        manual_termination: bool,
+    ) -> None:
+        session_contexts = get_collection("session_contexts")
+        conversations = get_collection("conversations")
+        now = datetime.utcnow()
+        username = self._extract_username(session_id) if self._extract_username else None
+        conversation_text = self._format_conversation_for_analysis(messages)
+
+        await session_contexts.update_one(
+            {"session_id": session_id},
+            {
+                "$set": {
+                    "session_id": session_id,
+                    "username": username,
+                    "context": context_data,
+                    "conversation_text": conversation_text,
+                    "created_at": now,
+                    "updated_at": now,
+                    "emotions_data": [],
+                    "is_active": True,
+                    "source": "gateway_ai_finalization",
+                    "version": 1,
+                }
+            },
+            upsert=True,
+        )
+
+        await conversations.update_one(
+            {"session_id": session_id},
+            {
+                "$set": {
+                    "session_context": context_data,
+                    "session_context_generated_at": now,
+                    "session_context_updated_at": now,
+                    "session_context_source": "gateway_ai_finalization",
+                    "session_context_manual_termination": manual_termination,
+                    "session_context_generation_method": context_data.get("generation_method", "session_context_service"),
+                }
+            }
+        )
+
+    async def _recover_context_from_history(
+        self,
+        session_id: str,
+        manual_termination: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            if not self._repo:
+                return None
+
+            history_data = await self._repo.get_history(session_id)
+            messages = history_data.get("history", [])
+            if not messages:
+                return None
+
+            context_data = await self._generate_session_context(session_id, messages, manual_termination)
+            if not context_data:
+                return None
+
+            await self._persist_generated_context(session_id, context_data, messages, manual_termination)
+            return context_data
+
+        except Exception as exc:
+            logger.error("❌ Erro ao recuperar contexto de %s: %s", session_id, exc)
+            return None
+
+    async def _build_previous_context_payload(
+        self,
+        previous_session_id: str,
+        context: Dict[str, Any],
+        previous_conversation: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        conversation = previous_conversation or {}
+        if not conversation:
+            conversations = get_collection("conversations")
+            conversation = await conversations.find_one({"session_id": previous_session_id}) or {}
+
+        return {
+            "session_id": previous_session_id,
+            "registration_data": conversation.get("registration_data", {}),
+            "session_context": context,
+            "summary": context.get("summary", ""),
+            "main_themes": context.get("main_themes", []),
+            "key_insights": context.get("key_insights", []),
+            "emotional_state": context.get("emotional_state", {}),
+            "future_sessions": context.get("future_sessions", {}),
+            "user_progress": context.get("user_progress", {}),
+        }

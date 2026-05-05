@@ -74,6 +74,52 @@ except Exception as exc:
     logger.warning("Não foi possível carregar fallbacks.json: %s", exc)
     _FALLBACK_RESPONSES = {}
 
+
+def _extract_json_payload(raw_value: Any) -> Optional[Dict[str, Any]]:
+    """Extract a JSON object from plain text, fenced markdown, or wrapped content."""
+    candidate: Any = raw_value
+
+    if isinstance(candidate, dict):
+        for key in ("content", "text", "data", "result", "response"):
+            nested = candidate.get(key)
+            if isinstance(nested, (dict, str)):
+                candidate = nested
+                break
+
+    if isinstance(candidate, dict):
+        return candidate
+
+    if not isinstance(candidate, str):
+        return None
+
+    text = candidate.strip()
+    if not text:
+        return None
+
+    fenced_match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.IGNORECASE | re.DOTALL)
+    if fenced_match:
+        text = fenced_match.group(1).strip()
+
+    for payload in (text, _extract_braced_json(text)):
+        if not payload:
+            continue
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+
+    return None
+
+
+def _extract_braced_json(text: str) -> Optional[str]:
+    start_idx = text.find("{")
+    end_idx = text.rfind("}") + 1
+    if start_idx < 0 or end_idx <= start_idx:
+        return None
+    return text[start_idx:end_idx]
+
 class LLMService:
     """
     Serviço LLM principal: modelo local GGUF (Gemma) com fallback para OpenAI.
@@ -1423,11 +1469,9 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 raise RuntimeError("Nenhum provedor LLM disponível para gerar contexto da sessão")
 
             result = llm_result["content"]
-
-            try:
-                context_data = json.loads(result)
-            except json.JSONDecodeError as exc:
-                raise ValueError("LLM retornou contexto de sessão em JSON inválido") from exc
+            context_data = _extract_json_payload(result)
+            if not context_data:
+                raise ValueError("LLM retornou contexto de sessão em JSON inválido")
 
             self._validate_session_context(context_data)
             return context_data

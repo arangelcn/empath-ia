@@ -56,7 +56,10 @@ class VoiceSynthesisService:
                         return audio_url
 
         except Exception as e:
-            error_msg = f"⚠️ Falha ao gerar áudio{'(VoiceMode)' if is_voice_mode else ''}: {e}"
+            error_msg = (
+                f"⚠️ Falha ao gerar áudio{'(VoiceMode)' if is_voice_mode else ''}: "
+                f"{type(e).__name__}: {e}"
+            )
             logger.warning(error_msg)
 
         return None
@@ -124,7 +127,7 @@ class VoiceSynthesisService:
                         }
                         chunk_sequence += 1
         except Exception as exc:
-            logger.warning("⚠️ Falha no streaming TTS: %s", exc)
+            logger.warning("⚠️ Falha no streaming TTS: %s: %s", type(exc).__name__, exc)
             yield {
                 "event": "error",
                 "data": {
