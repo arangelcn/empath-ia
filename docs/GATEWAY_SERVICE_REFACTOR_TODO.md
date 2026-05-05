@@ -17,15 +17,27 @@ Objetivo: simplificar e otimizar o `services/gateway-service` preservando os con
 - [x] Dividir `src/api/admin.py` em routers/admin services menores.
 - [x] Quebrar `ChatService` em orquestradores, services, clients e repositories.
 - [x] Adicionar testes de regressão antes de cada extração de maior risco.
+- [x] Garantir que `session-1` seja criada de forma idempotente nas leituras da jornada do usuário.
+- [x] Corrigir setup de testes para permitir `pytest services/gateway-service` a partir da raiz.
+- [x] Atualizar documentação técnica do gateway/ai-service pós-refactor.
 - [ ] Limpar comentários históricos e logs de debug depois que os fluxos estiverem cobertos.
 
 ## Mapa Atual
 
-Arquivos com maior concentração de responsabilidade:
+Arquivos e responsabilidades atuais:
 
-- `src/services/chat_service.py`: chat, identidade de conversa, persistência, AI Service, Voice Service, SSE, cadastro `session-1`, contexto de sessão, próxima sessão, título de chat e perfil de usuário.
-- `src/main.py`: rotas públicas de chat, user, sessão, proxy AI/avatar/emotion/voice, prompts, config e health.
-- `src/api/admin.py`: dashboard, knowledge proxy, conversas, analytics, sessões terapêuticas, usuários, contexto e user sessions.
+- `src/main.py`: criação do app, CORS, startup/shutdown, índices, auto-inicialização de prompts e `include_router`.
+- `src/api/*.py`: routers públicos separados por domínio (`chat`, `chat_context`, `users`, `sessions`, `voice`, `emotions`, `prompts`, `proxy`, `health`, `auth`).
+- `src/api/admin_*.py`: routers administrativos separados por dashboard, knowledge, conversas, sessões, usuários e contextos.
+- `src/services/chat_service.py`: orquestração principal do chat, mantendo compatibilidade com `chat_id` novo e `session_id` legado.
+- `src/services/registration_service.py`: fluxo especial de cadastro da `session-1`.
+- `src/services/user_therapeutic_session_service.py`: jornada terapêutica por usuário; garante `session-1` nas leituras de sessões/progresso.
+- `src/services/session_context_service.py`: finalização da sessão e contexto estruturado via AI Service.
+- `src/services/next_session_service.py`: criação da próxima sessão personalizada.
+- `src/services/voice_synthesis_service.py`: síntese de áudio via Voice Service e rewrite de URL para o gateway.
+- `src/services/chat_title_service.py`: geração de título/subtítulo via AI Service.
+- `src/domain/conversation_identity.py`: parsing/resolução de `chat_id`, `legacy_session_id`, `username` e `therapeutic_session_id`.
+- `src/repositories/conversation_repository.py`: persistência de conversas e mensagens.
 - `src/models/database.py`: conexão MongoDB e criação de todos os índices.
 
 ## Alvos de Arquitetura
@@ -128,10 +140,12 @@ Routers:
 
 6. Testes:
    - [x] Instalar/ativar `pytest` no ambiente local ou container.
+   - [x] Corrigir import path de `src` no gateway via `conftest.py`.
    - [x] Testar `SentenceChunker`/SSE.
    - [x] Testar `ConversationIdentity`.
    - [x] Testar geração de título.
    - [x] Testar fluxo `session-1` com mocks.
+   - [x] Testar criação idempotente da `session-1` ao listar sessões do usuário.
    - [x] Testar streaming sem duplicar contador.
    - [ ] Testar routers extraídos com `TestClient` e services mockados.
 

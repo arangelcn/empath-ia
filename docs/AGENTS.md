@@ -46,7 +46,7 @@ Plataforma de apoio terapêutico com IA conversacional baseada na abordagem huma
 ### Modificar lógica de IA ou prompts
 1. Leia a seção de prompts em [`TECHNICAL.md`](TECHNICAL.md)
 2. Consulte a Prioridade 5 em [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md)
-3. Arquivos principais: `services/gateway-service/src/services/prompt_service.py`, `services/gateway-service/src/services/chat_service.py` e `services/ai-service/src/services/openai_service.py`
+3. Arquivos principais: `services/gateway-service/src/services/prompt_service.py`, `services/gateway-service/src/services/chat_service.py`, `services/gateway-service/src/services/chat_title_service.py` e `services/ai-service/src/services/llm_service.py`
 
 ### Trabalhar com sessões terapêuticas
 1. Leia a seção de sessões terapêuticas em [`TECHNICAL.md`](TECHNICAL.md)
@@ -60,7 +60,7 @@ Plataforma de apoio terapêutico com IA conversacional baseada na abordagem huma
 ### Trabalhar com síntese de voz
 1. Leia a seção de síntese de voz em [`TECHNICAL.md`](TECHNICAL.md)
 2. Consulte a Prioridade 7 em [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md)
-3. Atenção ao rewrite de URL: `_rewrite_audio_url()` em `gateway-service/src/main.py`
+3. Atenção ao rewrite de URL: `_rewrite_audio_url()` em `gateway-service/src/api/voice.py` e `VoiceSynthesisService.gateway_audio_url()` em `gateway-service/src/services/voice_synthesis_service.py`
 
 ### Modificar banco de dados (schema/queries)
 1. Leia a seção de schema do banco em [`TECHNICAL.md`](TECHNICAL.md)
@@ -94,7 +94,7 @@ chat_4f0d...
 Qualquer query nas coleções `messages` ou `conversations` deve preferir `chat_id`. Quando filtrar por sessão terapêutica, use o par `username + therapeutic_session_id`. Sem isso, um usuário pode ver mensagens de outro. O resumo atualizado fica na seção de sessões terapêuticas em [`TECHNICAL.md`](TECHNICAL.md).
 
 ### 3. Audio URL rewrite
-O voice service retorna URLs no formato `/api/v1/audio/{filename}` (porta 8004, interna). O gateway reescreve para `/api/voice/audio/{filename}` antes de retornar ao browser. A função `_rewrite_audio_url()` em `main.py` faz isso. **Nunca retorne a URL interna diretamente ao frontend.**
+O voice service retorna URLs no formato `/api/v1/audio/{filename}` (porta 8004, interna). O gateway reescreve para `/api/voice/audio/{filename}` antes de retornar ao browser. Após o refactor, o rewrite fica em `src/api/voice.py` para proxy HTTP e em `src/services/voice_synthesis_service.py` para respostas geradas pelo chat. **Nunca retorne a URL interna diretamente ao frontend.**
 
 ### 4. Variáveis VITE_* são embutidas em build time
 As variáveis `VITE_*` do frontend (como `VITE_API_URL`, `VITE_GOOGLE_CLIENT_ID`) são injetadas no bundle durante o `docker compose build`. Mudar o `.env` sem recompilar não tem efeito.
@@ -107,6 +107,9 @@ Na startup do gateway, `auto_initialize_prompts()` verifica se o prompt `system_
 
 ### 7. MongoDB é async (Motor)
 O gateway usa Motor (driver MongoDB assíncrono). Todas as operações de banco usam `await`. O objeto de coleção é obtido via `get_collection("nome_colecao")` de `models/database.py`.
+
+### 8. Session-1 é garantida pelo gateway
+`UserTherapeuticSessionService.ensure_registration_session()` cria a `session-1` de forma idempotente quando a jornada do usuário é lida. Não assuma que a Home precisa criar essa sessão no frontend.
 
 ---
 

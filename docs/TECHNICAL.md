@@ -54,6 +54,22 @@ knowledge-service → mongodb:27017
 knowledge-service → qdrant:6333
 ```
 
+### Gateway refatorado
+
+O `gateway-service` agora mantém `main.py` como composição do app: CORS, startup/shutdown, índices, auto-inicialização de prompts e inclusão de routers. As responsabilidades HTTP ficam em `src/api/*.py` e `src/api/admin_*.py`.
+
+Peças principais:
+- `src/api/chat.py`: envio, streaming, histórico e abertura de conversa.
+- `src/api/chat_context.py`: mensagem inicial, finalização, contexto e título.
+- `src/api/users.py`: usuário, preferências e login.
+- `src/api/sessions.py`: templates terapêuticos e sessões por usuário.
+- `src/api/voice.py`: proxy para Voice Service.
+- `src/api/admin_*.py`: rotas administrativas separadas por domínio.
+- `src/domain/conversation_identity.py`: compatibilidade entre `chat_id`, `legacy_session_id`, `username` e `therapeutic_session_id`.
+- `src/services/registration_service.py`, `session_context_service.py`, `next_session_service.py`, `voice_synthesis_service.py`, `chat_title_service.py` e `user_profile_service.py`: responsabilidades extraídas do antigo `ChatService`.
+
+O `UserTherapeuticSessionService` garante `session-1` de forma idempotente quando a jornada do usuário é lida. Isso evita Home vazia para usuários que chegam em `/api/user/{username}/sessions` antes de passar pelo endpoint de login.
+
 ### Decisão RAG / Knowledge Service
 
 O novo sistema de RAG será implementado como um microserviço interno dedicado, chamado `knowledge-service`, em vez de ficar embutido no `ai-service`.
@@ -235,7 +251,7 @@ GET  /api/chat/context/{session_id}
 POST /api/user/create              Body: { "username", "email", "preferences" }
 GET  /api/user/{username}
 PUT  /api/user/{username}/preferences
-POST /api/user/{username}/login    Registra login e cria session-1 automaticamente
+POST /api/user/{username}/login    Registra login e garante session-1 automaticamente
 GET  /api/user/{username}/stats
 GET  /api/user/status/{session_id}
 POST /api/user/preferences         Body: { "session_id", "username", "selected_voice", "voice_enabled" }
@@ -252,6 +268,8 @@ POST /api/user/{username}/sessions/{session_id}/unlock     → desbloqueia
 GET  /api/user/{username}/progress                         → progresso geral
 GET  /api/user/{username}/sessions/info                    → estatísticas detalhadas
 ```
+
+`GET /api/user/{username}/sessions`, `GET /api/user/{username}/sessions/session-1`, `GET /api/user/{username}/progress`, a sequência e o cálculo de permissão para próxima sessão garantem a existência da `session-1` antes de consultar o banco. A criação é idempotente e preserva filtros de status.
 
 ### Emoções — `/api/emotions`
 
@@ -385,15 +403,20 @@ GET /api/admin/user-sessions
 ```json
 {
   "username": "usuario@email.com",
-  "session_id": "session-2",
-  "title": "Aprofundando nosso conhecimento",
+  "session_id": "session-1",
+  "template_session_id": "session-1",
+  "title": "Cadastro e Apresentação",
   "subtitle": "...",
   "objective": "...",
   "initial_prompt": "...",
   "focus_areas": ["autoconhecimento", "relacionamentos"],
   "status": "unlocked | in_progress | completed | locked",
   "progress": 100,
-  "personalized": true,
+  "is_registration_session": true,
+  "personalized": false,
+  "generation_method": "registration_seed | ai_service | template",
+  "based_on_session": "session-1 (opcional em sessões dinâmicas)",
+  "connection_to_previous": "... (opcional em sessões dinâmicas)",
   "created_at": "ISO8601",
   "updated_at": "ISO8601"
 }
@@ -622,6 +645,8 @@ Limitações atuais:
    → cria session-1 (template "Cadastro e Apresentação")
    → desbloqueia session-1
 
+   Observação: as leituras da jornada (`GET /api/user/{username}/sessions`, detalhe da `session-1`, progresso e sequência) também garantem essa sessão de forma idempotente, para cobrir usuários existentes ou fluxos que não chamaram login antes da Home.
+
 2. Usuário completa session-1 (onboarding com perguntas)
    → perfil estruturado salvo em users.user_profile
 
@@ -653,7 +678,7 @@ E gera:
 }
 ```
 
-### formato de session_id
+### Formato de session_id
 
 ```
 {username}_{session_id_original}
