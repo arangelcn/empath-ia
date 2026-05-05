@@ -9,6 +9,7 @@ import json
 import logging
 import asyncio
 import time
+import unicodedata
 from pathlib import Path
 from typing import AsyncGenerator, Dict, List, Optional, Any, Tuple
 from datetime import datetime
@@ -27,6 +28,26 @@ from .prompt_client_service import PromptClientService
 from .local_llm_service import LocalLLMService
 
 logger = logging.getLogger(__name__)
+
+_GENERIC_SESSION_CONTEXT_THEMES = {
+    "apoio",
+    "apoio emocional",
+    "autoconhecimento",
+    "bem estar",
+    "bem-estar",
+    "conversa",
+    "conversa terapeutica",
+    "conversa terapêutica",
+    "desenvolvimento pessoal",
+    "escuta ativa",
+    "sentimentos",
+    "sessao terapeutica",
+    "sessão terapêutica",
+    "terapia",
+    "tema geral",
+    "temas importantes",
+    "temas identificados",
+}
 
 # ---------------------------------------------------------------------------
 # Carregamento dos prompts em disco (fallback quando Gateway indisponível)
@@ -1398,33 +1419,22 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 temperature=0.3,
             )
 
-            if llm_result:
-                result = llm_result["content"]
-                
-                # Tentar parsear JSON
-                try:
-                    context_data = json.loads(result)
-                    
-                    # Validar estrutura mínima
-                    required_fields = ["summary", "main_themes", "emotional_state", "key_insights"]
-                    for field in required_fields:
-                        if field not in context_data:
-                            context_data[field] = self._get_default_value(field)
-                    
-                    return context_data
-                    
-                except json.JSONDecodeError:
-                    # Se não conseguir parsear, criar estrutura básica
-                    return self._create_fallback_context(result, emotion_summary)
-                    
-            else:
-                # Fallback quando nenhum provedor LLM está disponível
-                return self._create_fallback_context(conversation_text, emotion_summary)
-                
+            if not llm_result:
+                raise RuntimeError("Nenhum provedor LLM disponível para gerar contexto da sessão")
+
+            result = llm_result["content"]
+
+            try:
+                context_data = json.loads(result)
+            except json.JSONDecodeError as exc:
+                raise ValueError("LLM retornou contexto de sessão em JSON inválido") from exc
+
+            self._validate_session_context(context_data)
+            return context_data
+
         except Exception as e:
             logger.error(f"❌ Erro ao gerar contexto da sessão: {e}")
-            # Retornar contexto básico em caso de erro
-            return self._create_fallback_context("Erro ao processar conversa", {})
+            raise
 
     def _process_emotions_data(self, emotions_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Processar dados de emoções para análise"""
@@ -1448,50 +1458,56 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             "distribution": emotion_counts
         }
     
-    def _get_default_value(self, field: str) -> Any:
-        """Obter valor padrão para campos obrigatórios"""
-        defaults = {
-            "summary": "Resumo não disponível",
-            "main_themes": ["Tema geral"],
-            "emotional_state": {
-                "dominant_emotion": "neutro",
-                "emotional_journey": "Não analisado",
-                "stability": "desconhecido"
-            },
-            "key_insights": ["Análise não disponível"]
-        }
-        return defaults.get(field, "")
-    
-    def _create_fallback_context(self, conversation_text: str, emotion_summary: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Criar contexto de fallback quando a IA não está disponível
-        """
-        return {
-            "summary": f"Sessão terapêutica com conversa de aproximadamente {len(conversation_text.split())} palavras",
-            "main_themes": ["conversa terapêutica", "apoio emocional"],
-            "emotional_state": {
-                "dominant_emotion": emotion_summary.get("dominant_emotion", "neutro"),
-                "journey": "Processo terapêutico em andamento",
-                "stability": "Estável"
-            },
-            "key_insights": [
-                "Usuário engajado no processo terapêutico",
-                "Demonstra abertura para o diálogo",
-                "Busca apoio emocional"
-            ],
-            "therapeutic_progress": {
-                "engagement_level": "Médio",
-                "progress_indicators": ["participação ativa"],
-                "areas_of_growth": ["expressão emocional"]
-            },
-            "next_session_recommendations": [
-                "Continuar processo terapêutico",
-                "Aprofundar temas identificados"
-            ],
-            "risk_indicators": [],
-            "session_quality_rating": 7,
-            "generation_method": "fallback"
-        }
+    def _validate_session_context(self, context_data: Dict[str, Any]) -> None:
+        """Fail fast when the LLM did not produce a real structured context."""
+        required_fields = ["summary", "main_themes", "emotional_state", "key_insights"]
+        missing_fields = [field for field in required_fields if field not in context_data]
+        if missing_fields:
+            raise ValueError(f"Contexto de sessão incompleto: campos ausentes {missing_fields}")
+
+        if not isinstance(context_data.get("summary"), str) or not context_data["summary"].strip():
+            raise ValueError("Contexto de sessão inválido: summary vazio")
+
+        main_themes = context_data.get("main_themes")
+        if not isinstance(main_themes, list) or not any(str(theme).strip() for theme in main_themes):
+            raise ValueError("Contexto de sessão inválido: main_themes vazio")
+
+        meaningful_themes = [
+            theme for theme in main_themes
+            if self._is_meaningful_session_theme(theme)
+        ]
+        if not meaningful_themes:
+            raise ValueError("Contexto de sessão inválido: main_themes contém apenas temas genéricos")
+        context_data["main_themes"] = meaningful_themes
+
+        if not isinstance(context_data.get("emotional_state"), dict):
+            raise ValueError("Contexto de sessão inválido: emotional_state deve ser objeto")
+
+        key_insights = context_data.get("key_insights")
+        if not isinstance(key_insights, list) or not any(str(insight).strip() for insight in key_insights):
+            raise ValueError("Contexto de sessão inválido: key_insights vazio")
+
+    def _is_meaningful_session_theme(self, theme: Any) -> bool:
+        text = str(theme or "").strip().lower()
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(char for char in text if not unicodedata.combining(char))
+        text = re.sub(r"[^a-z0-9\s-]", " ", text)
+        normalized = re.sub(r"\s+", " ", text).strip()
+
+        if not normalized or len(normalized) < 4:
+            return False
+
+        if normalized in _GENERIC_SESSION_CONTEXT_THEMES:
+            return False
+
+        generic_fragments = (
+            "conversa terapeutica",
+            "apoio emocional",
+            "sessao terapeutica",
+            "temas identificados",
+            "temas importantes",
+        )
+        return not any(fragment in normalized for fragment in generic_fragments)
 
     async def generate_next_session(self, user_profile: Dict[str, Any], session_context: Dict[str, Any], current_session_id: str) -> Dict[str, Any]:
         """
@@ -1503,52 +1519,40 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             # Criar prompt para gerar a próxima sessão
             session_prompt = await self._create_next_session_prompt(user_profile, session_context, current_session_id)
             
-            # Tentar gerar com cadeia local -> OpenAI
-            if self.is_available():
-                try:
-                    messages = [
-                        {"role": "system", "content": "Você é um especialista em terapia que cria sessões terapêuticas personalizadas baseadas no contexto do usuário."},
-                        {"role": "user", "content": session_prompt}
-                    ]
-                    
-                    llm_result = await self._call_llm(messages)
-                    ai_response = llm_result["content"] if llm_result else None
-                    provider = llm_result["provider"] if llm_result else "fallback"
-                    
-                    if ai_response:
-                        try:
-                            # Extrair JSON da resposta
-                            start_idx = ai_response.find('{')
-                            end_idx = ai_response.rfind('}') + 1
-                            
-                            if start_idx >= 0 and end_idx > start_idx:
-                                json_str = ai_response[start_idx:end_idx]
-                                next_session_data = json.loads(json_str)
-                                
-                                # Adicionar metadados
-                                next_session_data.update({
-                                    "generated_at": datetime.now().isoformat(),
-                                    "based_on_session": current_session_id,
-                                    "generation_method": provider,
-                                    "personalized": True
-                                })
-                                
-                                logger.info(f"✅ Próxima sessão gerada com {provider} para {current_session_id}")
-                                return next_session_data
-                                
-                        except json.JSONDecodeError as e:
-                            logger.warning(f"⚠️ Erro ao parsear resposta JSON do OpenAI: {e}")
-                            
-                except Exception as e:
-                    logger.warning(f"⚠️ Erro ao chamar cadeia LLM para próxima sessão: {e}")
-            
-            # Fallback: criar sessão baseada em template
-            logger.info(f"🔄 Usando fallback para gerar próxima sessão de {current_session_id}")
-            return self._create_fallback_next_session(user_profile, session_context, current_session_id)
-            
+            messages = [
+                {"role": "system", "content": "Você é um especialista em terapia que cria sessões terapêuticas personalizadas baseadas no contexto do usuário."},
+                {"role": "user", "content": session_prompt}
+            ]
+
+            llm_result = await self._call_llm(messages)
+            if not llm_result:
+                raise RuntimeError("Nenhum provedor LLM disponível para gerar próxima sessão")
+
+            ai_response = llm_result["content"]
+            provider = llm_result["provider"]
+
+            start_idx = ai_response.find('{')
+            end_idx = ai_response.rfind('}') + 1
+
+            if start_idx < 0 or end_idx <= start_idx:
+                raise ValueError("LLM retornou próxima sessão sem JSON válido")
+
+            json_str = ai_response[start_idx:end_idx]
+            next_session_data = json.loads(json_str)
+
+            next_session_data.update({
+                "generated_at": datetime.now().isoformat(),
+                "based_on_session": current_session_id,
+                "generation_method": provider,
+                "personalized": True
+            })
+
+            logger.info(f"✅ Próxima sessão gerada com {provider} para {current_session_id}")
+            return next_session_data
+
         except Exception as e:
             logger.error(f"❌ Erro ao gerar próxima sessão: {e}")
-            return self._create_fallback_next_session(user_profile, session_context, current_session_id)
+            raise
 
     async def _create_next_session_prompt(self, user_profile: Dict[str, Any], session_context: Dict[str, Any], current_session_id: str) -> str:
         """
@@ -1692,65 +1696,6 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         except Exception as e:
             logger.error(f"❌ Erro ao extrair resumo da sessão: {e}")
             return "Contexto da sessão indisponível"
-
-    def _create_fallback_next_session(self, user_profile: Dict[str, Any], session_context: Dict[str, Any], current_session_id: str) -> Dict[str, Any]:
-        """
-        Criar próxima sessão usando fallback quando OpenAI não está disponível
-        """
-        try:
-            session_number = self._extract_session_number(current_session_id)
-            next_session_number = session_number + 1
-            next_session_id = f"session-{next_session_number}"
-            
-            # Extrair temas da sessão anterior
-            main_themes = session_context.get("main_themes", ["desenvolvimento pessoal"])
-            
-            # Criar sessão baseada em template
-            return {
-                "session_id": next_session_id,
-                "title": f"Sessão {next_session_number}: Continuando sua jornada",
-                "subtitle": "Aprofundando temas identificados na sessão anterior",
-                "objective": f"Explorar e aprofundar os temas: {', '.join(main_themes[:2])}",
-                "initial_prompt": f"Olá! Como você está se sentindo desde nossa última conversa? Gostaria de continuar explorando os temas que identificamos: {', '.join(main_themes[:2])}.",
-                "focus_areas": main_themes[:3] if main_themes else ["autoconhecimento", "bem-estar", "crescimento pessoal"],
-                "therapeutic_approach": "Abordagem centrada na pessoa (Carl Rogers)",
-                "expected_outcomes": [
-                    "Maior clareza sobre os temas identificados",
-                    "Desenvolvimento de insights pessoais",
-                    "Fortalecimento do processo terapêutico"
-                ],
-                "session_type": "continuação",
-                "estimated_duration": "45-60 minutos",
-                "preparation_notes": "Revisar contexto da sessão anterior e temas identificados",
-                "connection_to_previous": "Continuação dos temas e insights da sessão anterior",
-                "personalization_factors": ["histórico do usuário", "temas identificados", "progresso terapêutico"],
-                "generated_at": datetime.now().isoformat(),
-                "based_on_session": current_session_id,
-                "generation_method": "fallback_template",
-                "personalized": True
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Erro ao criar fallback da próxima sessão: {e}")
-            return {
-                "session_id": f"session-{self._extract_session_number(current_session_id) + 1}",
-                "title": "Próxima sessão terapêutica",
-                "subtitle": "Continuando o processo terapêutico",
-                "objective": "Dar continuidade ao processo de autoconhecimento",
-                "initial_prompt": "Olá! Como você está hoje? Vamos continuar nossa conversa terapêutica.",
-                "focus_areas": ["autoconhecimento", "bem-estar emocional"],
-                "therapeutic_approach": "Abordagem centrada na pessoa",
-                "expected_outcomes": ["Continuidade do processo terapêutico"],
-                "session_type": "continuação",
-                "estimated_duration": "45-60 minutos",
-                "preparation_notes": "Sessão de continuidade",
-                "connection_to_previous": "Continuação do processo terapêutico",
-                "personalization_factors": ["processo terapêutico"],
-                "generated_at": datetime.now().isoformat(),
-                "based_on_session": current_session_id,
-                "generation_method": "minimal_fallback",
-                "personalized": False
-            }
 
     def _track_user_session(self, username: str, session_id: str, action: str) -> None:
         """

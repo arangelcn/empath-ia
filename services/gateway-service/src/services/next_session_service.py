@@ -101,7 +101,7 @@ class NextSessionService:
         user_profile: Dict[str, Any],
         session_context: Dict[str, Any],
         current_session_id: str,
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Build next-session payload from context and user profile.
         """
@@ -109,6 +109,12 @@ class NextSessionService:
         next_session_number = session_number + 1
         next_session_id = f"session-{next_session_number}"
         main_themes = meaningful_subjects_from_values([session_context.get("main_themes", [])], limit=3)
+        if not main_themes:
+            logger.error(
+                "❌ Contexto sem temas reais; próxima sessão não será criada para %s",
+                current_session_id,
+            )
+            return None
 
         user_objectives = []
         if user_profile and user_profile.get("therapeutic_info"):
@@ -130,10 +136,7 @@ class NextSessionService:
             session_title = f"Sessão {next_session_number}: Continuando sua jornada"
             session_subtitle = "Aprofundando temas importantes para você"
 
-        if combined_themes:
-            objective = f"Explorar e aprofundar os temas: {', '.join(combined_themes[:2])}"
-        else:
-            objective = "Continuar o processo de autoconhecimento e desenvolvimento pessoal"
+        objective = f"Explorar e aprofundar os temas: {', '.join(combined_themes[:2])}"
 
         if main_themes and next_session_number == 2:
             subjects_text = join_subjects(main_themes[:2])
@@ -150,7 +153,7 @@ class NextSessionService:
             "subtitle": session_subtitle,
             "objective": objective,
             "initial_prompt": initial_prompt,
-            "focus_areas": combined_themes[:3] if combined_themes else ["autoconhecimento", "bem-estar", "crescimento pessoal"],
+            "focus_areas": combined_themes[:3],
             "therapeutic_approach": "Abordagem centrada na pessoa (Carl Rogers)",
             "expected_outcomes": [
                 "Maior clareza sobre os temas identificados",
@@ -164,7 +167,7 @@ class NextSessionService:
             "personalization_factors": ["histórico do usuário", "temas identificados", "progresso terapêutico"],
             "generated_at": datetime.utcnow().isoformat(),
             "based_on_session": current_session_id,
-            "generation_method": "simulated_ai_service",
+            "generation_method": "context_based_template",
             "personalized": True,
             "is_active": True
         }

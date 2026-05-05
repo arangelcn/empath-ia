@@ -467,7 +467,9 @@ export const getUserSession = async (username, sessionId) => {
     const response = await apiClient.get(`/user/${username}/sessions/${sessionId}`);
     return response.data;
   } catch (error) {
-    console.error('Erro ao buscar sessão do usuário:', error.response?.data || error.message);
+    if (error.response?.status !== 404) {
+      console.error('Erro ao buscar sessão do usuário:', error.response?.data || error.message);
+    }
     throw error;
   }
 };

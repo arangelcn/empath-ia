@@ -8,9 +8,18 @@ from typing import Any, Callable, Dict, List, Optional
 
 import httpx
 
+from ..domain.session_subjects import meaningful_subjects_from_values
 from ..models.database import get_collection
 
 logger = logging.getLogger(__name__)
+
+INVALID_CONTEXT_GENERATION_METHODS = {
+    "basic_analysis",
+    "fallback",
+    "fallback_registration",
+    "fallback_template",
+    "minimal_fallback",
+}
 
 
 class SessionContextService:
@@ -53,15 +62,21 @@ class SessionContextService:
 
             # Verificar se já foi finalizada
             if conversation.get("session_context"):
+                existing_context = conversation["session_context"]
+                if not self._is_valid_saved_context(existing_context, session_id):
+                    return {
+                        "success": False,
+                        "error": "Contexto salvo inválido ou genérico; gere a sessão novamente com IA disponível",
+                    }
                 logger.info(f"✅ Sessão já possui contexto: {session_id}")
                 next_session_result = await self._next_session_service.create_next_session_automatically(
                     session_id,
-                    conversation["session_context"]
+                    existing_context
                 )
                 return {
                     "success": True,
                     "already_finalized": True,
-                    "context": conversation["session_context"],
+                    "context": existing_context,
                     "next_session": next_session_result
                 }
 
@@ -81,7 +96,7 @@ class SessionContextService:
                 logger.warning(f"⚠️ Conversa muito curta para gerar contexto: {session_id} ({len(messages)} mensagens)")
                 return {"success": False, "error": "Conversa muito curta"}
 
-            # Gerar contexto usando IA
+            # Gerar contexto usando IA. Falha de IA deve aparecer como erro, não como resumo genérico.
             context_data = await self._generate_session_context(session_id, messages, manual_termination)
 
             # ✅ CORREÇÃO: Salvar contexto apenas na coleção session_contexts (eliminar duplicação)
@@ -93,8 +108,7 @@ class SessionContextService:
                 context_doc = await session_contexts.find_one({"session_id": session_id})
 
                 if not context_doc:
-                    # Se não foi salvo pelo SessionContextService, salvar agora (fallback para análise básica)
-                    logger.info(f"💾 Salvando contexto na coleção session_contexts (fallback): {session_id}")
+                    logger.info(f"💾 Salvando contexto gerado por IA na coleção session_contexts: {session_id}")
 
                     # Extrair username do session_id
                     username = self._extract_username(session_id)
@@ -111,7 +125,7 @@ class SessionContextService:
                         "updated_at": datetime.utcnow(),
                         "emotions_data": [],
                         "is_active": True,
-                        "source": "gateway_fallback",
+                        "source": "gateway_ai_finalization",
                         "version": 1
                     }
 
@@ -170,7 +184,10 @@ class SessionContextService:
 
             if context_doc:
                 logger.info(f"✅ Contexto encontrado na coleção session_contexts: {session_id}")
-                return context_doc.get("context", {})
+                context = context_doc.get("context", {})
+                if self._is_valid_saved_context(context, session_id):
+                    return context
+                return None
             else:
                 # ✅ FALLBACK: Para sessões antigas que ainda têm contexto na coleção conversations
                 logger.warning(f"⚠️ Contexto não encontrado em session_contexts, tentando fallback para {session_id}")
@@ -178,7 +195,10 @@ class SessionContextService:
 
                 if conversation and conversation.get("session_context"):
                     logger.info(f"✅ Contexto encontrado via fallback em conversations: {session_id}")
-                    return conversation["session_context"]
+                    context = conversation["session_context"]
+                    if self._is_valid_saved_context(context, session_id):
+                        return context
+                    return None
                 else:
                     logger.warning(f"⚠️ Contexto não encontrado para sessão: {session_id}")
                     return None
@@ -249,6 +269,8 @@ class SessionContextService:
 
             if context_doc:
                 context = context_doc.get("context", {})
+                if not self._is_valid_saved_context(context, previous_session_id):
+                    return None
                 logger.info(f"✅ Contexto encontrado da sessão anterior: {len(str(context))} chars")
 
                 # Buscar registration_data da conversation se necessário
@@ -276,6 +298,8 @@ class SessionContextService:
 
                 if previous_conversation and previous_conversation.get("session_context"):
                     context = previous_conversation["session_context"]
+                    if not self._is_valid_saved_context(context, previous_session_id):
+                        return None
                     logger.info(f"✅ Contexto encontrado via fallback da sessão anterior: {len(str(context))} chars")
 
                     # Retornar contexto completo incluindo registration_data
@@ -322,6 +346,7 @@ class SessionContextService:
             if ai_response and ai_response.get("success"):
                 # Usar contexto estruturado do SessionContextService
                 context_data = ai_response.get("context_data", {})
+                self._validate_ai_context_data(context_data)
 
                 # Adicionar metadados
                 context_data.update({
@@ -335,13 +360,52 @@ class SessionContextService:
 
                 logger.info(f"✅ Contexto gerado com sucesso pelo SessionContextService para sessão: {session_id}")
                 return context_data
-            else:
-                logger.warning(f"⚠️ SessionContextService não disponível, usando análise básica para sessão: {session_id}")
-                return await self._generate_basic_context(session_id, messages, manual_termination)
+
+            logger.error("❌ SessionContextService não gerou contexto válido para sessão: %s", session_id)
+            return None
 
         except Exception as e:
             logger.error(f"❌ Erro ao gerar contexto: {e}")
-            return await self._generate_basic_context(session_id, messages, manual_termination)
+            return None
+
+    def _validate_ai_context_data(self, context_data: Dict[str, Any]) -> None:
+        if not isinstance(context_data, dict) or not context_data:
+            raise ValueError("Contexto da IA vazio ou inválido")
+
+        generation_method = str(context_data.get("generation_method", "")).strip().lower()
+        if generation_method in INVALID_CONTEXT_GENERATION_METHODS:
+            raise ValueError(f"Contexto rejeitado por generation_method={generation_method}")
+
+        required_fields = ["summary", "main_themes", "emotional_state", "key_insights"]
+        missing_fields = [field for field in required_fields if field not in context_data]
+        if missing_fields:
+            raise ValueError(f"Contexto da IA incompleto: campos ausentes {missing_fields}")
+
+        if not isinstance(context_data.get("summary"), str) or not context_data["summary"].strip():
+            raise ValueError("Contexto da IA inválido: summary vazio")
+
+        if not isinstance(context_data.get("emotional_state"), dict):
+            raise ValueError("Contexto da IA inválido: emotional_state deve ser objeto")
+
+        key_insights = context_data.get("key_insights")
+        if not isinstance(key_insights, list) or not any(str(insight).strip() for insight in key_insights):
+            raise ValueError("Contexto da IA inválido: key_insights vazio")
+
+        meaningful_themes = meaningful_subjects_from_values([context_data.get("main_themes", [])], limit=1)
+        if not meaningful_themes:
+            raise ValueError("Contexto da IA inválido: main_themes ausente ou genérico")
+        context_data["main_themes"] = meaningful_subjects_from_values(
+            [context_data.get("main_themes", [])],
+            limit=5,
+        )
+
+    def _is_valid_saved_context(self, context_data: Dict[str, Any], session_id: str) -> bool:
+        try:
+            self._validate_ai_context_data(context_data)
+            return True
+        except ValueError as exc:
+            logger.error("❌ Contexto salvo rejeitado para %s: %s", session_id, exc)
+            return False
 
     def _format_conversation_for_analysis(self, messages: List[Dict[str, Any]]) -> str:
         """
@@ -513,179 +577,6 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             logger.error(f"❌ Erro ao processar resposta da IA: {e}")
             return {}
 
-    async def _generate_basic_context(self, session_id: str, messages: List[Dict[str, Any]], manual_termination: bool = False) -> Dict[str, Any]:
-        """
-        Gerar contexto básico analisando o conteúdo real da conversa
-        """
-        try:
-            logger.info(f"📄 Gerando contexto básico para sessão: {session_id}")
-
-            user_messages = [msg for msg in messages if msg["type"] == "user"]
-            ai_messages = [msg for msg in messages if msg["type"] == "ai"]
-
-            # ✅ NOVO: Verificar se é sessão de cadastro para análise específica
-            _, original_session_id = self._split_session_id(session_id)
-            is_registration_session = original_session_id == "session-1"
-
-            if is_registration_session:
-                logger.info(f"🔍 ANÁLISE DE CADASTRO: Gerando contexto para session-1")
-                return await self._generate_registration_context(session_id, user_messages, ai_messages, manual_termination)
-            else:
-                logger.info(f"🔍 ANÁLISE NORMAL: Gerando contexto para {original_session_id}")
-                return self._generate_regular_context(session_id, user_messages, ai_messages, manual_termination)
-
-        except Exception as e:
-            logger.error(f"❌ Erro ao gerar contexto básico: {e}")
-            return {
-                "summary": "Sessão terapêutica realizada",
-                "main_themes": ["conversa terapêutica"],
-                "generation_method": "minimal_fallback",
-                "error": str(e)
-            }
-
-    async def _generate_registration_context(self, session_id: str, user_messages: List[Dict[str, Any]], ai_messages: List[Dict[str, Any]], manual_termination: bool = False) -> Dict[str, Any]:
-        """
-        Gerar contexto específico para sessão de cadastro (session-1) usando AI Service
-        """
-        try:
-            logger.info(f"📋 ANÁLISE CADASTRO: Processando {len(user_messages)} respostas do usuário")
-
-            # Formatar mensagens para o AI Service
-            conversation_text = self._format_conversation_for_analysis(user_messages + ai_messages)
-
-            # Criar prompt específico para session-1 (cadastro)
-            context_prompt = f"""
-ANÁLISE DE SESSÃO DE CADASTRO TERAPÊUTICO
-
-Analise a conversa de cadastro abaixo e gere um contexto estruturado. Esta é uma sessão de coleta de dados pessoais para personalizar o atendimento terapêutico.
-
-SESSÃO: {session_id}
-TIPO: Cadastro inicial (session-1)
-RESPOSTAS DO USUÁRIO: {len(user_messages)} respostas
-
-CONVERSA:
-{conversation_text}
-
-INSTRUÇÕES:
-1. Analise as respostas do usuário às perguntas de cadastro
-2. Identifique os temas principais mencionados pelo usuário
-3. Extraia insights sobre motivação, objetivos e situação pessoal
-4. Identifique áreas de interesse para futuras sessões
-5. Gere sugestões para próximas sessões baseadas no perfil
-
-RESPONDA EM FORMATO JSON com as seguintes chaves:
-{{
-  "summary": "Resumo do processo de cadastro e perfil do usuário",
-  "main_themes": ["tema1", "tema2", "tema3"],
-  "emotional_state": {{
-    "initial": "Estado emocional no início do cadastro",
-    "final": "Estado emocional ao final do cadastro",
-    "progression": "Como evoluiu durante o cadastro"
-  }},
-  "key_insights": ["insight1", "insight2", "insight3"],
-  "important_moments": [
-    {{
-      "moment": "Descrição do momento importante",
-      "significance": "Por que foi importante"
-    }}
-  ],
-  "user_progress": {{
-    "strengths_shown": ["força1", "força2"],
-    "challenges_identified": ["desafio1", "desafio2"],
-    "growth_areas": ["área1", "área2"]
-  }},
-  "therapeutic_notes": {{
-    "techniques_used": ["técnica1", "técnica2"],
-    "user_response": "Como o usuário respondeu",
-    "engagement_level": "Alto/Médio/Baixo"
-  }},
-  "future_sessions": {{
-    "suggested_topics": ["tópico1", "tópico2"],
-    "areas_to_explore": ["área1", "área2"],
-    "therapeutic_goals": ["objetivo1", "objetivo2"]
-  }}
-}}
-
-RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
-"""
-
-            # Tentar usar SessionContextService primeiro
-            ai_response = await self._call_ai_service_for_context(context_prompt, session_id)
-
-            if ai_response and ai_response.get("success"):
-                # Usar contexto estruturado do SessionContextService
-                context_data = ai_response.get("context_data", {})
-
-                if context_data:
-                    # Adicionar metadados específicos do cadastro
-                    context_data.update({
-                        "session_id": session_id,
-                        "session_type": "registration",
-                        "total_messages": len(user_messages + ai_messages),
-                        "user_responses": len(user_messages),
-                        "generated_at": datetime.utcnow().isoformat(),
-                        "generation_method": "session_context_service_registration",
-                        "manual_termination": manual_termination
-                    })
-
-                    logger.info(f"✅ Contexto de cadastro gerado via SessionContextService para {session_id}")
-                    return context_data
-
-            # Fallback para análise básica
-            logger.warning(f"⚠️ SessionContextService não disponível, usando análise básica para cadastro {session_id}")
-            return self._generate_fallback_registration_context(session_id, user_messages, ai_messages)
-
-        except Exception as e:
-            logger.error(f"❌ Erro ao gerar contexto de cadastro: {e}")
-            return self._generate_fallback_registration_context(session_id, user_messages, ai_messages)
-
-    def _generate_regular_context(self, session_id: str, user_messages: List[Dict[str, Any]], ai_messages: List[Dict[str, Any]], manual_termination: bool = False) -> Dict[str, Any]:
-        """
-        Gerar contexto para sessões regulares (não de cadastro)
-        """
-        # Análise básica de sentimentos
-        emotion_analysis = self._analyze_basic_emotions(user_messages)
-
-        # Identificar temas básicos
-        themes = self._identify_basic_themes(user_messages)
-
-        return {
-            "summary": f"Sessão com {len(user_messages + ai_messages)} mensagens trocadas. Usuário demonstrou engajamento no processo terapêutico.",
-            "main_themes": themes,
-            "emotional_state": {
-                "initial": "Disponível para o diálogo",
-                "final": emotion_analysis.get("dominant_emotion", "neutro"),
-                "progression": "Processo terapêutico em andamento"
-            },
-            "key_insights": [
-                f"Conversa envolveu {len(user_messages)} mensagens do usuário",
-                f"Duração estimada: {self._estimate_conversation_duration(user_messages + ai_messages)} minutos",
-                "Engajamento demonstrado pelo usuário"
-            ],
-            "important_moments": [
-                {
-                    "moment": "Início da conversa terapêutica",
-                    "significance": "Estabelecimento do vínculo terapêutico"
-                }
-            ],
-            "user_progress": {
-                "strengths_shown": ["participação ativa", "abertura ao diálogo"],
-                "challenges_identified": ["necessidade de continuidade"],
-                "growth_areas": themes[:3] if themes else ["autoconhecimento", "expressão emocional"]
-            },
-            "therapeutic_notes": {
-                "techniques_used": ["escuta ativa", "abordagem rogeriana"],
-                "user_response": "Engajado",
-                "engagement_level": "Médio"
-            },
-            "future_sessions": {
-                "suggested_topics": themes[:2] if themes else ["continuidade do processo terapêutico"],
-                "areas_to_explore": ["aprofundamento emocional"],
-                "therapeutic_goals": ["manutenção do vínculo terapêutico"]
-            },
-            "generation_method": "basic_analysis"
-        }
-
     def _analyze_basic_emotions(self, user_messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Análise básica de emoções baseada em palavras-chave
@@ -748,92 +639,6 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
                         identified_themes.append(theme)
 
         return identified_themes[:5]  # Máximo 5 temas
-
-    def _generate_fallback_registration_context(self, session_id: str, user_messages: List[Dict[str, Any]], ai_messages: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Gerar contexto fallback para sessão de cadastro quando AI Service não está disponível
-        """
-        try:
-            logger.info(f"📄 Gerando contexto fallback para cadastro: {session_id}")
-
-            # Análise simples das respostas do usuário
-            all_user_text = " ".join([msg["content"] for msg in user_messages]).lower()
-
-            # Identificar temas básicos baseados em palavras-chave
-            themes = []
-            theme_keywords = {
-                "trabalho": ["trabalho", "emprego", "carreira", "profissão"],
-                "família": ["família", "pai", "mãe", "irmão", "filhos"],
-                "relacionamentos": ["relacionamento", "namorado", "casado", "solteiro"],
-                "saúde": ["saúde", "ansiedade", "depressão", "stress"],
-                "estudos": ["estudo", "faculdade", "escola", "formação"],
-                "autoestima": ["autoestima", "confiança", "insegurança"],
-                "desenvolvimento": ["crescimento", "desenvolvimento", "mudança"]
-            }
-
-            for theme, keywords in theme_keywords.items():
-                if any(keyword in all_user_text for keyword in keywords):
-                    themes.append(theme)
-
-            if not themes:
-                themes = ["desenvolvimento pessoal", "autoconhecimento"]
-
-            return {
-                "summary": f"Cadastro realizado com {len(user_messages)} respostas do usuário. Processo de conhecimento inicial concluído.",
-                "main_themes": themes[:3],
-                "emotional_state": {
-                    "initial": "Receptivo ao processo de cadastro",
-                    "final": "Engajado e colaborativo",
-                    "progression": "Abertura progressiva durante o cadastro"
-                },
-                "key_insights": [
-                    f"Usuário forneceu {len(user_messages)} respostas ao questionário",
-                    "Demonstrou disposição para compartilhar informações pessoais",
-                    "Processo de cadastro concluído com sucesso"
-                ],
-                "important_moments": [
-                    {
-                        "moment": "Início do processo de cadastro",
-                        "significance": "Primeiro contato com o sistema terapêutico"
-                    },
-                    {
-                        "moment": "Finalização do cadastro",
-                        "significance": "Conclusão do processo de conhecimento inicial"
-                    }
-                ],
-                "user_progress": {
-                    "strengths_shown": ["abertura", "colaboração", "disposição para mudança"],
-                    "challenges_identified": ["necessidade de apoio terapêutico"],
-                    "growth_areas": themes[:3] if themes else ["desenvolvimento pessoal"]
-                },
-                "therapeutic_notes": {
-                    "techniques_used": ["coleta de dados estruturada", "questionário guiado"],
-                    "user_response": "Colaborativo e aberto",
-                    "engagement_level": "Alto"
-                },
-                "future_sessions": {
-                    "suggested_topics": themes[:3] if themes else ["autoconhecimento"],
-                    "areas_to_explore": ["questões pessoais identificadas"],
-                    "therapeutic_goals": ["bem-estar geral", "desenvolvimento pessoal"]
-                },
-                "session_id": session_id,
-                "session_type": "registration",
-                "total_messages": len(user_messages + ai_messages),
-                "user_responses": len(user_messages),
-                "generated_at": datetime.utcnow().isoformat(),
-                "generation_method": "fallback_registration",
-                "manual_termination": False
-            }
-
-        except Exception as e:
-            logger.error(f"❌ Erro ao gerar contexto fallback de cadastro: {e}")
-            return {
-                "summary": "Sessão de cadastro realizada",
-                "main_themes": ["cadastro", "autoconhecimento"],
-                "session_type": "registration",
-                "generation_method": "minimal_fallback",
-                "error": str(e)
-            }
 
     def _estimate_conversation_duration(self, messages: List[Dict[str, Any]]) -> int:
         """

@@ -72,6 +72,10 @@ async def finalize_session(session_id: str):
         therapeutic_session_id = identity.get("therapeutic_session_id", "")
 
         result = await chat_service.finalize_session_context(legacy_session_id, manual_termination=True)
+        if not result.get("success"):
+            error = result.get("error") or "Falha ao gerar contexto da sessão"
+            logger.error("❌ Finalização abortada para %s: %s", legacy_session_id, error)
+            raise HTTPException(status_code=502, detail=error)
 
         if "_session-" in legacy_session_id:
             session_separator_index = legacy_session_id.rfind("_session-")

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Bot, CheckCircle2, ChevronLeft, Heart, Mic, Send, Sparkles, Target, X } from 'lucide-react';
-import { sendMessage, getChatHistory, getTherapeuticSession, getInitialMessage, generateChatTitle } from '../../services/api.js';
+import { sendMessage, getChatHistory, getUserSession, getInitialMessage, generateChatTitle, formatApiError } from '../../services/api.js';
 import Button from '../Common/Button.jsx';
 import Loading from '../Common/Loading.jsx';
 import EmotionBadge from './EmotionBadge.jsx';
@@ -203,6 +203,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [sessionContext, setSessionContext] = useState(null);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [dynamicTitle, setDynamicTitle] = useState<string | null>(null);
   const [dynamicSubtitle, setDynamicSubtitle] = useState<string | null>(null);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
@@ -215,13 +216,15 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
       try {
         setIsLoadingHistory(true);
 
-        // Carregar objetivo da sessão
+        let sessionExists = true;
+
+        // Carregar objetivo da sessão do usuário. Sessões dinâmicas não ficam no catálogo global /api/sessions.
         if (currentChatId) {
           try {
             console.log('🔍 Buscando sessão - currentChatId:', currentChatId, 'originalSessionId:', originalSessionId);
 
             if (originalSessionId) {
-              const sessionResponse = await getTherapeuticSession(originalSessionId);
+              const sessionResponse = await getUserSession(username, originalSessionId);
               if (sessionResponse.success && sessionResponse.data) {
                 console.log('✅ Session Objective carregado:', sessionResponse.data);
                 setSessionObjective({
@@ -232,10 +235,20 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                 });
               } else {
                 console.warn('⚠️ Session não encontrada para ID:', originalSessionId);
+                sessionExists = false;
+                setSessionObjective(null);
+                setSessionError(`A sessão ${originalSessionId} não está disponível para este usuário.`);
               }
             }
           } catch (error) {
-            console.warn('Erro ao carregar objetivo da sessão:', error);
+            const isMissingSession = error?.response?.status === 404;
+            if (isMissingSession) {
+              sessionExists = false;
+              setSessionObjective(null);
+              setSessionError(`A sessão ${originalSessionId} não está disponível para este usuário.`);
+            } else {
+              setSessionError(formatApiError(error, 'Erro ao carregar objetivo da sessão.'));
+            }
           }
         }
 
@@ -254,6 +267,11 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
 
           setMessages(historyMessages);
         } else {
+          if (!sessionExists) {
+            setMessages([]);
+            return;
+          }
+
           // ✅ NOVO: Se não há histórico, tentar gerar mensagem inicial automática
           console.log('🤖 Sessão sem histórico, gerando mensagem inicial automática...');
 
@@ -367,6 +385,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     const currentInput = inputValue;
     setInputValue('');
     setIsLoading(true);
+    setSessionError(null);
 
     try {
       // ✅ CORREÇÃO: Para session-1 (cadastro), não passar sessionObjective 
@@ -450,12 +469,25 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
             finalizeSession();
           }, 3000);
         }
+      } else {
+        const message = response.error || 'A IA não conseguiu gerar uma resposta agora.';
+        setSessionError(message);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            type: 'ai',
+            content: message,
+          },
+        ]);
       }
     } catch (error) {
+      const message = formatApiError(error, 'A IA não conseguiu gerar uma resposta agora.');
+      setSessionError(message);
       const errorMessage = {
         id: `error-${Date.now()}`,
         type: 'ai',
-        content: "Desculpe, não consegui processar sua mensagem. Tente novamente mais tarde.",
+        content: message,
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
@@ -506,6 +538,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     if (isFinalizing) return;
 
     setIsFinalizing(true);
+    setSessionError(null);
     console.log('🔚 Iniciando finalização da sessão:', currentChatId);
 
     try {
@@ -516,6 +549,10 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
 
       const result = await response.json();
       console.log('📋 Resultado da finalização:', result);
+
+      if (!response.ok) {
+        throw new Error(result.detail || result.error || 'Falha ao finalizar a sessão.');
+      }
 
       if (result.success) {
         console.log('✅ Sessão finalizada com sucesso');
@@ -537,9 +574,11 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
         console.log('🎯 States atualizados - Modal deve aparecer agora');
       } else {
         console.error('❌ Erro ao finalizar sessão:', result);
+        setSessionError(result.error || result.data?.error || 'Falha ao finalizar a sessão.');
       }
     } catch (error) {
       console.error('❌ Erro na finalização da sessão:', error);
+      setSessionError(error instanceof Error ? error.message : 'Falha ao finalizar a sessão.');
     } finally {
       setIsFinalizing(false);
     }
@@ -601,18 +640,9 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
 
   // Modal de resumo da sessão
   const SessionSummaryModal = () => {
-    console.log('🔍 SessionSummaryModal - States:', {
-      showSessionSummary,
-      sessionContext,
-      hasContext: !!sessionContext
-    });
-
     if (!showSessionSummary || !sessionContext) {
-      console.log('⚠️ Modal não será mostrado - showSessionSummary:', showSessionSummary, 'sessionContext:', !!sessionContext);
       return null;
     }
-
-    console.log('✅ Modal será mostrado com contexto:', sessionContext);
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -775,7 +805,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
       {/* WebcamEmotionCapture invisível - análise automática em background */}
       <WebcamEmotionCapture
         onEmotionDetected={handleWebcamEmotion}
-        autoStart={true}
+        autoStart={false}
         hidden={true}
         username={username}
         sessionId={currentChatId}
@@ -812,6 +842,14 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                 <X className="h-4 w-4" />
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {sessionError && (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-100">
+          <div className="mx-auto max-w-4xl">
+            {sessionError}
           </div>
         </div>
       )}

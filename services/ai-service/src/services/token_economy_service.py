@@ -108,9 +108,11 @@ class TokenEconomyService:
                 logger.debug(f"⚡ Verificando cache de performance para sessão ativa {session_id}")
                 
                 cached_context = self.redis_performance_service.get_cached_context(session_id)
-                if cached_context:
+                if cached_context and self._is_context_valid(cached_context):
                     logger.info(f"⚡ Contexto da sessão {session_id} obtido do cache de performance")
                     return cached_context, "redis_performance", False
+                if cached_context:
+                    logger.warning("⚠️ Contexto em cache rejeitado por validação: %s", session_id)
             
             # 3. Gerar novo contexto usando OpenAI
             logger.info(f"🤖 Gerando novo contexto para sessão {session_id} (usuário: {username})")
@@ -403,20 +405,7 @@ class TokenEconomyService:
             bool: True se válido
         """
         try:
-            # Verificar estrutura básica
-            required_fields = ["summary", "main_themes", "emotional_state"]
-            for field in required_fields:
-                if field not in context_data:
-                    return False
-            
-            # Verificar se não está vazio
-            if not context_data.get("summary", "").strip():
-                return False
-            
-            # Verificar se temas principais não estão vazios
-            if not context_data.get("main_themes", []):
-                return False
-            
+            self.openai_service._validate_session_context(context_data)
             return True
             
         except Exception as e:

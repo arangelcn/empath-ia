@@ -49,9 +49,16 @@ async def send_message(request: ChatRequest):
             is_voice_mode=request.is_voice_mode,
         )
 
+        if not result.get("success"):
+            error = result.get("error") or "Falha ao processar mensagem com IA"
+            logger.error("❌ GATEWAY: Processamento falhou para session_id=%s: %s", request.session_id, error)
+            raise HTTPException(status_code=502, detail=error)
+
         logger.info("✅ GATEWAY: Processamento concluído com sucesso para session_id=%s", request.session_id)
         return result
 
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("❌ GATEWAY: Erro ao processar mensagem: %s", exc)
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(exc)}") from exc

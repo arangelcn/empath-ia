@@ -91,13 +91,30 @@ def test_format_conversation_for_analysis():
     assert "Terapeuta: Entendo, me conta mais." in text
 
 
-def test_generate_regular_context_returns_expected_keys():
+def test_validate_ai_context_rejects_generic_themes():
     svc = make_service()
-    user_msgs = [{"content": "preciso de ajuda com trabalho", "type": "user"}]
-    ai_msgs = [{"content": "claro, me conta mais", "type": "ai"}]
-    ctx = svc._generate_regular_context("joao_session-2", user_msgs, ai_msgs)
-    assert "summary" in ctx
-    assert "main_themes" in ctx
-    assert "emotional_state" in ctx
-    assert "future_sessions" in ctx
-    assert ctx["generation_method"] == "basic_analysis"
+    context = {
+        "summary": "Resumo gerado pela IA",
+        "main_themes": ["conversa terapêutica", "apoio emocional"],
+        "emotional_state": {"dominant_emotion": "neutro"},
+        "key_insights": ["Insight específico"],
+    }
+
+    try:
+        svc._validate_ai_context_data(context)
+    except ValueError as exc:
+        assert "main_themes" in str(exc)
+    else:
+        raise AssertionError("generic themes should be rejected")
+
+
+def test_validate_ai_context_accepts_meaningful_theme():
+    svc = make_service()
+    context = {
+        "summary": "Resumo gerado pela IA",
+        "main_themes": ["ansiedade no trabalho"],
+        "emotional_state": {"dominant_emotion": "ansiedade"},
+        "key_insights": ["Usuário relacionou ansiedade a cobranças profissionais"],
+    }
+
+    svc._validate_ai_context_data(context)

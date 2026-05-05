@@ -386,6 +386,8 @@ async def generate_session_context(request: dict):
             }.get(source, "Fonte desconhecida")
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao gerar contexto da sessão: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
@@ -438,6 +440,8 @@ async def generate_next_session(request: dict):
             }.get(source, "Fonte desconhecida")
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao gerar próxima sessão: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")

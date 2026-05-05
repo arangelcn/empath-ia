@@ -809,51 +809,42 @@ class ChatService:
                     if response.status_code == 200:
                         ai_data = response.json()
                         ai_response = ai_data.get("response", "")
+                        provider = ai_data.get("provider", "openai")
+                        model = ai_data.get("model", "unknown")
+
+                        if not ai_response.strip():
+                            raise RuntimeError("AI Service retornou resposta vazia")
+
+                        if str(provider).startswith("fallback") or str(model).startswith("fallback"):
+                            raise RuntimeError(
+                                f"AI Service retornou fallback em vez de resposta de IA: provider={provider}, model={model}"
+                            )
                         
                         logger.info(f"✅ Resposta recebida do AI Service para {username}: {ai_response[:100]}...")
                         
                         ai_service_response = {
                             "response": ai_response,
-                            "model": ai_data.get("model", "unknown"),
+                            "model": model,
                             "session_id": session_id,
                             "username": username,
                             "timestamp": datetime.utcnow().isoformat(),
-                            "provider": ai_data.get("provider", "openai"),
+                            "provider": provider,
                             "success": True
                         }
                         
                     else:
                         logger.error(f"❌ AI Service retornou erro {response.status_code}: {response.text}")
-                        # Fallback para resposta padrão
-                        ai_service_response = self._get_fallback_response(user_message)
-                        ai_service_response.update({
-                            "session_id": session_id,
-                            "username": username,
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "error": f"AI Service HTTP {response.status_code}"
-                        })
+                        raise RuntimeError(f"AI Service HTTP {response.status_code}: {response.text}")
                         
             except httpx.ConnectError:
-                logger.warning(f"⚠️ AI Service não disponível, usando resposta fallback para {username}")
-                ai_service_response = self._get_fallback_response(user_message)
-                ai_service_response.update({
-                    "session_id": session_id,
-                    "username": username,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "error": "AI Service unavailable"
-                })
+                logger.error(f"❌ AI Service não disponível para {username}")
+                raise RuntimeError("AI Service unavailable")
                 
             except Exception as http_error:
                 logger.error(f"❌ Erro na chamada HTTP para AI Service: {http_error}")
-                ai_service_response = self._get_fallback_response(user_message)
-                ai_service_response.update({
-                    "session_id": session_id,
-                    "username": username,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "error": str(http_error)
-                })
+                raise
             
-            # Usar a resposta do AI Service (ou fallback)
+            # Usar apenas resposta real do AI Service; fallback terapêutico é tratado como erro.
             simulated_response = ai_service_response
             
             # Gerar áudio se habilitado
@@ -877,22 +868,7 @@ class ChatService:
             
         except Exception as e:
             logger.error(f"❌ Erro ao obter resposta da IA: {e}")
-            
-            # Resposta de fallback
-            fallback_response = f"Desculpe, estou com dificuldades técnicas. Pode repetir sua mensagem?"
-            
-            return {
-                "response": fallback_response,
-                "model": "fallback",
-                "session_id": session_id,
-                "username": username if 'username' in locals() else "unknown",  # ✅ NOVO: Username mesmo no fallback
-                "timestamp": datetime.utcnow().isoformat(),
-                "provider": "fallback",
-                "audio_url": None,
-                "voice_enabled": voice_enabled,
-                "selected_voice": selected_voice,
-                "error": str(e)
-            }
+            raise
 
     async def _get_previous_session_context(self, current_session_id: str) -> Optional[Dict[str, Any]]:
         """Buscar contexto da sessão anterior para enviar ao AI Service"""
@@ -921,37 +897,6 @@ class ChatService:
     def _gateway_audio_url(self, audio_url: str) -> str:
         return self.voice_synthesis_service.gateway_audio_url(audio_url)
 
-    def _get_fallback_response(self, user_message: str) -> Dict[str, Any]:
-        """
-        Resposta fallback quando AI Service não está disponível
-        """
-        # Resposta padrão empática baseada na abordagem Rogers
-        default_responses = [
-            "Entendo como você está se sentindo. Pode me contar mais sobre isso?",
-            "Isso parece ser muito importante para você. Como isso te afeta?",
-            "Percebo que há algo significativo no que você está compartilhando. Gostaria de explorar isso mais?",
-            "Suas palavras me mostram muito sobre seus sentimentos. O que mais vem à sua mente sobre isso?",
-            "Compreendo que isso é parte da sua experiência. Como você se sente em relação a isso agora?",
-            "Obrigado por compartilhar isso comigo. Que sentimentos isso desperta em você?",
-            "Vejo que isso tem um significado especial para você. Pode me ajudar a entender melhor?",
-            "Suas reflexões são muito valiosas. O que você pensa sobre essa situação?",
-            "Sinto que há algo profundo no que você está expressando. Como isso se conecta com você?",
-            "Agradeço sua abertura em compartilhar isso. O que isso representa para você?"
-        ]
-        
-        # Escolher resposta baseada no hash da mensagem para consistência
-        import hashlib
-        hash_obj = hashlib.md5(user_message.encode())
-        response_index = int(hash_obj.hexdigest(), 16) % len(default_responses)
-        ai_response_text = default_responses[response_index]
-        
-        return {
-            "response": ai_response_text,
-            "audio_url": None,
-            "provider": "fallback",
-            "model": "empathic_fallback"
-        }
-    
     async def _get_conversation_context(self, session_id: str) -> List[Dict[str, Any]]:
         """Obter contexto da conversa para enviar ao AI Service"""
         return await self.conversation_repo.get_context(session_id)

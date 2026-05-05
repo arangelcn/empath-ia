@@ -47,6 +47,4 @@ def test_build_next_session_initial_prompt_ignores_generic_themes():
         "toni_session-1",
     )
 
-    assert "conversa terapêutica" not in next_session["initial_prompt"]
-    assert "apoio emocional" not in next_session["initial_prompt"]
-    assert "O que gostaria de explorar" in next_session["initial_prompt"]
+    assert next_session is None
