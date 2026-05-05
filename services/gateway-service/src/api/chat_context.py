@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..domain.session_subjects import join_subjects, select_previous_session_subjects
 from ..domain.user_display import first_name_from_user
 from ..models.database import get_collection
 from ..services.chat_service import ChatService
@@ -33,6 +34,23 @@ async def _get_user_display_name(username: str) -> str:
     except Exception as exc:
         logger.warning("Não foi possível obter display_name para %s: %s", username, exc)
         return first_name_from_user(None, username) or ""
+
+
+async def _find_previous_conversation_doc(previous_session_id: str) -> dict | None:
+    conversations = get_collection("conversations")
+    return await conversations.find_one(
+        {
+            "$or": [
+                {"session_id": previous_session_id},
+                {"legacy_session_id": previous_session_id},
+            ]
+        }
+    )
+
+
+async def _find_previous_user_session_doc(username: str, previous_original_session_id: str) -> dict | None:
+    user_sessions = get_collection("user_therapeutic_sessions")
+    return await user_sessions.find_one({"username": username, "session_id": previous_original_session_id})
 
 
 @router.post("/generate-title/{chat_id}")
@@ -240,6 +258,7 @@ async def _build_followup_initial_message(username: str, user_label: str, origin
         current_session_number = int(session_number_str)
         previous_session_number = current_session_number - 1
         previous_session_id = f"{username}_session-{previous_session_number}"
+        previous_original_session_id = f"session-{previous_session_number}"
 
         logger.info(
             "🔍 DEBUG SESSÃO 2+: current=%s, previous=%s, username=%s",
@@ -251,6 +270,8 @@ async def _build_followup_initial_message(username: str, user_label: str, origin
         users_collection = get_collection("users")
         user_profile = await users_collection.find_one({"username": username})
         previous_context = await chat_service.get_session_context(previous_session_id)
+        previous_conversation = await _find_previous_conversation_doc(previous_session_id)
+        previous_user_session = await _find_previous_user_session_doc(username, previous_original_session_id)
 
         logger.info(
             "🔍 DEBUG: previous_context encontrado? %s, user_profile encontrado? %s",
@@ -258,22 +279,30 @@ async def _build_followup_initial_message(username: str, user_label: str, origin
             user_profile is not None,
         )
 
+        previous_subjects = select_previous_session_subjects(
+            previous_context=previous_context,
+            previous_session_doc=previous_user_session,
+            previous_conversation_doc=previous_conversation,
+        )
+
+        if previous_subjects:
+            subjects_text = join_subjects(previous_subjects)
+            return f"""Olá, {user_label}! É bom te ver novamente.
+
+Como você está se sentindo desde nossa última conversa?
+
+Na nossa sessão anterior, apareceram temas como {subjects_text}. Gostaria de continuar por aí ou há algo mais presente para você hoje?"""
+
         if previous_context:
             main_themes = previous_context.get("main_themes", [])
             emotional_state = previous_context.get("emotional_state", {})
             logger.info("🔍 DEBUG CONTEXTO ANTERIOR - Temas: %s, Estado emocional: %s", main_themes, emotional_state)
 
-            if main_themes:
-                themes_text = ", ".join(main_themes[:2])
-                return f"""Olá, {user_label}! É bom te ver novamente.
+            return f"""Olá, {user_label}! É bom te ver novamente.
 
 Como você está se sentindo desde nossa última conversa?
 
-Na nossa sessão anterior, conversamos sobre {themes_text}. Gostaria de continuar explorando esses temas ou há algo específico que te trouxe aqui hoje?"""
-
-            return f"""Olá, {user_label}! É bom te ver novamente.
-
-Como você está se sentindo desde nossa última conversa? O que te trouxe aqui hoje?"""
+O que ficou mais presente para você desde então, ou o que te trouxe aqui hoje?"""
 
         if user_profile and user_profile.get("user_profile"):
             return _message_from_user_profile(user_label, user_profile["user_profile"], current_session_number)
