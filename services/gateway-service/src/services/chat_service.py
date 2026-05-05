@@ -2436,6 +2436,12 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
         import re as _re
 
         try:
+            # Buscar conversa logo no início para ter username e therapeutic_session_id
+            conversations = get_collection("conversations")
+            conv_doc = await conversations.find_one({"chat_id": chat_id})
+            username = (conv_doc or {}).get("username", "_title_bot")
+            therapeutic_session_id = (conv_doc or {}).get("therapeutic_session_id")
+
             messages = await self._get_conversation_context(chat_id)
             if not messages:
                 return {"success": False, "title": None, "subtitle": None}
@@ -2468,7 +2474,11 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             async with httpx.AsyncClient(timeout=20.0) as client:
                 response = await client.post(
                     f"{self.ai_service_url}/chat",
-                    json={"message": prompt, "session_id": f"_title_gen_{chat_id}"},
+                    json={
+                        "message": prompt,
+                        "session_id": f"_title_gen_{chat_id}",
+                        "username": username,
+                    },
                     timeout=20.0,
                 )
 
@@ -2484,6 +2494,34 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
                 subtitle = (parsed.get("subtitle") or "").strip()[:100]
                 if title:
                     logger.info(f"🏷️ Título gerado para {chat_id} ({mode}): {title!r}")
+                    try:
+                        now = datetime.utcnow()
+                        await conversations.update_one(
+                            {"chat_id": chat_id},
+                            {"$set": {"title": title, "subtitle": subtitle, "updated_at": now}},
+                        )
+                        if conv_doc and therapeutic_session_id:
+                            user_sessions = get_collection("user_therapeutic_sessions")
+                            title_payload = {"title": title, "subtitle": subtitle, "updated_at": now}
+                            # Tentativa 1: username exato + session_id
+                            uts_result = await user_sessions.update_one(
+                                {"username": username, "session_id": therapeutic_session_id},
+                                {"$set": title_payload},
+                            )
+                            if uts_result.matched_count == 0:
+                                # Fallback: username em conversations pode ser diferente do email
+                                # em user_therapeutic_sessions (ex: "toni" vs "toni@gmail.com")
+                                uts_doc = await user_sessions.find_one({"session_id": therapeutic_session_id})
+                                if uts_doc:
+                                    await user_sessions.update_one(
+                                        {"_id": uts_doc["_id"]},
+                                        {"$set": title_payload},
+                                    )
+                                    logger.info(f"🏷️ Título persistido via fallback (conv.username={username!r} → uts.username={uts_doc.get('username')!r})")
+                                else:
+                                    logger.warning(f"⚠️ user_therapeutic_sessions: nenhum doc para session_id={therapeutic_session_id!r}")
+                    except Exception as persist_exc:
+                        logger.warning(f"⚠️ Título gerado mas não persistido para {chat_id}: {persist_exc}")
                     return {"success": True, "title": title, "subtitle": subtitle}
 
             logger.warning(f"⚠️ Não foi possível extrair JSON do título gerado para {chat_id}: {ai_text[:120]}")

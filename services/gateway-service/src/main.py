@@ -1167,56 +1167,61 @@ async def generate_chat_title(chat_id: str, request: GenerateTitleRequest):
 @app.post("/api/chat/finalize/{session_id}")
 async def finalize_session(session_id: str):
     """
-    Finalizar sessão manualmente e gerar contexto
+    Finalizar sessão manualmente, gerar contexto e atualizar título com base na conversa.
     """
     try:
         identity = await chat_service.resolve_conversation_ref(session_id)
+        chat_id = identity.get("chat_id") or session_id
         legacy_session_id = identity.get("legacy_session_id") or session_id
-        # ✅ NOVA LÓGICA: Finalizar sessão completa (contexto + status completed)
+        username = identity.get("username", "")
+        therapeutic_session_id = identity.get("therapeutic_session_id", "")
+
         result = await chat_service.finalize_session_context(legacy_session_id, manual_termination=True)
-        
-        # ✅ NOVO: Extrair username e session_id original para marcar como completed
-        # session_id formato: "username_session-N"
+
         if "_session-" in legacy_session_id:
-            # Encontrar a última ocorrência de "_session-" para extrair corretamente
             session_separator_index = legacy_session_id.rfind("_session-")
             if session_separator_index != -1:
-                username = legacy_session_id[:session_separator_index]
-                original_session_id = legacy_session_id[session_separator_index + 1:]  # session-1, session-2, etc.
-                
+                username = username or legacy_session_id[:session_separator_index]
+                original_session_id = therapeutic_session_id or legacy_session_id[session_separator_index + 1:]
+
                 logger.info(f"🏁 Finalizando sessão: username={username}, session_id={original_session_id}")
-                
+
                 try:
-                    # Marcar sessão como completed no banco
                     completion_result = await user_therapeutic_session_service.complete_session(
                         username=username,
                         session_id=original_session_id,
                         progress=100,
                         status="completed"
                     )
-                    
+                    result["session_completed"] = bool(completion_result)
                     if completion_result:
                         logger.info(f"✅ Sessão {original_session_id} marcada como completed para {username}")
-                        result["session_completed"] = True
                         result["completion_message"] = f"Sessão {original_session_id} finalizada com sucesso!"
                     else:
                         logger.warning(f"⚠️ Não foi possível marcar sessão {original_session_id} como completed")
-                        result["session_completed"] = False
-                        
                 except Exception as e:
                     logger.error(f"❌ Erro ao marcar sessão como completed: {e}")
                     result["session_completed"] = False
-                    result["completion_error"] = str(e)
+
+                # Gerar título baseado na conversa completa (server-side, antes de retornar)
+                try:
+                    title_result = await chat_service.generate_chat_title(chat_id, mode="final")
+                    if title_result.get("success"):
+                        result["generated_title"] = title_result.get("title")
+                        result["generated_subtitle"] = title_result.get("subtitle")
+                        logger.info(f"🏷️ Título final gerado: {title_result.get('title')!r}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Título não gerado na finalização: {e}")
             else:
                 logger.warning(f"⚠️ Formato de session_id inválido: {legacy_session_id}")
         else:
             logger.warning(f"⚠️ Session_id sem padrão '_session-': {legacy_session_id}")
-        
+
         return {
             "success": result.get("success", False),
             "data": result
         }
-        
+
     except Exception as e:
         logger.error(f"❌ Erro ao finalizar sessão {session_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

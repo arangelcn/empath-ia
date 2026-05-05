@@ -1,36 +1,36 @@
 """
-TokenEconomyService - Lógica de economia de tokens baseada em reutilização de contextos
-Combina SessionContextService (MongoDB) e RedisPerformanceService para economia de tokens OpenAI
+TokenEconomyService - Reutilização de contextos para economia de tokens.
+Combina SessionContextService (MongoDB) e RedisPerformanceService com o LLM.
 """
 
 import os
+import re
 import logging
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timedelta
 from .session_context_service import SessionContextService
 from .redis_performance_service import RedisPerformanceService
-from .openai_service import OpenAIService
+from .llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 
 
 class TokenEconomyService:
     """
-    Serviço de economia de tokens baseado em reutilização de contextos
-    
-    Este serviço combina:
-    - MongoDB como repositório principal (SessionContextService)
-    - Redis para otimização de performance (RedisPerformanceService)
-    - OpenAI para geração apenas quando necessário
-    
-    Economia vem da reutilização de contextos existentes no MongoDB.
+    Orquestra MongoDB (repositório) + Redis (performance) + LLM (geração).
+    Aceita instâncias injetadas para evitar duplicação de conexões.
     """
-    
-    def __init__(self):
-        """Inicializar serviço de economia de tokens"""
-        self.session_context_service = SessionContextService()
-        self.redis_performance_service = RedisPerformanceService()
-        self.openai_service = OpenAIService()
+
+    def __init__(
+        self,
+        session_context_service: Optional[SessionContextService] = None,
+        redis_performance_service: Optional[RedisPerformanceService] = None,
+        llm_service: Optional[LLMService] = None,
+    ):
+        """Inicializar com instâncias injetadas ou criar localmente como fallback."""
+        self.session_context_service = session_context_service or SessionContextService()
+        self.redis_performance_service = redis_performance_service or RedisPerformanceService()
+        self.openai_service = llm_service or LLMService()
         
         # Configurações de economia
         self.enable_context_reuse = os.getenv("ENABLE_CONTEXT_REUSE", "true").lower() == "true"
@@ -466,8 +466,6 @@ class TokenEconomyService:
             str: ID da próxima sessão
         """
         try:
-            # Extrair número da sessão atual
-            import re
             match = re.search(r'session-(\d+)', current_session_id)
             if match:
                 current_number = int(match.group(1))

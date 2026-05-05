@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
 from datetime import datetime
-import re
 import logging
 
 # Configurar logging
@@ -29,58 +28,9 @@ app.add_middleware(
 )
 
 # Incluir rotas do OpenAI
-from .api import openai_routes
-app.include_router(openai_routes.router)
-
-def generate_therapeutic_response(user_message: str, last_ai_response: str = "") -> str:
-    """
-    Gera resposta terapêutica de emergência baseada na mensagem do usuário.
-    Evita repetir a última resposta da IA quando possível.
-    """
-    message_lower = user_message.lower()
-    
-    # Padrões de reconhecimento
-    greeting_patterns = ['oi', 'olá', 'hello', 'hi', 'bom dia', 'boa tarde', 'boa noite']
-    sadness_patterns = ['triste', 'deprimido', 'depressão', 'mal', 'ruim', 'pessimo', 'horrível']
-    anxiety_patterns = ['ansioso', 'ansiedade', 'nervoso', 'preocupado', 'estressado', 'tenso']
-    anger_patterns = ['raiva', 'irritado', 'bravo', 'furioso', 'chateado']
-    gratitude_patterns = ['obrigado', 'obrigada', 'valeu', 'thanks', 'thank you']
-    goodbye_patterns = ['tchau', 'bye', 'adeus', 'até logo', 'até mais']
-    
-    candidates = []
-    
-    if any(pattern in message_lower for pattern in greeting_patterns):
-        candidates = ["Olá! Sou o Dr. Rogers, seu psicólogo virtual. É um prazer conhecê-lo. Como posso ajudá-lo hoje? Sinta-se à vontade para compartilhar o que está sentindo."]
-    
-    elif any(pattern in message_lower for pattern in sadness_patterns):
-        candidates = ["Entendo que você está passando por um momento difícil. É muito corajoso buscar ajuda e compartilhar seus sentimentos. Pode me contar mais sobre o que está sentindo?"]
-    
-    elif any(pattern in message_lower for pattern in anxiety_patterns):
-        candidates = ["A ansiedade é algo muito comum e tratável. Vamos trabalhar juntos para encontrar estratégias que funcionem para você. Que situações costumam despertar essa ansiedade?"]
-    
-    elif any(pattern in message_lower for pattern in anger_patterns):
-        candidates = [
-            "Vejo que você está se sentindo irritado. É importante reconhecer e validar esses sentimentos. Pode me contar o que aconteceu?",
-            "Parece que algo te incomodou bastante. Falar sobre isso pode ajudar a processar melhor essas emoções. O que aconteceu?",
-            "Entendo que você está frustrado. Às vezes precisamos de um espaço para expressar o que sentimos. Conte-me mais sobre o que está passando.",
-        ]
-    
-    elif any(pattern in message_lower for pattern in gratitude_patterns):
-        candidates = ["Fico muito feliz em poder ajudar! É um prazer acompanhá-lo nessa jornada. Como você está se sentindo agora?"]
-    
-    elif any(pattern in message_lower for pattern in goodbye_patterns):
-        candidates = ["Foi um prazer conversar com você hoje. Cuide-se bem e continue cuidando da sua saúde mental. Até a próxima!"]
-    
-    else:
-        candidates = ["Obrigado por compartilhar isso comigo. Pode me contar mais sobre como isso afeta seu dia a dia? Juntos podemos explorar formas de lidar melhor com essa situação."]
-    
-    # Evitar repetir a última resposta quando há mais de uma opção disponível
-    if last_ai_response and len(candidates) > 1:
-        alternatives = [r for r in candidates if r.strip() != last_ai_response.strip()]
-        if alternatives:
-            return alternatives[0]
-    
-    return candidates[0]
+from .api import chat_routes
+from .services.deps import llm_service as openai_service, token_economy_svc as token_economy_service
+app.include_router(chat_routes.router)
 
 # Health check endpoint
 @app.get("/health")
@@ -101,10 +51,6 @@ async def root():
         "docs": "/docs"
     }
 
-# Inicializar serviços
-openai_service = openai_routes.openai_service
-token_economy_service = None  # Será inicializado na startup
-
 # Evento de startup para inicializar nova arquitetura
 @app.on_event("startup")
 async def startup_event():
@@ -112,15 +58,12 @@ async def startup_event():
     await openai_service.ensure_local_model_ready()
 
     try:
-        from .services.token_economy_service import TokenEconomyService
-        token_economy_service = TokenEconomyService()
         await token_economy_service.initialize()
         logger.info("✅ TokenEconomyService inicializado com sucesso")
         logger.info("✅ Nova arquitetura MongoDB (repositório) + Redis (performance) inicializada")
-        
-        # ✅ NOVO: Verificar e inicializar prompts do banco de dados
+
         await verify_and_initialize_prompts()
-        
+
     except Exception as e:
         logger.warning(f"⚠️ Erro ao inicializar nova arquitetura: {e}")
 
@@ -290,14 +233,8 @@ async def chat(message: dict):
             }
         except Exception as fallback_error:
             logger.error(f"❌ Erro no fallback: {fallback_error}")
-            # Último recurso - resposta hardcoded
-            last_ai = ""
-            if conversation_history:
-                ai_msgs = [m.get("content", "") for m in conversation_history if m.get("type") in ("ai", "assistant")]
-                last_ai = ai_msgs[-1] if ai_msgs else ""
-            response_text = generate_therapeutic_response(user_message, last_ai)
             return {
-                "response": response_text,
+                "response": "Estou aqui para ajudar. Pode me contar mais sobre o que está sentindo?",
                 "service": "ai-service",
                 "status": "active",
                 "session_id": session_id,
@@ -306,6 +243,34 @@ async def chat(message: dict):
                 "provider": "hardcoded_fallback",
                 "model": "fallback"
             }
+
+# Endpoint de completação direta (sem persona terapêutica) — usado por serviços internos
+@app.post("/util/complete")
+async def util_complete(body: dict):
+    """
+    Completação LLM sem pipeline terapêutico.
+    Aceita { "prompt": str, "system": str (opcional), "max_tokens": int (opcional) }.
+    Retorna { "text": str, "success": bool }.
+    Uso interno: gateway usa para gerar títulos de sessão.
+    """
+    prompt = body.get("prompt", "").strip()
+    if not prompt:
+        return {"success": False, "text": ""}
+
+    system = body.get("system", "Você é um assistente que responde de forma concisa e objetiva.")
+    max_tokens = int(body.get("max_tokens", 256))
+
+    try:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ]
+        text = await openai_service._call_llm(messages, max_tokens=max_tokens, temperature=0.3)
+        return {"success": bool(text), "text": text or ""}
+    except Exception as e:
+        logger.error(f"❌ util/complete error: {e}")
+        return {"success": False, "text": ""}
+
 
 # Endpoint para configurações
 @app.get("/config")

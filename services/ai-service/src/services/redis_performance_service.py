@@ -7,7 +7,7 @@ import os
 import json
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime
 import redis
 from redis.exceptions import RedisError, ConnectionError
 
@@ -39,7 +39,7 @@ class RedisPerformanceService:
         self.lifecycle_prefix = "lifecycle:"
         
         # Configurações de conexão
-        self.max_retries = int(os.getenv("REDIS_MAX_RETRIES", "3"))
+        self.max_reupdate_session_contexttries = int(os.getenv("REDIS_MAX_RETRIES", "3"))
         self.socket_timeout = int(os.getenv("REDIS_SOCKET_TIMEOUT", "5"))
         
         # Inicializar conexão
@@ -140,51 +140,6 @@ class RedisPerformanceService:
             
         except Exception as e:
             logger.debug(f"Erro ao verificar sessão ativa {session_id}: {e}")
-            return False
-    
-    def update_session_activity(self, session_id: str, activity_data: Dict[str, Any] = None) -> bool:
-        """
-        Atualizar atividade da sessão no Redis
-        
-        Args:
-            session_id: ID da sessão
-            activity_data: Dados da atividade (opcional)
-            
-        Returns:
-            bool: True se atualizada com sucesso
-        """
-        try:
-            if not self.is_available():
-                return False
-            
-            key = f"{self.session_prefix}{session_id}"
-            
-            # Buscar dados atuais
-            current_data = self.redis_client.get(key)
-            if not current_data:
-                return False
-            
-            session_data = json.loads(current_data)
-            
-            # Atualizar atividade
-            session_data["last_activity"] = datetime.utcnow().isoformat()
-            session_data["activity_count"] = session_data.get("activity_count", 0) + 1
-            
-            if activity_data:
-                session_data["data"].update(activity_data)
-            
-            # Salvar com TTL renovado
-            self.redis_client.setex(
-                key,
-                self.active_session_ttl,
-                json.dumps(session_data)
-            )
-            
-            logger.debug(f"⚡ Atividade da sessão {session_id} atualizada (atividade #{session_data['activity_count']})")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Erro ao atualizar atividade da sessão {session_id}: {e}")
             return False
     
     def get_session_data(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -506,47 +461,6 @@ class RedisPerformanceService:
         except Exception as e:
             logger.error(f"❌ Erro ao limpar cache de performance do usuário {username}: {e}")
             return False
-    
-    def cleanup_expired_sessions(self) -> int:
-        """
-        Limpar sessões expiradas manualmente (Redis TTL já faz isso automaticamente)
-        
-        Returns:
-            int: Número de sessões limpas
-        """
-        try:
-            if not self.is_available():
-                return 0
-            
-            # Buscar sessões que podem estar expiradas
-            pattern = f"{self.session_prefix}*"
-            keys = self.redis_client.keys(pattern)
-            
-            expired_count = 0
-            for key in keys:
-                try:
-                    data = self.redis_client.get(key)
-                    if data:
-                        session_data = json.loads(data)
-                        last_activity = datetime.fromisoformat(session_data.get("last_activity", ""))
-                        
-                        # Verificar se sessão está inativa há mais tempo que o TTL
-                        if (datetime.utcnow() - last_activity).total_seconds() > self.active_session_ttl:
-                            session_id = session_data.get("session_id")
-                            if session_id:
-                                self.end_session(session_id)
-                                expired_count += 1
-                except Exception:
-                    continue
-            
-            if expired_count > 0:
-                logger.info(f"🧹 Limpeza manual: {expired_count} sessões expiradas removidas")
-            
-            return expired_count
-            
-        except Exception as e:
-            logger.error(f"❌ Erro na limpeza de sessões expiradas: {e}")
-            return 0
     
     def close(self):
         """Fechar conexão com Redis"""
