@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..domain.user_display import first_name_from_user
 from ..models.database import get_collection
 from ..services.chat_service import ChatService
 from ..services.user_service import UserService
@@ -28,18 +29,10 @@ async def _get_user_display_name(username: str) -> str:
     """Nome humano para UI/prompts; username continua sendo apenas identificador técnico."""
     try:
         user = await user_service.get_user(username)
-        preferences = (user or {}).get("preferences", {})
-        return (
-            (user or {}).get("display_name")
-            or preferences.get("display_name")
-            or (user or {}).get("full_name")
-            or preferences.get("full_name")
-            or (user or {}).get("name")
-            or username
-        )
+        return first_name_from_user(user, username) or ""
     except Exception as exc:
         logger.warning("Não foi possível obter display_name para %s: %s", username, exc)
-        return username
+        return first_name_from_user(None, username) or ""
 
 
 @router.post("/generate-title/{chat_id}")
@@ -194,7 +187,8 @@ async def get_initial_message(session_id: str):
             }
 
         if original_session_id == "session-1":
-            initial_message = f"""Olá, {user_label}!
+            greeting = f"Olá, {user_label}!" if user_label else "Olá!"
+            initial_message = f"""{greeting}
 
 Eu sou seu assistente terapêutico. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você.
 
@@ -376,7 +370,7 @@ async def _try_generate_initial_audio(username: str, initial_message: str) -> st
         user = await users_collection.find_one({"username": username})
 
         if user and user.get("preferences", {}).get("voice_enabled", True):
-            selected_voice = user.get("preferences", {}).get("selected_voice", "pt-BR-Neural2-A")
+            selected_voice = user.get("preferences", {}).get("selected_voice", "pt-BR-Neural2-B")
             return await chat_service._generate_audio(initial_message, selected_voice)
     except Exception as exc:
         logger.warning("⚠️ Erro ao gerar áudio para mensagem inicial: %s", exc)
