@@ -2,7 +2,8 @@
 Instâncias singleton de todos os serviços do AI Service.
 
 Importar daqui garante que existirá apenas uma conexão MongoDB,
-uma conexão Redis, um cache em memória e um runtime de LLM local
+uma conexão Redis, um cache em memória e um cliente singleton para
+endpoint LLM OpenAI-compatible
 em todo o processo — independente de quantos módulos importem os serviços.
 """
 

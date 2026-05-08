@@ -4,32 +4,22 @@
 
 O **AI Service** é responsável por gerenciar conversas terapêuticas com GPT e **gerar contextos estruturados de sessões**, implementando uma arquitetura otimizada que usa **MongoDB como repositório principal** e **Redis apenas para otimização de performance**, proporcionando significativa **economia de tokens OpenAI** através da reutilização de contextos existentes.
 
-## 🧠 Local LLM no build do AI Service
+## 🧠 Configuração de LLM (Simples)
 
-O AI Service pode servir um modelo GGUF local dentro do próprio container usando `llama-cpp-python`. Por padrão, o ambiente de desenvolvimento baixa o modelo no build da imagem quando `ENABLE_LOCAL_LLM=true`.
-
-Configuração recomendada inicial para notebook com GPU de 6GB:
+Para usar o endpoint OpenAI-compatible do LM Studio (modo local), configure:
 
 ```env
-LLM_PROVIDER=local
-ENABLE_LOCAL_LLM=true
-LOCAL_MODEL_REPO_ID=ggml-org/gemma-4-E4B-it-GGUF
-LOCAL_MODEL_INCLUDE=gemma-4-E4B-it-Q4_K_M.gguf
-LOCAL_MODEL_DIR=/models/local-llm
-LOCAL_LLM_MODEL=gemma4:e4b
-LOCAL_LLM_CHAT_FORMAT=
-LOCAL_LLM_N_CTX=8192
-LOCAL_LLM_N_GPU_LAYERS=-1
-LOCAL_LLM_N_THREADS=8
-TEMPERATURE=0.3
-MAX_TOKENS=700
+LLM_PROVIDER=openai
+LLM_FALLBACK_PROVIDER=none
+LLM_BASE_URL=http://host.docker.internal:1234/v1
+OPENAI_COMPAT_API_KEY=lm-studio
+# Troque conforme o modelo carregado no LM Studio:
+MODEL_NAME=gemma-4-e4b
+# MODEL_NAME=deepseek-r1
 ```
 
-Gemma no Hugging Face pode exigir aceite dos termos e token:
-
-```env
-HF_TOKEN=hf_...
-```
+Em produção (Kubernetes), basta sobrescrever `LLM_BASE_URL` para o endpoint escolhido
+e, se necessário, `OPENAI_API_KEY` via Secret/Env do Deployment.
 
 Build:
 
@@ -40,12 +30,9 @@ docker compose up ai-service
 
 Notas:
 
-- As dependências opcionais ficam em `requirements-local-llm.txt` e só são instaladas quando `ENABLE_LOCAL_LLM=true`.
-- O build local pode demorar porque instala `llama-cpp-python` e baixa o GGUF.
 - Para usar GPU dentro do Docker, o host precisa ter NVIDIA Container Toolkit configurado.
-- Se o modelo local não carregar, o serviço tenta OpenAI quando `LLM_FALLBACK_PROVIDER=openai`.
-- Se o download do modelo falhar, `LOCAL_MODEL_DOWNLOAD_REQUIRED=false` permite iniciar o serviço e usar OpenAI em runtime.
-- Para builds rápidos sem modelo local, use `ENABLE_LOCAL_LLM=false` e `LLM_PROVIDER=openai`.
+- O AI Service não faz download/cópia/serving de modelo local; ele atua como cliente de endpoint LLM.
+- Se quiser trocar de provider/modelo entre ambientes, ajuste apenas `LLM_BASE_URL`, `MODEL_NAME` e, quando necessário, `OPENAI_API_KEY`.
 
 ## 🚀 **ATUALIZAÇÕES RECENTES (2026-05-05)**
 
@@ -53,7 +40,7 @@ Notas:
 - **Gateway enxuto**: o Gateway mantém routers e orquestração; o AI Service concentra geração terapêutica, contexto estruturado, streaming e próxima sessão.
 - **Session-1 garantida no Gateway**: o AI Service continua tratando `session-1` como cadastro especial via `registration_data`, mas a criação/listagem da sessão inicial é responsabilidade do `UserTherapeuticSessionService`.
 - **Prompts centralizados**: prompts ativos continuam buscados no Gateway por `prompt_client_service.py`, com fallback local quando necessário.
-- **LLM local/OpenAI**: `llm_service.py` escolhe provedor conforme configuração, usando Gemma/GGUF local quando habilitado e OpenAI como fallback permitido.
+- **LLM endpoint único**: `llm_service.py` usa endpoint OpenAI-compatible configurável (`LLM_BASE_URL`) e não inicializa runtime GGUF interno.
 
 ### ✅ **SessionContextService - Totalmente Funcional**
 - **Problema Resolvido**: SessionContextService estava salvando na coleção incorreta

@@ -75,6 +75,30 @@ def clean_subject(value: Any) -> str:
     return text.strip(" .,-:;")
 
 
+def simplify_subject_for_prompt(value: Any) -> str:
+    """
+    Compacta um tema para soar mais natural em prompt de abertura.
+    Mantém o sentido, mas remove rótulos e verbos de sessão que deixam o texto pesado.
+    """
+    text = clean_subject(value)
+    if not text:
+        return ""
+
+    replacements = (
+        r"^(explorando|navegando|aprofundando|entendendo|compreendendo|refletindo sobre|lidando com|falando sobre|trabalhando com)\s+",
+        r"^(o|a|os|as)\s+campo\s+dos?\s+",
+        r"^(a|o)\s+complexidade\s+dos?\s+",
+        r"^(tema[s]?\s+como\s+)",
+        r"^(quest[aã]o[es]?\s+de\s+)",
+    )
+    simplified = text
+    for pattern in replacements:
+        simplified = re.sub(pattern, "", simplified, flags=re.IGNORECASE)
+
+    simplified = re.sub(r"\s+", " ", simplified).strip(" .,-:;")
+    return simplified or text
+
+
 def iter_subject_candidates(value: Any):
     if value is None:
         return

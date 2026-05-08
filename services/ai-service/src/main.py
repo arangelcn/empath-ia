@@ -55,8 +55,6 @@ async def root():
 @app.on_event("startup")
 async def startup_event():
     """Inicializar nova arquitetura MongoDB + Redis na startup"""
-    await openai_service.ensure_local_model_ready()
-
     try:
         await token_economy_service.initialize()
         logger.info("✅ TokenEconomyService inicializado com sucesso")

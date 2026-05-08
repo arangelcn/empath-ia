@@ -1,6 +1,6 @@
 """
 Serviço LLM principal do AI Service.
-Gerencia conversas terapêuticas com modelo local (Gemma/GGUF) e fallback OpenAI.
+Gerencia conversas terapêuticas via endpoint OpenAI-compatible configurável.
 """
 
 import os
@@ -25,7 +25,6 @@ except ImportError:
     OpenAI = None
 
 from .prompt_client_service import PromptClientService
-from .local_llm_service import LocalLLMService
 
 logger = logging.getLogger(__name__)
 
@@ -122,16 +121,18 @@ def _extract_braced_json(text: str) -> Optional[str]:
 
 class LLMService:
     """
-    Serviço LLM principal: modelo local GGUF (Gemma) com fallback para OpenAI.
+    Serviço LLM principal usando endpoint OpenAI-compatible.
     Gerencia conversas terapêuticas com o Dr. Rogers.
     """
 
     def __init__(self, prompt_client: Optional[PromptClientService] = None):
         """Inicializar serviço LLM."""
-        self.primary_provider = os.getenv("LLM_PROVIDER", "local").lower()
-        self.fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "openai").lower()
+        self.primary_provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        self.fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "none").lower()
         self.provider = self.primary_provider
+        self.openai_base_url = self._resolve_openai_base_url()
         self.api_key = os.getenv("OPENAI_API_KEY")
+        self.effective_api_key = self._resolve_openai_api_key(self.api_key, self.openai_base_url)
         self.openai_model = os.getenv("MODEL_NAME", "gpt-4o")
         self.model = self.openai_model
         self.max_tokens = int(os.getenv("MAX_TOKENS", "700"))
@@ -153,21 +154,19 @@ class LLMService:
 
         # Serviço de prompts (injetado ou criado localmente)
         self.prompt_client = prompt_client or PromptClientService()
-        self.local_llm = LocalLLMService() if "local" in self._provider_order() else None
         self.client = None
-        
-        # Verificar configuração do modelo local
-        if self.local_llm and self.local_llm.has_model_file():
-            logger.info(f"✅ Local LLM configurado: {self.local_llm.status()}")
-        elif "local" in self._provider_order():
-            logger.warning("⚠️ Provedor local configurado, mas nenhum modelo local foi encontrado")
 
         # Verificar configuração OpenAI de forma independente para fallback
-        if not self.api_key or not OPENAI_AVAILABLE:
-            logger.warning("⚠️ OPENAI_API_KEY não configurada ou OpenAI não disponível - usando modo fallback")
+        if not self.effective_api_key or not OPENAI_AVAILABLE:
+            logger.warning(
+                "⚠️ OPENAI_API_KEY/OPENAI_COMPAT_API_KEY não configurada ou OpenAI SDK indisponível - usando modo fallback"
+            )
         else:
             try:
-                self.client = OpenAI(api_key=self.api_key)
+                self.client = OpenAI(
+                    api_key=self.effective_api_key,
+                    base_url=self.openai_base_url,
+                )
                 logger.info("✅ Cliente OpenAI inicializado com sucesso")
             except Exception as e:
                 logger.error(f"❌ Erro ao inicializar cliente OpenAI: {e}")
@@ -180,19 +179,8 @@ class LLMService:
         logger.info(f"✅ Session tracking: {'Habilitado' if self.session_tracking_enabled else 'Desabilitado'}")
 
     async def ensure_local_model_ready(self) -> bool:
-        """Download the local GGUF at startup if local mode is configured and the file is missing."""
-        if "local" not in self._provider_order() or self.local_llm is None:
-            return False
-
-        download_enabled = os.getenv("ENABLE_LOCAL_LLM", "true").lower() == "true"
-        required = os.getenv("LOCAL_MODEL_DOWNLOAD_REQUIRED", "true").lower() == "true"
-        ready = await asyncio.to_thread(
-            self.local_llm.ensure_model_available,
-            download_enabled,
-            required,
-        )
-        self._log_startup_llm_mode()
-        return ready
+        """Compat shim: local GGUF runtime foi removido; nenhuma ação necessária."""
+        return False
 
     def _active_provider(self) -> str:
         """Return the provider that will be attempted first at runtime."""
@@ -204,23 +192,16 @@ class LLMService:
     def _active_mode_label(self) -> str:
         active_provider = self._active_provider()
         if active_provider == "local":
-            return "GEMMA_LOCAL"
+            return "OPENAI_COMPAT_LOCAL_ALIAS"
         if active_provider == "openai":
-            return "OPENAI_FALLBACK" if self.primary_provider == "local" else "OPENAI"
+            return "OPENAI_COMPAT"
         return "TEMPLATE_FALLBACK"
 
     def _log_startup_llm_mode(self) -> None:
         """Log the configured and active LLM mode during service startup."""
         provider_order = " -> ".join(self._provider_order()) or "none"
-        local_status = self.local_llm.status() if self.local_llm else None
         active_provider = self._active_provider()
-        active_model = (
-            self.local_llm.model_name
-            if active_provider == "local" and self.local_llm
-            else self.openai_model
-            if active_provider == "openai"
-            else "hardcoded-therapeutic-template"
-        )
+        active_model = self.openai_model if active_provider in {"openai", "local"} else "hardcoded-therapeutic-template"
 
         logger.info("🤖 AI Service LLM startup mode: %s", self._active_mode_label())
         logger.info(
@@ -231,20 +212,7 @@ class LLMService:
             active_provider,
         )
         logger.info("🤖 Active LLM model: %s", active_model)
-
-        if local_status:
-            logger.info(
-                "🤖 Gemma local status: available=%s, file_available=%s, runtime_loadable=%s, model=%s, path=%s, repo=%s, include=%s, chat_format=%s, load_error=%s",
-                local_status["available"],
-                local_status["file_available"],
-                local_status["runtime_loadable"],
-                local_status["model_name"],
-                local_status["model_path"],
-                local_status["model_repo_id"],
-                local_status["model_include"],
-                local_status["chat_format"],
-                local_status["load_error"],
-            )
+        logger.info("🤖 OpenAI-compatible base URL: %s", self.openai_base_url)
         if active_provider == "fallback_template":
             logger.warning("⚠️ Nenhum provider LLM configurado está disponível; usando fallback terapêutico hardcoded")
     
@@ -265,11 +233,43 @@ class LLMService:
         return ordered
 
     def _provider_available(self, provider: str) -> bool:
-        if provider == "local":
-            return self.local_llm is not None and self.local_llm.is_available()
-        if provider == "openai":
-            return self.client is not None and self.api_key is not None and OPENAI_AVAILABLE
+        if provider in {"openai", "local"}:
+            return self.client is not None and self.effective_api_key is not None and OPENAI_AVAILABLE
         return False
+
+    @staticmethod
+    def _is_local_openai_compatible_base(base_url: str) -> bool:
+        local_hosts = ("localhost", "127.0.0.1", "host.docker.internal")
+        return any(host in base_url for host in local_hosts)
+
+    @classmethod
+    def _normalize_openai_base_url(cls, raw_base_url: Optional[str], raw_completions_url: Optional[str]) -> str:
+        base_url = (raw_base_url or "").strip()
+        if base_url:
+            return base_url.rstrip("/")
+
+        completions_url = (raw_completions_url or "").strip()
+        if not completions_url:
+            return "http://host.docker.internal:1234/v1"
+
+        normalized = completions_url.rstrip("/")
+        for suffix in ("/chat/completions", "/completions", "/responses"):
+            if normalized.endswith(suffix):
+                return normalized[: -len(suffix)].rstrip("/")
+        return normalized
+
+    def _resolve_openai_base_url(self) -> str:
+        return self._normalize_openai_base_url(
+            os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
+            os.getenv("OPENAI_COMPLETIONS_URL"),
+        )
+
+    def _resolve_openai_api_key(self, configured_api_key: Optional[str], base_url: str) -> Optional[str]:
+        if configured_api_key:
+            return configured_api_key
+        if self._is_local_openai_compatible_base(base_url):
+            return os.getenv("OPENAI_COMPAT_API_KEY", "lm-studio")
+        return None
     
     def _validate_session_ownership(self, session_id: str, username: str) -> bool:
         """
@@ -967,16 +967,13 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
     ) -> Optional[Dict[str, str]]:
-        """Fazer chamada para a cadeia local -> OpenAI -> fallback template."""
+        """Fazer chamada para a cadeia configurada de endpoints OpenAI-compatible."""
         for provider in self._provider_order():
             if not self._provider_available(provider):
                 logger.warning(f"⚠️ Provedor {provider} indisponível; tentando próximo")
                 continue
 
-            if provider == "local":
-                content = await self._call_local_llm(messages, max_tokens, temperature)
-                model = self.local_llm.model_name if self.local_llm else "local"
-            elif provider == "openai":
+            if provider in {"openai", "local"}:
                 content = await self._call_openai(messages, max_tokens, temperature)
                 model = self.openai_model
             else:
@@ -1121,47 +1118,24 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
     ) -> AsyncGenerator[Dict[str, str], None]:
-        """Stream from OpenAI when possible; use full-text fallback for local providers."""
+        """Stream from configured OpenAI-compatible providers when possible."""
         for provider in self._provider_order():
             if not self._provider_available(provider):
                 logger.warning("⚠️ Provedor %s indisponível no streaming; tentando próximo", provider)
                 continue
 
-            if provider == "openai":
+            if provider in {"openai", "local"}:
                 yielded = False
                 async for delta in self._call_openai_stream(messages, max_tokens, temperature):
                     yielded = True
                     yield {
                         "type": "delta",
                         "content": delta,
-                        "provider": "openai",
+                        "provider": provider,
                         "model": self.openai_model,
                     }
                 if yielded:
                     return
-
-            elif provider == "local":
-                if not self.local_llm:
-                    continue
-                yielded = False
-                try:
-                    async for delta in self.local_llm.generate_stream(
-                        messages=messages,
-                        max_tokens=max_tokens or self.max_tokens,
-                        temperature=temperature if temperature is not None else self.temperature,
-                    ):
-                        yielded = True
-                        yield {
-                            "type": "delta",
-                            "content": delta,
-                            "provider": "local",
-                            "model": self.local_llm.model_name,
-                        }
-                    if yielded:
-                        return
-                except Exception as exc:
-                    logger.error("❌ Streaming local falhou; tentando próximo provider: %s", exc)
-                    continue
 
         return
 
@@ -1209,44 +1183,6 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         except Exception as exc:
             logger.error("❌ ERRO no streaming OpenAI: %s", exc)
             return
-
-    async def _call_local_llm(
-        self,
-        messages: List[Dict],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-    ) -> Optional[str]:
-        """Fazer chamada para o modelo local carregado no AI Service."""
-        if not self.local_llm or not self.local_llm.is_available():
-            logger.warning("⚠️ Modelo local não disponível")
-            if self.local_llm and self.local_llm.load_error:
-                logger.warning(f"⚠️ Último erro de carga do modelo local: {self.local_llm.load_error}")
-            return None
-
-        try:
-            logger.info("🤖 CHAMADA PARA LLM LOCAL:")
-            logger.info(f"   Modelo: {self.local_llm.model_name}")
-            logger.info(f"   Max Tokens: {self.max_tokens}")
-            logger.info(f"   Temperatura: {self.temperature}")
-            logger.info(f"   Config: {self.local_llm.status()}")
-
-            response = await self.local_llm.generate(
-                messages=messages,
-                max_tokens=max_tokens or self.max_tokens,
-                temperature=temperature if temperature is not None else self.temperature,
-            )
-
-            if response:
-                logger.info("✅ SUCESSO na chamada LLM local")
-                logger.info(f"🤖 Resposta local (primeiros 200 chars): {response[:200]}{'...' if len(response) > 200 else ''}")
-                return response
-
-            logger.warning("⚠️ LLM local retornou resposta vazia")
-            return None
-
-        except Exception as e:
-            logger.error(f"❌ ERRO na chamada LLM local: {e}")
-            return None
 
     async def _call_openai(
         self,
@@ -1406,19 +1342,21 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             "primary_provider": self.primary_provider,
             "fallback_provider": self.fallback_provider,
             "provider_order": self._provider_order(),
-            "model": self.local_llm.model_name if self._active_provider() == "local" and self.local_llm else self.openai_model,
-            "active_model": self.local_llm.model_name if self._active_provider() == "local" and self.local_llm else self.openai_model,
+            "model": self.openai_model,
+            "active_model": self.openai_model,
             "openai_model": self.openai_model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
             "api_key_present": bool(self.api_key),
-            "local_available": self._provider_available("local"),
-            "local_file_available": self.local_llm.has_model_file() if self.local_llm else False,
-            "local_runtime_loadable": self.local_llm.runtime_loadable() if self.local_llm else False,
-            "local_load_error": self.local_llm.load_error if self.local_llm else None,
+            "effective_api_key_present": bool(self.effective_api_key),
+            "openai_base_url": self.openai_base_url,
+            "local_available": False,
+            "local_file_available": False,
+            "local_runtime_loadable": False,
+            "local_load_error": None,
             "openai_available": self._provider_available("openai"),
-            "local_llm": self.local_llm.status() if self.local_llm else None,
-            "local_model_path": str(self.local_llm.model_path) if self.local_llm and self.local_llm.model_path else None,
+            "local_llm": None,
+            "local_model_path": None,
             "context_optimization": {
                 "max_history_messages": self.max_history_messages,
                 "max_context_tokens": self.max_context_tokens,
@@ -1455,7 +1393,7 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                     emotion_summary=emotion_summary_str,
                 )
             
-            # Gerar contexto com cadeia local -> OpenAI
+            # Gerar contexto com cadeia de endpoints OpenAI-compatible
             llm_result = await self._call_llm(
                 [
                     {"role": "system", "content": "Você é um especialista em análise de conversas terapêuticas. Sempre responda em JSON válido."},

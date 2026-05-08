@@ -84,11 +84,8 @@ ps: ## Mostra containers da stack
 build: ## Build das imagens, ou SERVICE=nome para uma imagem
 	@set -a; [ ! -f .env ] || . ./.env; set +a; $(COMPOSE) build $(SERVICE)
 
-build-ai-local: ## Build do ai-service exigindo modelo local via HF_TOKEN
-	@set -a; [ ! -f .env ] || . ./.env; set +a; \
-	token="$${HF_TOKEN:-$${HUGGING_FACE_TOKEN:-$${HUGGIN_FACE_TOKEN:-}}}"; \
-	test -n "$$token" || (echo "$(RED)Configure HF_TOKEN antes do build.$(NC)" && exit 1); \
-	HF_TOKEN="$$token" ENABLE_LOCAL_LLM=true LOCAL_MODEL_DOWNLOAD_REQUIRED=true $(COMPOSE) build --no-cache ai-service
+build-ai-local: ## Build do ai-service (mantido por compatibilidade com scripts antigos)
+	@set -a; [ ! -f .env ] || . ./.env; set +a; $(COMPOSE) build --no-cache ai-service
 
 logs: ## Logs da stack, ou SERVICE=nome para um serviço
 	@$(COMPOSE) logs -f $(SERVICE)

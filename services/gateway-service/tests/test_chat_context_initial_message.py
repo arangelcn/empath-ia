@@ -1,4 +1,4 @@
-from src.domain.session_subjects import select_previous_session_subjects
+from src.domain.session_subjects import select_previous_session_subjects, simplify_subject_for_prompt
 
 
 def test_previous_session_subjects_prefer_saved_title_and_subtitle():
@@ -39,3 +39,8 @@ def test_previous_session_subjects_empty_when_only_generic_values():
     )
 
     assert subjects == []
+
+
+def test_simplify_subject_for_prompt_trims_verbose_session_titles():
+    assert simplify_subject_for_prompt("Explorando o Campo dos Relacionamentos") == "Relacionamentos"
+    assert simplify_subject_for_prompt("Navegando a complexidade dos vínculos afetivos") == "vínculos afetivos"

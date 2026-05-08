@@ -2,12 +2,13 @@
 
 import hashlib
 import logging
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..domain.session_subjects import join_subjects, select_previous_session_subjects
+from ..domain.session_subjects import join_subjects, select_previous_session_subjects, simplify_subject_for_prompt
 from ..domain.user_display import first_name_from_user
 from ..models.database import get_collection
 from ..services.chat_service import ChatService
@@ -51,6 +52,80 @@ async def _find_previous_conversation_doc(previous_session_id: str) -> dict | No
 async def _find_previous_user_session_doc(username: str, previous_original_session_id: str) -> dict | None:
     user_sessions = get_collection("user_therapeutic_sessions")
     return await user_sessions.find_one({"username": username, "session_id": previous_original_session_id})
+
+
+def _unique_simple_subjects(subjects: list[str], limit: int = 3) -> list[str]:
+    compact_subjects: list[str] = []
+    seen: set[str] = set()
+
+    for subject in subjects:
+        simplified = simplify_subject_for_prompt(subject)
+        normalized = re.sub(r"\s+", " ", simplified).strip().lower()
+        if not normalized or normalized in seen:
+            continue
+
+        compact_subjects.append(simplified)
+        seen.add(normalized)
+        if len(compact_subjects) >= limit:
+            break
+
+    return compact_subjects
+
+
+async def _generate_followup_initial_message_via_llm(
+    username: str,
+    user_label: str,
+    current_session_number: int,
+    followup_subjects: list[str],
+    legacy_session_id: str,
+) -> str | None:
+    subjects_text = join_subjects(followup_subjects)
+    if not subjects_text:
+        return None
+
+    session_objective = {
+        "title": f"Sessão {current_session_number}: retomando a conversa",
+        "subtitle": "Abertura natural baseada na sessão anterior",
+        "objective": f"Retomar de forma simples os temas {subjects_text}",
+        "initial_prompt": (
+            "Escreva somente a primeira mensagem desta sessão, em português brasileiro, em texto corrido e natural.\n"
+            f"Temas simples para retomar: {subjects_text}.\n"
+            "Traga os temas de forma leve e cotidiana, sem repetir títulos longos ou linguagem formal demais.\n"
+            "Se fizer sentido, use o nome preferido do usuário apenas uma vez e só de forma natural.\n"
+            "Faça no máximo uma pergunta aberta no final.\n"
+            "Não use listas, não explique as instruções e não mencione que recebeu temas."
+        ),
+        "focus_areas": followup_subjects[:3],
+        "generation_method": "llm_followup_opening",
+    }
+
+    try:
+        result = await chat_service._get_ai_response(
+            user_message=(
+                "Gere a mensagem inicial desta sessão com base nas instruções e nos temas informados."
+            ),
+            session_id=legacy_session_id,
+            selected_voice="pt-BR-Neural2-B",
+            voice_enabled=False,
+            session_objective=session_objective,
+            initial_prompt=session_objective["initial_prompt"],
+            is_voice_mode=False,
+        )
+
+        response = (result or {}).get("response", "").strip()
+        if response:
+            logger.info(
+                "✅ Mensagem inicial da sessão %s gerada via LLM com temas simples: %s",
+                legacy_session_id,
+                subjects_text,
+            )
+            return response
+
+        logger.warning("⚠️ LLM retornou resposta vazia para mensagem inicial da sessão %s", legacy_session_id)
+        return None
+    except Exception as exc:
+        logger.warning("⚠️ Falha ao gerar mensagem inicial via LLM para %s: %s", legacy_session_id, exc)
+        return None
 
 
 @router.post("/generate-title/{chat_id}")
@@ -220,6 +295,7 @@ Primeiro, me conta: qual é a sua idade?"""
                 username=username,
                 user_label=user_label,
                 original_session_id=original_session_id or "session-1",
+                legacy_session_id=legacy_session_id,
             )
 
         await chat_service.start_or_get_conversation(legacy_session_id)
@@ -256,7 +332,12 @@ Primeiro, me conta: qual é a sua idade?"""
         return {"success": False, "error": f"Erro ao gerar mensagem inicial: {str(exc)}"}
 
 
-async def _build_followup_initial_message(username: str, user_label: str, original_session_id: str) -> str:
+async def _build_followup_initial_message(
+    username: str,
+    user_label: str,
+    original_session_id: str,
+    legacy_session_id: str,
+) -> str:
     try:
         session_number_str = original_session_id.split("-")[1] if "-" in original_session_id else "1"
         current_session_number = int(session_number_str)
@@ -289,13 +370,23 @@ async def _build_followup_initial_message(username: str, user_label: str, origin
             previous_conversation_doc=previous_conversation,
         )
 
-        if previous_subjects:
-            subjects_text = join_subjects(previous_subjects)
-            return f"""Olá, {user_label}! É bom te ver novamente.
+        followup_subjects = _unique_simple_subjects(
+            previous_subjects
+            + list((previous_context or {}).get("main_themes", []))
+            + list((previous_context or {}).get("next_session_focus", [])),
+            limit=3,
+        )
 
-Como você está se sentindo desde nossa última conversa?
-
-Na nossa sessão anterior, apareceram temas como {subjects_text}. Gostaria de continuar por aí ou há algo mais presente para você hoje?"""
+        if followup_subjects:
+            generated_message = await _generate_followup_initial_message_via_llm(
+                username=username,
+                user_label=user_label,
+                current_session_number=current_session_number,
+                followup_subjects=followup_subjects,
+                legacy_session_id=legacy_session_id,
+            )
+            if generated_message:
+                return generated_message
 
         if previous_context:
             main_themes = previous_context.get("main_themes", [])

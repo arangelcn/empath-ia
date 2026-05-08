@@ -65,39 +65,19 @@ services:
       context: ./services/ai-service
       args:
         AI_SERVICE_BASE_IMAGE: ${AI_SERVICE_BASE_IMAGE:-nvidia/cuda:12.4.1-devel-ubuntu22.04}
-        ENABLE_LOCAL_LLM: ${ENABLE_LOCAL_LLM:-true}
-        LOCAL_MODEL_REPO_ID: ${LOCAL_MODEL_REPO_ID:-ggml-org/gemma-4-E4B-it-GGUF}
-        LOCAL_MODEL_INCLUDE: ${LOCAL_MODEL_INCLUDE:-gemma-4-E4B-it-Q4_K_M.gguf}
-        LOCAL_MODEL_DIR: ${LOCAL_MODEL_DIR:-/models/local-llm}
-        LLAMA_CPP_CUDA: ${LLAMA_CPP_CUDA:-true}
-        LLAMA_CPP_VERSION: ${LLAMA_CPP_VERSION:-0.3.21}
-        LLAMA_CPP_CUDA_VERSION: ${LLAMA_CPP_CUDA_VERSION:-cu124}
-        LLAMA_CPP_CMAKE_ARGS: ${LLAMA_CPP_CMAKE_ARGS:--DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=86 -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_LLAVA=OFF -DCMAKE_EXE_LINKER_FLAGS=-L/usr/local/cuda/lib64/stubs -DCMAKE_SHARED_LINKER_FLAGS=-L/usr/local/cuda/lib64/stubs}
-        CMAKE_BUILD_PARALLEL_LEVEL: ${CMAKE_BUILD_PARALLEL_LEVEL:-4}
-        LLAMA_CPP_PIP_EXTRA_ARGS: ${LLAMA_CPP_PIP_EXTRA_ARGS:-}
-      secrets:
-        - hf_token
-        - hugging_face_token
-        - huggin_face_token
     container_name: empatia-ai-service
     gpus: ${AI_SERVICE_GPUS:-all}
     env_file:
       - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - MODEL_NAME=${MODEL_NAME:-gpt-4o}
-      - LLM_PROVIDER=${LLM_PROVIDER:-local}
-      - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-openai}
-      - LOCAL_MODEL_DOWNLOAD_REQUIRED=${LOCAL_MODEL_DOWNLOAD_REQUIRED:-false}
-      - LOCAL_MODEL_DIR=${LOCAL_MODEL_DIR:-/models/local-llm}
-      - LOCAL_MODEL_IMPORT_DIR=${LOCAL_MODEL_IMPORT_DIR:-/host-lmstudio-models}
-      - LOCAL_MODEL_IMPORT_PATTERN=${LOCAL_MODEL_IMPORT_PATTERN:-gemma-4-E4B-it-Q4_K_M.gguf}
-      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL:-gemma4:e4b}
-      - LOCAL_LLM_MODEL_PATH=${LOCAL_LLM_MODEL_PATH:-}
-      - LOCAL_LLM_CHAT_FORMAT=${LOCAL_LLM_CHAT_FORMAT:-}
-      - LOCAL_LLM_N_CTX=${LOCAL_LLM_N_CTX:-8192}
-      - LOCAL_LLM_N_GPU_LAYERS=${LOCAL_LLM_N_GPU_LAYERS:--1}
-      - LOCAL_LLM_N_THREADS=${LOCAL_LLM_N_THREADS:-8}
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OPENAI_COMPLETIONS_URL=${OPENAI_COMPLETIONS_URL:-}
+      - OPENAI_COMPAT_API_KEY=${OPENAI_COMPAT_API_KEY:-lm-studio}
+      - MODEL_NAME=${MODEL_NAME:-gemma-4-e4b}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-none}
       - NVIDIA_VISIBLE_DEVICES=${AI_NVIDIA_VISIBLE_DEVICES:-all}
       - NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
       - TEMPERATURE=${TEMPERATURE:-0.3}
@@ -110,7 +90,6 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     volumes:
       - ./services/ai-service:/app
-      - local_llm_models:${LOCAL_MODEL_DIR:-/models/local-llm}
     ports:
       - "${AI_SERVICE_PORT:-8001}:8001"
     depends_on:
@@ -352,16 +331,7 @@ volumes:
   mongodb_data:
   redis_data:
   postgres_data:
-  local_llm_models:
   qdrant_data:
   knowledge_data:
   voice_cache:
     # Cache para modelos TTS
-
-secrets:
-  hf_token:
-    environment: HF_TOKEN
-  hugging_face_token:
-    environment: HUGGING_FACE_TOKEN
-  huggin_face_token:
-    environment: HUGGIN_FACE_TOKEN

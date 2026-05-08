@@ -12,6 +12,7 @@ def test_generate_session_context_accepts_fenced_json(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "none")
     monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "none")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
 
     service = LLMService(prompt_client=FakePromptClient())
 
@@ -34,3 +35,45 @@ def test_generate_session_context_accepts_fenced_json(monkeypatch):
     assert result["summary"] == "Resumo da sessão"
     assert result["main_themes"] == ["ansiedade no trabalho"]
     assert result["emotional_state"]["final"] == "mais calmo"
+
+
+def test_openai_compat_base_url_from_completions_url(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "none")
+    monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.setenv("OPENAI_COMPLETIONS_URL", "http://localhost:1234/v1/chat/completions")
+    monkeypatch.delenv("OPENAI_COMPAT_API_KEY", raising=False)
+
+    service = LLMService(prompt_client=FakePromptClient())
+
+    assert service.openai_base_url == "http://localhost:1234/v1"
+    assert service.effective_api_key == "lm-studio"
+
+
+def test_llm_base_url_takes_precedence(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "none")
+    monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "openai")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_BASE_URL", "http://host.docker.internal:11434/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+    service = LLMService(prompt_client=FakePromptClient())
+
+    assert service.openai_base_url == "http://host.docker.internal:11434/v1"
+    assert service.effective_api_key == "lm-studio"
+
+
+def test_openai_cloud_without_api_key_disables_provider(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "none")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.delenv("OPENAI_COMPLETIONS_URL", raising=False)
+
+    service = LLMService(prompt_client=FakePromptClient())
+
+    assert service.effective_api_key is None
+    assert service.get_service_status()["openai_available"] is False
