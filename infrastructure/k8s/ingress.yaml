@@ -1,0 +1,83 @@
+---
+# FrontendConfig: redireciona HTTP → HTTPS mantendo a porta 80 aberta
+# (necessário para o provisionamento do GKE Managed Certificate via HTTP-01 challenge)
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: empatia-frontend-config
+  namespace: empatia
+spec:
+  redirectToHttps:
+    enabled: true
+    responseCodeName: MOVED_PERMANENTLY_DEFAULT
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: empatia-ingress
+  namespace: empatia
+  annotations:
+    # GKE Managed Certificate — HTTPS automático via GCP (sem cert-manager)
+    networking.gke.io/managed-certificates: empatia-certs
+    # GKE Ingress class (usa Cloud Load Balancer)
+    kubernetes.io/ingress.class: "gce"
+    # Redirect HTTP → HTTPS via FrontendConfig (mantém porta 80 aberta para o cert provisioning)
+    networking.gke.io/v1beta1.FrontendConfig: empatia-frontend-config
+    # NEG para routing eficiente aos pods
+    compute.googleapis.com/neg: '{"ingress": true}'
+spec:
+  rules:
+    # Frontend principal
+    - host: app.empat-ia.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-ui
+                port:
+                  number: 3000
+
+    # Painel de administração
+    - host: admin.empat-ia.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-panel
+                port:
+                  number: 3000
+
+    # API Gateway + Voice Service
+    - host: api.empat-ia.io
+      http:
+        paths:
+          - path: /voice-service
+            pathType: Prefix
+            backend:
+              service:
+                name: voice-service
+                port:
+                  number: 8004
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8000
+---
+# GKE Managed Certificate — provisiona SSL automaticamente para os 3 subdomínios
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: empatia-certs
+  namespace: empatia
+spec:
+  domains:
+    - app.empat-ia.io
+    - admin.empat-ia.io
+    - api.empat-ia.io

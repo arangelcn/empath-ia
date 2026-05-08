@@ -4,7 +4,43 @@
 
 O **AI Service** é responsável por gerenciar conversas terapêuticas com GPT e **gerar contextos estruturados de sessões**, implementando uma arquitetura otimizada que usa **MongoDB como repositório principal** e **Redis apenas para otimização de performance**, proporcionando significativa **economia de tokens OpenAI** através da reutilização de contextos existentes.
 
-## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**
+## 🧠 Configuração de LLM (Simples)
+
+Para usar o endpoint OpenAI-compatible do LM Studio (modo local), configure:
+
+```env
+LLM_PROVIDER=openai
+LLM_FALLBACK_PROVIDER=none
+LLM_BASE_URL=http://host.docker.internal:1234/v1
+OPENAI_COMPAT_API_KEY=lm-studio
+# Troque conforme o modelo carregado no LM Studio:
+MODEL_NAME=gemma-4-e4b
+# MODEL_NAME=deepseek-r1
+```
+
+Em produção (Kubernetes), basta sobrescrever `LLM_BASE_URL` para o endpoint escolhido
+e, se necessário, `OPENAI_API_KEY` via Secret/Env do Deployment.
+
+Build:
+
+```bash
+make build-ai-local
+docker compose up ai-service
+```
+
+Notas:
+
+- A imagem do AI Service é CPU-only e usa endpoint LLM externo (OpenAI-compatible).
+- O AI Service não faz download/cópia/serving de modelo local; ele atua como cliente de endpoint LLM.
+- Se quiser trocar de provider/modelo entre ambientes, ajuste apenas `LLM_BASE_URL`, `MODEL_NAME` e, quando necessário, `OPENAI_API_KEY`.
+
+## 🚀 **ATUALIZAÇÕES RECENTES (2026-05-05)**
+
+### ✅ **Contrato pós-refactor com Gateway Service**
+- **Gateway enxuto**: o Gateway mantém routers e orquestração; o AI Service concentra geração terapêutica, contexto estruturado, streaming e próxima sessão.
+- **Session-1 garantida no Gateway**: o AI Service continua tratando `session-1` como cadastro especial via `registration_data`, mas a criação/listagem da sessão inicial é responsabilidade do `UserTherapeuticSessionService`.
+- **Prompts centralizados**: prompts ativos continuam buscados no Gateway por `prompt_client_service.py`, com fallback local quando necessário.
+- **LLM endpoint único**: `llm_service.py` usa endpoint OpenAI-compatible configurável (`LLM_BASE_URL`) e não inicializa runtime GGUF interno.
 
 ### ✅ **SessionContextService - Totalmente Funcional**
 - **Problema Resolvido**: SessionContextService estava salvando na coleção incorreta

@@ -2,81 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { 
   CpuChipIcon, 
   CircleStackIcon, 
-  CloudIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
   XCircleIcon,
   ClockIcon,
   ArrowPathIcon
 } from '@heroicons/react/24/outline';
-
-const services = [
-  { 
-    id: 'gateway', 
-    name: 'Gateway Service', 
-    status: 'online', 
-    url: 'http://localhost:8000',
-    uptime: '2d 14h 32m',
-    lastCheck: new Date().toLocaleTimeString(),
-    cpu: 15,
-    memory: 342,
-    requests: 1247
-  },
-  { 
-    id: 'emotion', 
-    name: 'Emotion Service', 
-    status: 'online', 
-    url: 'http://localhost:8003',
-    uptime: '2d 14h 30m',
-    lastCheck: new Date().toLocaleTimeString(),
-    cpu: 45,
-    memory: 512,
-    requests: 892
-  },
-  { 
-    id: 'ai', 
-    name: 'AI Service', 
-    status: 'online', 
-    url: 'http://localhost:8001',
-    uptime: '2d 14h 28m',
-    lastCheck: new Date().toLocaleTimeString(),
-    cpu: 65,
-    memory: 1024,
-    requests: 2134
-  },
-  { 
-    id: 'avatar', 
-    name: 'Avatar Service', 
-    status: 'online', 
-    url: 'http://localhost:8002',
-    uptime: '2d 14h 25m',
-    lastCheck: new Date().toLocaleTimeString(),
-    cpu: 25,
-    memory: 256,
-    requests: 567
-  },
-  { 
-    id: 'voice', 
-    name: 'Voice Service', 
-    status: 'error', 
-    url: 'http://localhost:8004',
-    uptime: '0d 0h 0m',
-    lastCheck: new Date().toLocaleTimeString(),
-    cpu: 0,
-    memory: 0,
-    requests: 0,
-    error: 'Connection refused'
-  }
-];
-
-const systemMetrics = {
-  totalRequests: 4840,
-  avgResponseTime: 245,
-  errorRate: 0.8,
-  activeUsers: 23,
-  diskUsage: 67,
-  networkLatency: 12
-};
+import apiService from '../services/api';
+import { DataQualityBadge, EmptyState, ErrorState, LoadingState, UnavailableState } from '../components/AdminState';
 
 function StatusBadge({ status }) {
   const baseClasses = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
@@ -97,6 +30,7 @@ function StatusBadge({ status }) {
         </span>
       );
     case 'error':
+    case 'unreachable':
       return (
         <span className={`${baseClasses} bg-red-100 text-red-800`}>
           <XCircleIcon className="h-3 w-3 mr-1" />
@@ -135,56 +69,61 @@ function ProgressBar({ value, max = 100, color = 'primary' }) {
 }
 
 export default function SystemStatus() {
-  const [servicesData, setServicesData] = useState(services);
-  const [metrics, setMetrics] = useState(systemMetrics);
+  const [servicesData, setServicesData] = useState([]);
+  const [metrics, setMetrics] = useState({});
+  const [alerts, setAlerts] = useState([]);
+  const [unavailableFields, setUnavailableFields] = useState([]);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadSystemStatus = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await apiService.getSystemStatus();
+      if (!response.success) {
+        throw new Error('Falha ao carregar status do sistema');
+      }
+      setServicesData(response.data.services || []);
+      setMetrics(response.data.metrics || {});
+      setAlerts(response.data.alerts || []);
+      setUnavailableFields(response.data.unavailable_fields || []);
+      setLastUpdate(response.data.last_updated ? new Date(response.data.last_updated) : new Date());
+    } catch (err) {
+      setError(apiService.formatError(err, 'Não foi possível carregar o status do sistema.'));
+      setServicesData([]);
+      setMetrics({});
+      setAlerts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!autoRefresh) return;
+    loadSystemStatus();
+  }, []);
 
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
     const interval = setInterval(() => {
-      // Simular atualizações em tempo real
-      setServicesData(prev => prev.map(service => ({
-        ...service,
-        lastCheck: new Date().toLocaleTimeString(),
-        cpu: service.status === 'online' ? Math.max(5, Math.min(95, service.cpu + (Math.random() - 0.5) * 10)) : 0,
-        memory: service.status === 'online' ? Math.max(50, Math.min(2048, service.memory + (Math.random() - 0.5) * 50)) : 0,
-        requests: service.status === 'online' ? service.requests + Math.floor(Math.random() * 10) : 0
-      })));
-
-      setMetrics(prev => ({
-        ...prev,
-        totalRequests: prev.totalRequests + Math.floor(Math.random() * 20),
-        avgResponseTime: Math.max(100, Math.min(1000, prev.avgResponseTime + (Math.random() - 0.5) * 50)),
-        activeUsers: Math.max(0, Math.min(100, prev.activeUsers + Math.floor((Math.random() - 0.5) * 3)))
-      }));
-
-      setLastUpdate(new Date());
+      loadSystemStatus();
     }, 5000);
 
     return () => clearInterval(interval);
   }, [autoRefresh]);
 
   const handleRefresh = () => {
-    setLastUpdate(new Date());
-    // Simular refresh manual
+    loadSystemStatus();
   };
 
-  const handleServiceAction = (serviceId, action) => {
-    setServicesData(prev => prev.map(service => 
-      service.id === serviceId 
-        ? { 
-            ...service, 
-            status: action === 'restart' ? 'online' : (action === 'stop' ? 'offline' : service.status),
-            lastCheck: new Date().toLocaleTimeString()
-          }
-        : service
-    ));
-  };
+  const onlineServices = metrics.online_services ?? servicesData.filter(s => s.status === 'online').length;
+  const totalServices = metrics.total_services ?? servicesData.length;
 
-  const onlineServices = servicesData.filter(s => s.status === 'online').length;
-  const totalServices = servicesData.length;
+  if (loading && servicesData.length === 0) {
+    return <LoadingState message="Carregando status real dos serviços..." />;
+  }
 
   return (
     <div className="space-y-6">
@@ -194,6 +133,9 @@ export default function SystemStatus() {
           <p className="mt-1 text-sm text-gray-600">
             Monitoramento em tempo real dos serviços e recursos
           </p>
+          <div className="mt-2">
+            <DataQualityBadge unavailableFields={unavailableFields} />
+          </div>
         </div>
         <div className="flex items-center space-x-3">
           <div className="flex items-center">
@@ -211,12 +153,15 @@ export default function SystemStatus() {
           <button
             onClick={handleRefresh}
             className="btn-secondary flex items-center"
+            disabled={loading}
           >
             <ArrowPathIcon className="h-4 w-4 mr-2" />
             Atualizar
           </button>
         </div>
       </div>
+
+      {error && <ErrorState message={error} onRetry={loadSystemStatus} />}
 
       {/* Resumo Geral */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -242,7 +187,7 @@ export default function SystemStatus() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Requisições Totais</p>
               <p className="text-2xl font-semibold text-gray-900">
-                {metrics.totalRequests.toLocaleString()}
+                {(metrics.total_requests ?? 0).toLocaleString()}
               </p>
             </div>
           </div>
@@ -256,7 +201,7 @@ export default function SystemStatus() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Tempo de Resposta</p>
               <p className="text-2xl font-semibold text-gray-900">
-                {metrics.avgResponseTime}ms
+                {metrics.avg_response_time_ms === null || metrics.avg_response_time_ms === undefined ? 'Indisponível' : `${metrics.avg_response_time_ms}ms`}
               </p>
             </div>
           </div>
@@ -270,7 +215,7 @@ export default function SystemStatus() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-500">Usuários Ativos</p>
               <p className="text-2xl font-semibold text-gray-900">
-                {metrics.activeUsers}
+                {metrics.active_users ?? 0}
               </p>
             </div>
           </div>
@@ -314,7 +259,13 @@ export default function SystemStatus() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {servicesData.map((service) => (
+              {servicesData.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-8">
+                    <EmptyState title="Nenhum serviço retornado" message="O endpoint de status não retornou serviços monitorados." />
+                  </td>
+                </tr>
+              ) : servicesData.map((service) => (
                 <tr key={service.id}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
@@ -329,41 +280,30 @@ export default function SystemStatus() {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {service.uptime}
+                    {service.uptime || 'Indisponível'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="flex-1 mr-3">
-                        <ProgressBar value={service.cpu} />
+                    {service.cpu !== undefined && service.cpu !== null ? (
+                      <div className="flex items-center">
+                        <div className="flex-1 mr-3">
+                          <ProgressBar value={service.cpu} />
+                        </div>
+                        <span className="text-sm text-gray-900">{service.cpu}%</span>
                       </div>
-                      <span className="text-sm text-gray-900">{service.cpu}%</span>
-                    </div>
+                    ) : (
+                      <span className="text-sm text-gray-500">Indisponível</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{service.memory}MB</div>
+                    <div className="text-sm text-gray-900">
+                      {service.memory ? `${service.memory}MB` : 'Indisponível'}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {service.requests.toLocaleString()}
+                    {service.requests !== undefined ? service.requests.toLocaleString() : service.response_time_ms ? `${service.response_time_ms}ms` : 'Indisponível'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
-                      {service.status === 'online' && (
-                        <button
-                          onClick={() => handleServiceAction(service.id, 'restart')}
-                          className="text-yellow-600 hover:text-yellow-900"
-                        >
-                          Reiniciar
-                        </button>
-                      )}
-                      {service.status === 'error' && (
-                        <button
-                          onClick={() => handleServiceAction(service.id, 'start')}
-                          className="text-green-600 hover:text-green-900"
-                        >
-                          Iniciar
-                        </button>
-                      )}
-                    </div>
+                    <span className="text-gray-500">Sem endpoint operacional</span>
                   </td>
                 </tr>
               ))}
@@ -380,56 +320,46 @@ export default function SystemStatus() {
             <div>
               <div className="flex justify-between mb-1">
                 <span className="text-sm font-medium text-gray-700">Uso de Disco</span>
-                <span className="text-sm text-gray-500">{metrics.diskUsage}%</span>
+                <span className="text-sm text-gray-500">{metrics.disk_usage ?? 'Indisponível'}</span>
               </div>
-              <ProgressBar value={metrics.diskUsage} />
+              {metrics.disk_usage !== null && metrics.disk_usage !== undefined ? <ProgressBar value={metrics.disk_usage} /> : <UnavailableState title="Uso de disco indisponível" />}
             </div>
             
             <div>
               <div className="flex justify-between mb-1">
                 <span className="text-sm font-medium text-gray-700">Taxa de Erro</span>
-                <span className="text-sm text-gray-500">{metrics.errorRate}%</span>
+                <span className="text-sm text-gray-500">{metrics.error_rate ?? 'Indisponível'}</span>
               </div>
-              <ProgressBar value={metrics.errorRate} max={5} />
+              {metrics.error_rate !== null && metrics.error_rate !== undefined ? <ProgressBar value={metrics.error_rate} max={5} /> : <UnavailableState title="Taxa de erro indisponível" />}
             </div>
             
             <div>
               <div className="flex justify-between mb-1">
                 <span className="text-sm font-medium text-gray-700">Latência de Rede</span>
-                <span className="text-sm text-gray-500">{metrics.networkLatency}ms</span>
+                <span className="text-sm text-gray-500">{metrics.network_latency_ms ?? 'Indisponível'}</span>
               </div>
-              <ProgressBar value={metrics.networkLatency} max={100} />
+              {metrics.network_latency_ms !== null && metrics.network_latency_ms !== undefined ? <ProgressBar value={metrics.network_latency_ms} max={100} /> : <UnavailableState title="Latência de rede indisponível" />}
             </div>
           </div>
         </div>
 
         <div className="card">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Alertas Recentes</h3>
-          <div className="space-y-3">
-            <div className="flex items-start space-x-3">
-              <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-gray-900">Alto uso de CPU no AI Service</p>
-                <p className="text-sm text-gray-500">há 5 minutos</p>
-              </div>
+          {alerts.length > 0 ? (
+            <div className="space-y-3">
+              {alerts.map((alert) => (
+                <div key={`${alert.service}-${alert.message}`} className="flex items-start space-x-3">
+                  <ExclamationTriangleIcon className="h-5 w-5 text-red-500 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{alert.message}</p>
+                    <p className="text-sm text-gray-500">{alert.detail}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-            
-            <div className="flex items-start space-x-3">
-              <XCircleIcon className="h-5 w-5 text-red-500 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-gray-900">Voice Service offline</p>
-                <p className="text-sm text-gray-500">há 2 horas</p>
-              </div>
-            </div>
-            
-            <div className="flex items-start space-x-3">
-              <CheckCircleIcon className="h-5 w-5 text-green-500 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-gray-900">Sistema de backup executado com sucesso</p>
-                <p className="text-sm text-gray-500">há 6 horas</p>
-              </div>
-            </div>
-          </div>
+          ) : (
+            <EmptyState title="Nenhum alerta real" message="Todos os health checks disponíveis responderam sem falhas." />
+          )}
         </div>
       </div>
     </div>

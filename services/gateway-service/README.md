@@ -4,7 +4,18 @@
 
 O **Gateway Service** é o coração da arquitetura do Empath.IA, funcionando como um **API Gateway** que orquestra todos os microserviços, gerencia a persistência de dados no MongoDB, e coordena o sistema de sessões terapêuticas personalizadas por usuário.
 
-## 🚀 **ATUALIZAÇÕES RECENTES (2025-01-13)**
+## 🚀 **ATUALIZAÇÕES RECENTES (2026-05-05)**
+
+### ✅ **Refactor de Gateway concluído**
+- `src/main.py` ficou responsável por composição do app, CORS, startup/shutdown, índices e `include_router`.
+- Rotas públicas foram separadas em `src/api/chat.py`, `chat_context.py`, `users.py`, `sessions.py`, `voice.py`, `emotions.py`, `prompts.py`, `proxy.py`, `health.py` e `auth.py`.
+- Rotas administrativas foram separadas em `src/api/admin_*.py`.
+- O antigo `ChatService` foi reduzido para orquestração e delega cadastro, contexto, próxima sessão, voz, título e perfil para services menores.
+
+### ✅ **Session-1 garantida na jornada**
+- `UserTherapeuticSessionService.ensure_registration_session()` cria a `session-1` de forma idempotente.
+- A Home pode chamar `GET /api/user/{username}/sessions` ou `GET /api/user/{username}/progress` sem depender de o frontend ter chamado login antes.
+- Filtros de status continuam preservados: a sessão é criada, mas só aparece no resultado quando combina com o filtro.
 
 ### ✅ **Eliminação de Duplicação de Contextos**
 - **Problema Resolvido**: Contextos eram salvos duplicadamente em `conversations.session_context` e `session_contexts`
@@ -36,7 +47,7 @@ O **Gateway Service** é o coração da arquitetura do Empath.IA, funcionando co
 
 ### **Serviços Principais**
 
-O Gateway Service é composto por **6 serviços principais** que gerenciam diferentes aspectos da aplicação:
+O Gateway Service é composto por routers, services de domínio e repositories que gerenciam diferentes aspectos da aplicação:
 
 #### 1. **ChatService** (`src/services/chat_service.py`)
 - **Responsabilidade**: Gerencia conversas e mensagens entre usuários e IA
@@ -44,13 +55,32 @@ O Gateway Service é composto por **6 serviços principais** que gerenciam difer
   - Processamento de mensagens do usuário com contexto entre sessões
   - Integração com AI Service para respostas contextualizadas
   - Persistência de histórico de conversas com isolamento por usuário
-  - Gerenciamento de contexto de conversas e continuidade terapêutica
-  - Sistema de onboarding (session-1) com coleta de dados pessoais
-  - Finalização automática de sessões com geração de contexto
-  - Criação automática de próximas sessões baseada no progresso
+  - Compatibilidade entre `chat_id` novo e `session_id` legado
+  - Streaming SSE de texto e áudio
   - Integração com Voice Service para síntese de áudio
 
-#### 2. **UserService** (`src/services/user_service.py`)
+#### 2. **RegistrationService** (`src/services/registration_service.py`)
+- **Responsabilidade**: Fluxo especial de onboarding da `session-1`
+- **Funcionalidades**:
+  - Coleta progressiva de dados pessoais e terapêuticos
+  - Persistência de `registration_data`
+  - Finalização do cadastro e marcação da sessão como concluída
+
+#### 3. **SessionContextService** (`src/services/session_context_service.py`)
+- **Responsabilidade**: Finalização da sessão e contexto estruturado
+- **Funcionalidades**:
+  - Busca mensagens e emoções da sessão
+  - Chama AI Service em `/openai/generate-session-context`
+  - Salva contexto em `session_contexts`
+
+#### 4. **NextSessionService** (`src/services/next_session_service.py`)
+- **Responsabilidade**: Criação da próxima sessão personalizada
+- **Funcionalidades**:
+  - Combina contexto anterior e perfil do usuário
+  - Chama AI Service para gerar a próxima sessão
+  - Persiste e desbloqueia a nova sessão
+
+#### 5. **UserService** (`src/services/user_service.py`)
 - **Responsabilidade**: Gerencia usuários e suas preferências
 - **Funcionalidades**:
   - CRUD completo de usuários com perfis estruturados
@@ -60,7 +90,7 @@ O Gateway Service é composto por **6 serviços principais** que gerenciam difer
   - Controle de sessões por usuário
   - Histórico de login e atividade
 
-#### 3. **TherapeuticSessionService** (`src/services/therapeutic_session_service.py`)
+#### 6. **TherapeuticSessionService** (`src/services/therapeutic_session_service.py`)
 - **Responsabilidade**: Gerencia templates de sessões terapêuticas
 - **Funcionalidades**:
   - CRUD completo de sessões terapêuticas base
@@ -69,17 +99,18 @@ O Gateway Service é composto por **6 serviços principais** que gerenciam difer
   - Estatísticas de sessões
   - Prompts iniciais e objetivos terapêuticos
 
-#### 4. **UserTherapeuticSessionService** (`src/services/user_therapeutic_session_service.py`)
+#### 7. **UserTherapeuticSessionService** (`src/services/user_therapeutic_session_service.py`)
 - **Responsabilidade**: Gerencia sessões terapêuticas personalizadas por usuário
 - **Funcionalidades**:
   - Criação de sessões personalizadas baseadas no perfil do usuário
   - Sistema de desbloqueio sequencial de sessões
   - Controle de progresso individual por sessão
   - Gerenciamento de status (locked/unlocked/started/completed)
+  - Garantia idempotente da `session-1` ao ler a jornada do usuário
   - Criação automática de próximas sessões
   - Histórico de progresso terapêutico
 
-#### 5. **UserEmotionService** (`src/services/user_emotion_service.py`)
+#### 8. **UserEmotionService** (`src/services/user_emotion_service.py`)
 - **Responsabilidade**: Gerencia análise e armazenamento de emoções dos usuários
 - **Funcionalidades**:
   - Captura de emoções via webcam em tempo real
@@ -88,13 +119,13 @@ O Gateway Service é composto por **6 serviços principais** que gerenciam difer
   - Geração de resumos e estatísticas emocionais
   - Integração com sistema de contexto de sessões
 
-#### 6. **AdminService** (`src/api/admin.py`)
+#### 9. **Routers Admin** (`src/api/admin_*.py`)
 - **Responsabilidade**: Endpoints administrativos para gestão do sistema
 - **Funcionalidades**:
-  - Dashboard com estatísticas gerais
-  - Gerenciamento de usuários e sessões
-  - Análise de conversas e emoções
-  - Monitoramento de atividade em tempo real
+  - Dashboard e status do sistema
+  - Gerenciamento de usuários e sessões terapêuticas
+  - Análise de conversas, emoções e contextos
+  - Proxy protegido para Knowledge Service
 
 ### **Orquestração de Microserviços**
 
@@ -104,6 +135,7 @@ O Gateway Service orquestra os seguintes microserviços:
 - **Avatar Service** (`http://avatar-service:8002`) - Geração de avatares
 - **Emotion Service** (`http://emotion-service:8003`) - Análise de emoções faciais
 - **Voice Service** (`http://voice-service:8004`) - Síntese de voz
+- **Knowledge Service** (`http://knowledge-service:8005`) - Lifecycle e retrieval de conhecimento aprovado
 
 ## 🗄️ Persistência de Dados
 
@@ -241,25 +273,33 @@ GET /api/user/{username}/sessions?status=unlocked
 ```json
 {
   "success": true,
-  "sessions": [
-    {
-      "session_id": "session-1",
-      "title": "Sessão 1: Te conhecendo melhor",
-      "status": "completed",
-      "progress": 100,
-      "personalized": false
-    },
-    {
-      "session_id": "session-2", 
-      "title": "Sessão 2: Explorando ansiedade",
-      "status": "unlocked",
-      "progress": 0,
-      "personalized": true,
-      "focus_areas": ["ansiedade", "trabalho"]
-    }
-  ]
+  "data": {
+    "username": "joao_silva",
+    "sessions": [
+      {
+        "session_id": "session-1",
+        "title": "Cadastro e Apresentação",
+        "status": "unlocked",
+        "progress": 0,
+        "is_registration_session": true,
+        "personalized": false,
+        "generation_method": "registration_seed"
+      },
+      {
+        "session_id": "session-2",
+        "title": "Sessão 2: Explorando ansiedade",
+        "status": "unlocked",
+        "progress": 0,
+        "personalized": true,
+        "focus_areas": ["ansiedade", "trabalho"]
+      }
+    ],
+    "total": 2
+  }
 }
 ```
+
+Ao listar sessões ou progresso, o gateway garante a existência da `session-1` antes de consultar o banco. Essa criação é idempotente.
 
 #### **Obter Sessão Específica do Usuário**
 ```http
@@ -282,8 +322,7 @@ POST /api/user/{username}/sessions/{session_id}/complete
 Content-Type: application/json
 
 {
-  "progress": 100,
-  "status": "completed"
+  "progress": 100
 }
 ```
 
@@ -336,7 +375,7 @@ Content-Type: application/json
     "ai_response": {
       "id": "msg_124",
       "content": "Entendo que você está se sentindo ansioso. Na nossa sessão anterior, você mencionou que trabalha como desenvolvedor. Pode me contar mais sobre o que especificamente tem te causado ansiedade no trabalho?",
-      "audioUrl": "http://voice-service:8004/audio/response_124.mp3",
+      "audioUrl": "/api/voice/audio/response_124.mp3",
       "provider": "openai",
       "model": "gpt-4o"
     }
@@ -696,17 +735,17 @@ O serviço utiliza logging estruturado com diferentes níveis:
 
 ### **Índices MongoDB**
 O serviço cria automaticamente índices para performance:
-- `conversations`: session_id (unique), username, created_at
-- `messages`: session_id, username, created_at
+- `conversations`: chat_id (unique), (username, therapeutic_session_id) (unique), session_id legado, created_at
+- `messages`: chat_id, session_id legado, username, therapeutic_session_id, created_at
 - `users`: username (unique), email, created_at
 - `user_therapeutic_sessions`: (username, session_id) (unique), status, created_at
-- `user_emotions`: username, session_id, timestamp
+- `user_emotions`: chat_id, username, session_id, timestamp
 
 ## 🎯 Funcionalidades Principais
 
 ### **✅ Implementado**
 - [x] Sistema de sessões personalizadas por usuário
-- [x] Isolamento de sessões por usuário (`username_session-id`)
+- [x] Isolamento de sessões por usuário com `chat_id` opaco e par lógico `username + session_id`
 - [x] Contexto entre sessões com continuidade terapêutica
 - [x] Sistema de onboarding estruturado (session-1)
 - [x] Geração automática de próximas sessões
@@ -738,7 +777,7 @@ O serviço cria automaticamente índices para performance:
 
 ### **Isolamento de Dados**
 - **Sessões**: Cada usuário tem acesso apenas às suas próprias sessões
-- **Mensagens**: Filtro duplo por `session_id` e `username`
+- **Mensagens**: Filtro por `chat_id`; fallback legado usa `session_id` + `username`
 - **Emoções**: Dados emocionais isolados por usuário
 - **Contexto**: Contexto de sessões protegido por usuário
 

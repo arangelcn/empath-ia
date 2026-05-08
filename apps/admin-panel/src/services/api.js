@@ -2,33 +2,86 @@
  * Serviço de API para comunicação com o backend
  */
 
-// No Docker, o browser acessa via localhost:8000 (porta mapeada do gateway)
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const ADMIN_TOKEN_KEY = 'admin_access_token';
 
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
   }
 
+  getToken() {
+    return localStorage.getItem(ADMIN_TOKEN_KEY);
+  }
+
+  setToken(token) {
+    if (token) {
+      localStorage.setItem(ADMIN_TOKEN_KEY, token);
+    }
+  }
+
+  clearToken() {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  }
+
+  buildQuery(params = {}) {
+    const cleanParams = Object.entries(params).reduce((acc, [key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+    return new URLSearchParams(cleanParams).toString();
+  }
+
+  formatError(error, fallback = 'Erro ao comunicar com o backend.') {
+    if (error?.detail) {
+      if (Array.isArray(error.detail)) {
+        return error.detail.map((item) => item.msg || String(item)).join(' ');
+      }
+      return error.detail;
+    }
+    if (error?.message) return error.message;
+    return fallback;
+  }
+
   async request(endpoint, options = {}) {
     const url = `${this.baseURL}${endpoint}`;
+    const token = this.getToken();
     
     const config = {
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
       ...options,
     };
 
+    if (config.body instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+
     try {
       const response = await fetch(url, config);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      const text = await response.text();
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { message: text };
+        }
       }
       
-      const data = await response.json();
+      if (!response.ok) {
+        const message = this.formatError(data, `HTTP ${response.status}`);
+        const error = new Error(message);
+        error.status = response.status;
+        error.payload = data;
+        throw error;
+      }
+      
       return data;
     } catch (error) {
       console.error('API request failed:', error);
@@ -57,6 +110,14 @@ class ApiService {
     });
   }
 
+  // Métodos PATCH
+  async patch(endpoint, data) {
+    return this.request(endpoint, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Métodos DELETE
   async delete(endpoint) {
     return this.request(endpoint, { method: 'DELETE' });
@@ -64,14 +125,28 @@ class ApiService {
 
   // ===== ENDPOINTS ESPECÍFICOS DO ADMIN =====
 
+  async loginAdmin(credentials) {
+    const response = await this.post('/api/auth/admin/login', credentials);
+    this.setToken(response.access_token);
+    return response;
+  }
+
   // Dashboard Stats
   async getDashboardStats() {
     return this.get('/api/admin/stats');
   }
 
+  async getAnalytics(days = 7) {
+    return this.get(`/api/admin/analytics?days=${days}`);
+  }
+
+  async getSystemStatus() {
+    return this.get('/api/admin/system-status');
+  }
+
   // Conversations
   async getConversations(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/conversations${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -84,7 +159,7 @@ class ApiService {
 
   // Usuários
   async getUsers(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/users${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -113,7 +188,7 @@ class ApiService {
 
   // Sessões Terapêuticas (Templates)
   async getTherapeuticSessions(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/therapeutic-sessions${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -132,7 +207,7 @@ class ApiService {
 
   // Sessões dos Usuários
   async getUserSessions(username, params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/user/${username}/sessions${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -143,7 +218,7 @@ class ApiService {
 
   async getAllUserSessions(params = {}) {
     // Buscar todas as sessões de todos os usuários via admin
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/user-sessions${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -156,14 +231,14 @@ class ApiService {
   }
 
   async getAllSessionContexts(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/session-contexts${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
 
   // Novo endpoint otimizado para buscar todas as sessões dos usuários com contextos
   async getAllUserSessionsWithContexts(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/admin/user-sessions${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -174,7 +249,7 @@ class ApiService {
   }
 
   async getUserEmotions(username, params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/emotions/${username}${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -197,7 +272,7 @@ class ApiService {
 
   // Prompts
   async getPrompts(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    const queryString = this.buildQuery(params);
     const endpoint = `/api/prompts${queryString ? `?${queryString}` : ''}`;
     return this.get(endpoint);
   }
@@ -228,6 +303,53 @@ class ApiService {
 
   async renderPrompt(promptKey, variables) {
     return this.post(`/api/prompts/${promptKey}/render`, { variables });
+  }
+
+  // Knowledge Service
+  async getKnowledgeDocuments(params = {}) {
+    const queryString = this.buildQuery(params);
+    const endpoint = `/api/admin/knowledge/documents${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async getKnowledgeDocument(documentId) {
+    return this.get(`/api/admin/knowledge/documents/${documentId}`);
+  }
+
+  async createKnowledgeDocument(documentData) {
+    return this.post('/api/admin/knowledge/documents', documentData);
+  }
+
+  async ingestKnowledgeDocumentContent(documentId, contentData) {
+    return this.post(`/api/admin/knowledge/documents/${documentId}/content`, contentData);
+  }
+
+  async uploadKnowledgeDocumentFile(documentId, { file, section, ingested_by }) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (section) formData.append('section', section);
+    if (ingested_by) formData.append('ingested_by', ingested_by);
+
+    return this.request(`/api/admin/knowledge/documents/${documentId}/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async getKnowledgeDocumentChunks(documentId) {
+    return this.get(`/api/admin/knowledge/documents/${documentId}/chunks`);
+  }
+
+  async updateKnowledgeDocumentStatus(documentId, statusData) {
+    return this.patch(`/api/admin/knowledge/documents/${documentId}/status`, statusData);
+  }
+
+  async getKnowledgeAuditEvents() {
+    return this.get('/api/admin/knowledge/audit/events');
+  }
+
+  async retrieveKnowledge(payload) {
+    return this.post('/api/admin/knowledge/retrieve', payload);
   }
 }
 

@@ -3,6 +3,9 @@ import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate } from 'r
 import ChatScreen from './components/Chat/ChatScreen.tsx';
 import LoginScreen from './components/LoginScreen.jsx';
 import HomeScreen from './components/Home/HomeScreen.jsx';
+import LandingScreen from './components/LandingScreen.jsx';
+import AuthenticatedShell from './components/Layout/AuthenticatedShell.jsx';
+import ProfileVoicePage from './components/Profile/ProfileVoicePage.jsx';
 import { Brain, Loader2 } from 'lucide-react';
 import { getUserStatus } from './services/api.js';
 
@@ -11,6 +14,7 @@ const generateSessionId = () => `session_${Date.now()}_${Math.random().toString(
 function AppRoutes() {
   const [sessionId, setSessionId] = useState('');
   const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [selectedVoice, setSelectedVoice] = useState('');
   // const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);  // Comentado temporariamente
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -33,12 +37,29 @@ function AppRoutes() {
       // }
 
       try {
+        const savedUserRaw = localStorage.getItem('empatia_user');
+        const accessToken = localStorage.getItem('empatia_access_token');
+        if (accessToken && savedUserRaw) {
+          const savedUser = JSON.parse(savedUserRaw);
+          const restoredUsername = savedUser.username || savedUser.email;
+          if (restoredUsername) {
+            setUsername(restoredUsername);
+            setDisplayName(savedUser.display_name || savedUser.full_name || savedUser.name || restoredUsername);
+            setSelectedVoice(savedUser.preferences?.selected_voice || localStorage.getItem('empatia_selected_voice') || '');
+            setIsOnboarded(true);
+            return;
+          }
+        }
+
         const response = await getUserStatus(currentSessionId);
         if (response.success) {
-          const { is_onboarded, username: fetchedUsername, selected_voice } = response.data;
+          const { is_onboarded, username: fetchedUsername, selected_voice, display_name, full_name } = response.data;
           setIsOnboarded(is_onboarded);
           if (fetchedUsername) {
             setUsername(fetchedUsername);
+          }
+          if (display_name || full_name) {
+            setDisplayName(display_name || full_name);
           }
           if (selected_voice) {
             setSelectedVoice(selected_voice);
@@ -54,8 +75,9 @@ function AppRoutes() {
     initializeSession();
   }, []);
 
-  const handleLoginComplete = ({ username: newUsername, voice, voiceEnabled, userData }) => {
+  const handleLoginComplete = ({ username: newUsername, voice, voiceEnabled, displayName: newDisplayName, userData }) => {
     setUsername(newUsername);
+    setDisplayName(newDisplayName || userData?.display_name || userData?.full_name || userData?.name || newUsername);
     setSelectedVoice(voice);
     // setIsVoiceEnabled(voiceEnabled);  // Comentado temporariamente
     setIsOnboarded(true);
@@ -74,6 +96,7 @@ function AppRoutes() {
   const handleLogout = () => {
     setIsOnboarded(false);
     setUsername('');
+    setDisplayName('');
     setSelectedVoice('');
     localStorage.removeItem('empatia_user_data');
     localStorage.removeItem('empatia_selected_voice');
@@ -97,30 +120,39 @@ function AppRoutes() {
   return (
     <Routes>
       {!isOnboarded && (
-        <Route path="/*" element={<LoginScreen onComplete={handleLoginComplete} sessionId={sessionId} />} />
+        <>
+          <Route path="/" element={<LandingScreen />} />
+          <Route path="/login" element={
+            <LoginScreen
+              onComplete={handleLoginComplete}
+              sessionId={sessionId}
+            />
+          } />
+          <Route path="/*" element={<Navigate to="/" replace />} />
+        </>
       )}
       {isOnboarded && (
-        <>
-          <Route path="/home" element={
-            <HomeScreen 
+        <Route element={
+          <AuthenticatedShell
+            username={username}
+            displayName={displayName}
+            setDisplayName={setDisplayName}
+            selectedVoice={selectedVoice}
+            setSelectedVoice={setSelectedVoice}
+            onLogout={handleLogout}
+          />
+        }>
+          <Route path="/home" element={<HomeScreen />} />
+          <Route path="/profile" element={<ProfileVoicePage />} />
+          <Route path="/chat/:chatId" element={
+            <ChatScreen
               username={username}
-              onLogout={handleLogout}
-              selectedVoice={selectedVoice}
+              displayName={displayName}
             />
           } />
-          <Route path="/chat/:sessionId" element={
-            <ChatScreen 
-              username={username || (localStorage.getItem('empatia_user_data') ? JSON.parse(localStorage.getItem('empatia_user_data')).name : 'Usuário')} 
-            />
-          } />
-          <Route path="/chat" element={
-            <ChatScreen 
-              sessionId={sessionId} 
-              username={username || (localStorage.getItem('empatia_user_data') ? JSON.parse(localStorage.getItem('empatia_user_data')).name : 'Usuário')} 
-            />
-          } />
+          <Route path="/chat" element={<Navigate to="/home" replace />} />
           <Route path="/*" element={<Navigate to="/home" replace />} />
-        </>
+        </Route>
       )}
     </Routes>
   );
@@ -128,7 +160,7 @@ function AppRoutes() {
 
 function App() {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AppRoutes />
     </Router>
   );

@@ -1,13 +1,13 @@
-import os
 import logging
 import asyncio
 from typing import Optional
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
 # Variáveis de conexão MongoDB
-MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://admin:password@mongodb:27017/empatia?authSource=admin")
-DATABASE_NAME = os.getenv("MONGODB_DATABASE", "empatia")
+MONGODB_URL = settings.mongodb_url
+DATABASE_NAME = settings.mongodb_database
 
 # Cliente MongoDB global
 client = None
@@ -106,7 +106,28 @@ async def create_indexes():
     try:
         # Índices para conversas
         conversations = get_collection("conversations")
-        await conversations.create_index("session_id", unique=True)
+        try:
+            index_info = await conversations.index_information()
+            session_index = index_info.get("session_id_1")
+            if session_index and session_index.get("unique"):
+                await conversations.drop_index("session_id_1")
+                logger.info("✅ Índice único legado conversations.session_id removido")
+        except Exception as index_error:
+            logger.warning(f"⚠️ Não foi possível revisar índice legado de conversations.session_id: {index_error}")
+
+        await conversations.create_index("chat_id", unique=True, sparse=True)
+        await conversations.create_index("session_id")
+        await conversations.create_index("legacy_session_id")
+        await conversations.create_index("therapeutic_session_id")
+        await conversations.create_index("username")
+        await conversations.create_index(
+            [("username", 1), ("therapeutic_session_id", 1)],
+            unique=True,
+            partialFilterExpression={
+                "username": {"$type": "string"},
+                "therapeutic_session_id": {"$type": "string"},
+            },
+        )
         await conversations.create_index("created_at")
         await conversations.create_index("updated_at")
         # 🔒 NOVO ÍNDICE: Para suportar busca por username
@@ -114,7 +135,10 @@ async def create_indexes():
         
         # Índices para mensagens - 🔒 ATUALIZADOS PARA SEGURANÇA
         messages = get_collection("messages")
+        await messages.create_index("chat_id")
+        await messages.create_index([("chat_id", 1), ("created_at", 1)])
         await messages.create_index("session_id")
+        await messages.create_index("therapeutic_session_id")
         await messages.create_index("created_at")
         await messages.create_index([("session_id", 1), ("created_at", 1)])
         # 🔒 NOVOS ÍNDICES: Para validação dupla de segurança
@@ -146,6 +170,7 @@ async def create_indexes():
         
         # Índices para emoções dos usuários
         user_emotions = get_user_emotions_collection()
+        await user_emotions.create_index("chat_id")
         await user_emotions.create_index([("username", 1), ("timestamp", -1)])
         await user_emotions.create_index([("username", 1), ("session_id", 1)])
         await user_emotions.create_index("timestamp")

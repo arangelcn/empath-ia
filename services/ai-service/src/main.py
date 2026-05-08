@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
 from datetime import datetime
-import re
 import logging
 
 # Configurar logging
@@ -29,45 +28,9 @@ app.add_middleware(
 )
 
 # Incluir rotas do OpenAI
-from .api.openai_routes import router as openai_router
-app.include_router(openai_router)
-
-def generate_therapeutic_response(user_message: str) -> str:
-    """
-    Gera resposta terapêutica baseada na mensagem do usuário
-    """
-    message_lower = user_message.lower()
-    
-    # Padrões de reconhecimento
-    greeting_patterns = ['oi', 'olá', 'hello', 'hi', 'bom dia', 'boa tarde', 'boa noite']
-    sadness_patterns = ['triste', 'deprimido', 'depressão', 'mal', 'ruim', 'pessimo', 'horrível']
-    anxiety_patterns = ['ansioso', 'ansiedade', 'nervoso', 'preocupado', 'estressado', 'tenso']
-    anger_patterns = ['raiva', 'irritado', 'bravo', 'furioso', 'chateado']
-    gratitude_patterns = ['obrigado', 'obrigada', 'valeu', 'thanks', 'thank you']
-    goodbye_patterns = ['tchau', 'bye', 'adeus', 'até logo', 'até mais']
-    
-    # Verificar padrões
-    if any(pattern in message_lower for pattern in greeting_patterns):
-        return "Olá! Sou o Dr. Rogers, seu psicólogo virtual. É um prazer conhecê-lo. Como posso ajudá-lo hoje? Sinta-se à vontade para compartilhar o que está sentindo."
-    
-    elif any(pattern in message_lower for pattern in sadness_patterns):
-        return "Entendo que você está passando por um momento difícil. É muito corajoso buscar ajuda e compartilhar seus sentimentos. Pode me contar mais sobre o que está sentindo? Lembre-se: você não está sozinho, e é normal ter dias difíceis."
-    
-    elif any(pattern in message_lower for pattern in anxiety_patterns):
-        return "A ansiedade é algo muito comum e tratável. Vamos trabalhar juntos para encontrar estratégias que funcionem para você. Que situações costumam despertar essa ansiedade? Podemos explorar técnicas de respiração e mindfulness que podem ajudar."
-    
-    elif any(pattern in message_lower for pattern in anger_patterns):
-        return "Vejo que você está se sentindo irritado. É importante reconhecer e validar esses sentimentos. Pode me contar o que aconteceu? Às vezes, falar sobre o que nos incomoda pode ajudar a processar melhor essas emoções."
-    
-    elif any(pattern in message_lower for pattern in gratitude_patterns):
-        return "Fico muito feliz em poder ajudar! É um prazer acompanhá-lo nessa jornada de autoconhecimento e bem-estar. Como você está se sentindo agora? Há algo mais que gostaria de conversar?"
-    
-    elif any(pattern in message_lower for pattern in goodbye_patterns):
-        return "Foi um prazer conversar com você hoje. Lembre-se: estou sempre aqui quando precisar de apoio. Cuide-se bem e continue cuidando da sua saúde mental. Até a próxima! 💙"
-    
-    else:
-        # Resposta genérica mais terapêutica
-        return f"Obrigado por compartilhar isso comigo. É importante que você tenha confiança para falar sobre seus sentimentos. Pode me contar mais sobre como isso afeta seu dia a dia? Juntos podemos explorar formas de lidar melhor com essa situação."
+from .api import chat_routes
+from .services.deps import llm_service as openai_service, token_economy_svc as token_economy_service
+app.include_router(chat_routes.router)
 
 # Health check endpoint
 @app.get("/health")
@@ -88,27 +51,17 @@ async def root():
         "docs": "/docs"
     }
 
-# Importar serviços
-from .services.openai_service import OpenAIService
-
-# Inicializar serviços
-openai_service = OpenAIService()
-token_economy_service = None  # Será inicializado na startup
-
 # Evento de startup para inicializar nova arquitetura
 @app.on_event("startup")
 async def startup_event():
     """Inicializar nova arquitetura MongoDB + Redis na startup"""
     try:
-        from .services.token_economy_service import TokenEconomyService
-        token_economy_service = TokenEconomyService()
         await token_economy_service.initialize()
         logger.info("✅ TokenEconomyService inicializado com sucesso")
         logger.info("✅ Nova arquitetura MongoDB (repositório) + Redis (performance) inicializada")
-        
-        # ✅ NOVO: Verificar e inicializar prompts do banco de dados
+
         await verify_and_initialize_prompts()
-        
+
     except Exception as e:
         logger.warning(f"⚠️ Erro ao inicializar nova arquitetura: {e}")
 
@@ -265,7 +218,7 @@ async def chat(message: dict):
         logger.error(f"❌ Erro no chat: {e}")
         # Fallback para resposta básica usando OpenAIService
         try:
-            fallback_response = await openai_service._fallback_response(user_message, username)
+            fallback_response = await openai_service._fallback_response(user_message, username, conversation_history)
             return {
                 "response": fallback_response["response"],
                 "service": "ai-service",
@@ -278,10 +231,8 @@ async def chat(message: dict):
             }
         except Exception as fallback_error:
             logger.error(f"❌ Erro no fallback: {fallback_error}")
-            # Último recurso - resposta hardcoded
-            response_text = generate_therapeutic_response(user_message)
             return {
-                "response": response_text,
+                "response": "Estou aqui para ajudar. Pode me contar mais sobre o que está sentindo?",
                 "service": "ai-service",
                 "status": "active",
                 "session_id": session_id,
@@ -291,6 +242,34 @@ async def chat(message: dict):
                 "model": "fallback"
             }
 
+# Endpoint de completação direta (sem persona terapêutica) — usado por serviços internos
+@app.post("/util/complete")
+async def util_complete(body: dict):
+    """
+    Completação LLM sem pipeline terapêutico.
+    Aceita { "prompt": str, "system": str (opcional), "max_tokens": int (opcional) }.
+    Retorna { "text": str, "success": bool }.
+    Uso interno: gateway usa para gerar títulos de sessão.
+    """
+    prompt = body.get("prompt", "").strip()
+    if not prompt:
+        return {"success": False, "text": ""}
+
+    system = body.get("system", "Você é um assistente que responde de forma concisa e objetiva.")
+    max_tokens = int(body.get("max_tokens", 256))
+
+    try:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ]
+        text = await openai_service._call_llm(messages, max_tokens=max_tokens, temperature=0.3)
+        return {"success": bool(text), "text": text or ""}
+    except Exception as e:
+        logger.error(f"❌ util/complete error: {e}")
+        return {"success": False, "text": ""}
+
+
 # Endpoint para configurações
 @app.get("/config")
 async def get_config():
@@ -299,10 +278,23 @@ async def get_config():
     
     return {
         "openai_configured": openai_status["openai_configured"],
-        "model": openai_status["model"],
+        "model": openai_status["active_model"],
+        "active_model": openai_status["active_model"],
+        "active_provider": openai_status["active_provider"],
+        "active_mode": openai_status["active_mode"],
+        "primary_provider": openai_status["primary_provider"],
+        "fallback_provider": openai_status["fallback_provider"],
+        "provider_order": openai_status["provider_order"],
+        "local_available": openai_status["local_available"],
+        "local_file_available": openai_status["local_file_available"],
+        "local_runtime_loadable": openai_status["local_runtime_loadable"],
+        "local_load_error": openai_status["local_load_error"],
+        "openai_available": openai_status["openai_available"],
+        "local_model_path": openai_status["local_model_path"],
+        "local_llm": openai_status["local_llm"],
         "service_port": os.getenv("AI_SERVICE_PORT", "8001"),
         "debug": os.getenv("DEBUG", "false").lower() == "true",
-        "provider": "openai" if openai_status["openai_configured"] else "fallback"
+        "provider": openai_status["active_provider"]
     }
 
 if __name__ == "__main__":

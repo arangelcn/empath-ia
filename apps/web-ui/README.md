@@ -42,11 +42,20 @@ A interface principal consiste em uma experiência de chat completa onde o usuá
 - ✅ **Gerenciamento de Estado**: Estado local e persistência no backend
 
 ### 🔄 Planejado
+- 🔄 Layout com menu lateral similar às IAs conversacionais atuais
+- 🔄 Página de Dados pessoais
+- 🔄 Coleta e persistência do nome completo no login/onboarding
 - 🔄 Modo escuro/claro
 - 🔄 Configurações avançadas de áudio
 - 🔄 Histórico de sessões anteriores
 - 🔄 Exportação de conversas
 - 🔄 Integração com avatar animado
+
+### 🧭 Próximo ciclo de produto
+
+1. **Menu lateral**: navegação fixa em desktop e drawer em mobile, com acesso a sessões recentes, nova sessão, jornada terapêutica, dados pessoais e sair.
+2. **Dados pessoais**: página autenticada para visualizar e editar nome completo, voz preferida e preferências de privacidade.
+3. **Nome completo no login**: após Google OAuth, pedir o nome completo quando ele não estiver salvo; persistir no perfil do usuário e usar como `display_name` nas telas e no contexto enviado à IA.
 
 ## 📂 Estrutura de Diretórios
 
@@ -96,6 +105,7 @@ O componente principal que orquestra toda a interface de chat:
 ### `WelcomeScreen.tsx`
 Tela de onboarding para novos usuários:
 - **Coleta de Dados**: Nome de usuário e preferências
+- **Próximo passo**: Coletar nome completo e salvar como dado de perfil do usuário
 - **Seleção de Voz**: Interface para escolher voz preferida
 - **Teste de Áudio**: Preview das vozes disponíveis
 - **Validação**: Garante que todos os dados necessários sejam coletados
@@ -389,4 +399,4 @@ location.reload();
     }
   }
 }
-``` 
+```

@@ -1,330 +1,150 @@
-# empatIA - Makefile para automação de desenvolvimento
+# empatIA - atalhos de desenvolvimento
 
-.PHONY: help dev build deploy-dev deploy-prod test clean setup logs docs migrate cleanup mongo
+SHELL := /bin/bash
+.DEFAULT_GOAL := help
 
-# Cores para output
-RED=\033[0;31m
-GREEN=\033[0;32m
-YELLOW=\033[1;33m
-BLUE=\033[0;34m
-NC=\033[0m # No Color
+GREEN := \033[0;32m
+YELLOW := \033[1;33m
+BLUE := \033[0;34m
+RED := \033[0;31m
+NC := \033[0m
 
-# Configurações
-PROJECT_NAME=empatia
-DOCKER_COMPOSE_DEV=docker-compose.dev.yml
-DOCKER_COMPOSE_PROD=config/docker-compose.prod.yml
+COMPOSE_FILES := -f docker-compose.yml -f docker-compose.dev.yml
+HOST_FILES := -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.host.yml
+BRIDGE_FILES := -f docker-compose.yml
 
-help: ## Mostra esta ajuda
-	@echo "${BLUE}=== empatIA - Comandos Disponíveis ===${NC}"
-	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "${GREEN}%-20s${NC} %s\n", $$1, $$2}'
+COMPOSE := docker compose $(COMPOSE_FILES)
+HOST_COMPOSE := docker compose $(HOST_FILES)
+BRIDGE_COMPOSE := docker compose $(BRIDGE_FILES)
 
-# ===== COMANDOS DE MIGRAÇÃO =====
-migrate-project: ## Executa migração completa para microserviços
-	@echo "${YELLOW}🚀 Executando migração para microserviços...${NC}"
-	@chmod +x scripts/migrate.sh
-	@./scripts/migrate.sh
+HOST_RUNTIME_ENV := MONGODB_URL=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin REDIS_URL=redis://127.0.0.1:6379/0 QDRANT_URL=http://127.0.0.1:6333 AI_SERVICE_URL=http://127.0.0.1:8001 AVATAR_SERVICE_URL=http://127.0.0.1:8002 EMOTION_SERVICE_URL=http://127.0.0.1:8003 VOICE_SERVICE_URL=http://127.0.0.1:8004 KNOWLEDGE_SERVICE_URL=http://127.0.0.1:8005 BACKEND_URL=http://127.0.0.1:8000 VITE_API_URL=http://127.0.0.1:8000 ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3001
+BRIDGE_RUNTIME_ENV := MONGODB_URL=mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin REDIS_URL=redis://redis:6379/0 QDRANT_URL=http://qdrant:6333 AI_SERVICE_URL=http://ai-service:8001 AVATAR_SERVICE_URL=http://avatar-service:8002 EMOTION_SERVICE_URL=http://emotion-service:8003 VOICE_SERVICE_URL=http://voice-service:8004 KNOWLEDGE_SERVICE_URL=http://knowledge-service:8005 BACKEND_URL=http://gateway-service:8000 VITE_API_URL=http://localhost:8000 ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3000,http://localhost:3001
 
-cleanup: ## Executa limpeza final após migração
-	@echo "${YELLOW}🧹 Executando limpeza final...${NC}"
-	@chmod +x scripts/cleanup.sh
-	@./scripts/cleanup.sh
+BACKEND_SERVICES := gateway ai-service avatar-service emotion-service voice-service knowledge-service
+FRONTEND_SERVICES := web-ui admin-panel
+CORE_SERVICES := mongodb redis qdrant $(BACKEND_SERVICES)
 
-validate: ## Valida estrutura após migração
-	@echo "${YELLOW}🔍 Validando estrutura...${NC}"
-	@chmod +x scripts/validate_migration.sh
-	@./scripts/validate_migration.sh
+.PHONY: help setup env-check env-create env-validate dev up dev-d down restart ps build build-ai-local logs shell test lint format health urls clean reset mongo-shell mongo-reset bridge bridge-d host host-d services
 
-# ===== CONFIGURAÇÃO E DESENVOLVIMENTO =====
-setup: ## Configuração inicial do projeto
-	@echo "${YELLOW}🔧 Configurando projeto...${NC}"
-	@cp .env.example .env 2>/dev/null || echo "Arquivo .env já existe"
-	@mkdir -p data/{shared,models,uploads,logs}
-	@mkdir -p docs/{api,architecture,deployment,user-guide}
-	@mkdir -p scripts
-	@touch data/{shared,models,uploads,logs}/.gitkeep
-	@echo "${GREEN}✅ Configuração inicial concluída!${NC}"
-	@echo "${BLUE}📝 Edite o arquivo .env com suas configurações${NC}"
-	@echo "${YELLOW}⚠️  IMPORTANTE: Configure as seguintes variáveis no .env:${NC}"
-	@echo "${BLUE}   - OPENAI_API_KEY (obrigatório)${NC}"
-	@echo "${BLUE}   - CREDENTIALS_JSON (para Google Cloud TTS)${NC}"
-	@echo "${BLUE}   - DID_API_USERNAME/DID_API_PASSWORD (opcional, para avatar)${NC}"
+help: ## Lista os comandos disponíveis
+	@printf "$(BLUE)empatIA - comandos$(NC)\n"
+	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*## "}; {printf "$(GREEN)%-16s$(NC) %s\n", $$1, $$2}'
 
-dev: ## Inicia ambiente de desenvolvimento com hot reload
-	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento com live reload...${NC}"
-	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.dev.yml up --build
+setup: ## Cria .env e pastas locais usadas pelo Docker
+	@cp -n .env.example .env 2>/dev/null || true
+	@mkdir -p data/{shared,models,uploads,logs,backups,knowledge,emotion_models/deepface}
+	@touch data/{shared,models,uploads,logs,knowledge,emotion_models}/.gitkeep
+	@echo "$(GREEN)Setup concluído.$(NC) Edite o .env antes de subir a stack."
 
-dev-detached: ## Inicia ambiente de desenvolvimento em background
-	@echo "${YELLOW}🚀 Iniciando ambiente de desenvolvimento (background) com live reload...${NC}"
-	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f docker-compose.dev.yml up --build -d
+env-check:
+	@test -f .env || (echo "$(RED).env não encontrado. Rode: make setup$(NC)" && exit 1)
 
-dev-services: ## Inicia apenas os serviços backend (sem web-ui)
-	@echo "${YELLOW}🚀 Iniciando apenas serviços backend...${NC}"
-	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f $(DOCKER_COMPOSE_DEV) up --build gateway ai-service avatar-service emotion-service mongodb
-
-# ===== COMANDOS MONGODB =====
-mongo-logs: ## Visualiza logs do MongoDB
-	@echo "${BLUE}📋 Logs do MongoDB:${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f mongodb
-
-mongo-shell: ## Acessa shell do MongoDB
-	@echo "${BLUE}🐚 Acessando shell do MongoDB...${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb mongosh -u admin -p admin123 --authenticationDatabase admin empatia_db
-
-mongo-express: ## Abre MongoDB Express no navegador
-	@echo "${BLUE}🌐 Abrindo MongoDB Express...${NC}"
-	@echo "MongoDB Express: http://localhost:8081"
-	@echo "Usuário: admin | Senha: admin123"
-
-mongo-backup: ## Cria backup do MongoDB
-	@echo "${YELLOW}💾 Criando backup do MongoDB...${NC}"
-	@mkdir -p ./data/backups
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb mongodump --uri="mongodb://admin:admin123@localhost:27017/empatia_db?authSource=admin" --out=/tmp/backup
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb tar -czf /tmp/mongodb-backup-$(shell date +%Y%m%d_%H%M%S).tar.gz -C /tmp/backup .
-	@docker cp $$(docker compose -f docker-compose.yml -f docker-compose.dev.yml ps -q mongodb):/tmp/mongodb-backup-*.tar.gz ./data/backups/
-	@echo "${GREEN}✅ Backup criado em ./data/backups/${NC}"
-
-mongo-restore: ## Restaura backup do MongoDB (uso: make mongo-restore BACKUP=arquivo.tar.gz)
-	@echo "${YELLOW}📥 Restaurando backup do MongoDB...${NC}"
-	@test -n "$(BACKUP)" || (echo "${RED}❌ Especifique o arquivo: make mongo-restore BACKUP=arquivo.tar.gz${NC}" && exit 1)
-	@docker cp ./data/backups/$(BACKUP) $$(docker compose -f docker-compose.yml -f docker-compose.dev.yml ps -q mongodb):/tmp/
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb tar -xzf /tmp/$(BACKUP) -C /tmp/
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml exec mongodb mongorestore --uri="mongodb://admin:admin123@localhost:27017/empatia_db?authSource=admin" --drop /tmp/empatia_db
-	@echo "${GREEN}✅ Backup restaurado com sucesso!${NC}"
-
-mongo-reset: ## Reseta completamente o banco MongoDB
-	@echo "${RED}⚠️  ATENÇÃO: Isto vai apagar TODOS os dados do MongoDB!${NC}"
-	@read -p "Tem certeza? Digite 'yes' para confirmar: " confirm && [ "$$confirm" = "yes" ] || (echo "Operação cancelada" && exit 1)
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml stop mongodb
-	@docker volume rm empath-ia_mongodb_data_dev 2>/dev/null || true
-	@docker volume rm empath-ia_mongodb_data 2>/dev/null || true
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d mongodb
-	@echo "${GREEN}✅ MongoDB resetado com sucesso!${NC}"
-
-# ===== BUILD E DEPLOY =====
-build: ## Constrói todas as imagens Docker
-	@echo "${YELLOW}🔨 Construindo imagens Docker...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) build
-
-build-service: ## Constrói imagem de um serviço específico (ex: make build-service SERVICE=ai-service)
-	@echo "${YELLOW}🔨 Construindo serviço $(SERVICE)...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) build $(SERVICE)
-
-build-prod: ## Constrói imagens para produção
-	@echo "${YELLOW}🔨 Construindo imagens para produção...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_PROD) build
-
-deploy-dev: build ## Deploy em ambiente de desenvolvimento
-	@echo "${YELLOW}🚀 Fazendo deploy em desenvolvimento...${NC}"
-	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f $(DOCKER_COMPOSE_DEV) up -d
-
-deploy-prod: build-prod ## Deploy em ambiente de produção
-	@echo "${YELLOW}🚀 Fazendo deploy em produção...${NC}"
-	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado. Execute 'make setup' primeiro.${NC}" && exit 1)
-	@docker compose -f $(DOCKER_COMPOSE_PROD) up -d
-
-# ===== CONTROLE DE SERVIÇOS =====
-stop: ## Para todos os serviços
-	@echo "${YELLOW}⏹️ Parando serviços...${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml down
-
-stop-prod: ## Para serviços de produção
-	@echo "${YELLOW}⏹️ Parando serviços de produção...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_PROD) down
-
-restart: stop dev ## Reinicia ambiente de desenvolvimento
-	@echo "${GREEN}🔄 Ambiente reiniciado!${NC}"
-
-restart-service: ## Reinicia um serviço específico (ex: make restart-service SERVICE=ai-service)
-	@echo "${YELLOW}🔄 Reiniciando serviço $(SERVICE)...${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml restart $(SERVICE)
-
-# ===== LOGS E MONITORAMENTO =====
-logs: ## Visualiza logs de todos os serviços
-	@echo "${BLUE}📋 Logs dos serviços:${NC}"
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f
-
-logs-ai: ## Logs apenas do serviço de IA
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f ai-service
-
-logs-avatar: ## Logs apenas do serviço de avatar
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f avatar-service
-
-logs-emotion: ## Logs apenas do serviço de emoções
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f emotion-service
-
-logs-gateway: ## Logs apenas do gateway
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f gateway
-
-logs-ui: ## Logs apenas do web-ui
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f web-ui
-
-ps: ## Lista status dos containers
-	@docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
-
-health: ## Verifica saúde de todos os serviços
-	@echo "${BLUE}🏥 Verificando saúde dos serviços...${NC}"
-	@curl -s http://localhost:8000/health | jq . || echo "${RED}Gateway não disponível${NC}"
-	@curl -s http://localhost:8001/health | jq . || echo "${RED}AI Service não disponível${NC}"
-	@curl -s http://localhost:8002/health | jq . || echo "${RED}Avatar Service não disponível${NC}"
-	@curl -s http://localhost:8003/health | jq . || echo "${RED}Emotion Service não disponível${NC}"
-
-monitor: ## Abre ferramentas de monitoramento
-	@echo "${BLUE}📊 Ferramentas de monitoramento:${NC}"
-	@echo " - Web UI: http://localhost:7860"
-	@echo " - Admin Panel: http://localhost:3001"
-	@echo " - Gateway API: http://localhost:8000/docs"
-	@echo " - AI Service: http://localhost:8001/docs"
-	@echo " - Avatar Service: http://localhost:8002/docs"
-	@echo " - Emotion Service: http://localhost:8003/docs"
-	@echo " - Voice Service: http://localhost:8004/docs"
-	@echo " - MongoDB Express: http://localhost:8081"
-	@echo " - Redis: localhost:6379"
-	@echo " - PostgreSQL: localhost:5432"
-
-# ===== CHAT E PERSISTÊNCIA =====
-chat-test: ## Testa a API de chat
-	@echo "${BLUE}🧪 Testando API de chat...${NC}"
-	@curl -X POST http://localhost:8000/api/chat/send \
-		-H "Content-Type: application/json" \
-		-d '{"message": "Olá, como você está?", "session_id": "test_makefile"}' | jq .
-
-chat-history: ## Visualiza histórico de uma sessão (uso: make chat-history SESSION=session_id)
-	@echo "${BLUE}📜 Histórico da sessão $(SESSION)...${NC}"
-	@curl -s http://localhost:8000/api/chat/history/$(SESSION) | jq .
-
-chat-conversations: ## Lista conversas recentes
-	@echo "${BLUE}💬 Conversas recentes...${NC}"
-	@curl -s http://localhost:8000/api/chat/conversations | jq .
-
-# ===== TESTES =====
-test: ## Executa todos os testes
-	@echo "${YELLOW}🧪 Executando testes...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service pytest tests/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service pytest tests/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service pytest tests/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway pytest tests/ || true
-
-test-service: ## Executa testes de um serviço específico (ex: make test-service SERVICE=ai-service)
-	@echo "${YELLOW}🧪 Executando testes do $(SERVICE)...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec $(SERVICE) pytest tests/
-
-test-integration: ## Executa testes de integração
-	@echo "${YELLOW}🧪 Executando testes de integração...${NC}"
-	@pytest tests/integration/
-
-test-e2e: ## Executa testes end-to-end
-	@echo "${YELLOW}🧪 Executando testes E2E...${NC}"
-	@pytest tests/e2e/
-
-# ===== QUALIDADE DE CÓDIGO =====
-lint: ## Executa linting em todos os serviços
-	@echo "${YELLOW}📝 Executando linting...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service flake8 src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service flake8 src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service flake8 src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway flake8 src/ || true
-
-format: ## Formata código com black
-	@echo "${YELLOW}🎨 Formatando código...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service black src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service black src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service black src/ || true
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway black src/ || true
-
-# ===== LIMPEZA =====
-clean: ## Remove containers, volumes e imagens não utilizadas
-	@echo "${YELLOW}🧹 Limpando containers e volumes...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans
-	@docker system prune -f
-	@echo "${GREEN}✅ Limpeza concluída!${NC}"
-
-clean-all: ## Remove tudo incluindo imagens
-	@echo "${RED}🧹 Limpeza completa (incluindo imagens)...${NC}"
-	@docker compose -f $(DOCKER_COMPOSE_DEV) down -v --remove-orphans --rmi all
-	@docker system prune -af
-	@echo "${GREEN}✅ Limpeza completa concluída!${NC}"
-
-# ===== SHELLS E ACESSO =====
-shell-ai: ## Acessa shell do serviço de IA
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec ai-service bash
-
-shell-avatar: ## Acessa shell do serviço de avatar
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec avatar-service bash
-
-shell-emotion: ## Acessa shell do serviço de emoções
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec emotion-service bash
-
-shell-gateway: ## Acessa shell do gateway
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec gateway bash
-
-shell-ui: ## Acessa shell do web-ui
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec web-ui bash
-
-shell-mongo: ## Acessa shell do MongoDB
-	@docker compose -f $(DOCKER_COMPOSE_DEV) exec mongodb bash
-
-# ===== DOCUMENTAÇÃO =====
-docs: ## Mostra URLs da documentação
-	@echo "${YELLOW}📚 Documentação da API:${NC}"
-	@echo "${BLUE}📖 Documentações disponíveis em:${NC}"
-	@echo "  - Gateway API: http://localhost:8000/docs"
-	@echo "  - AI Service: http://localhost:8001/docs"
-	@echo "  - Avatar Service: http://localhost:8002/docs"
-	@echo "  - Emotion Service: http://localhost:8003/docs"
-
-# ===== UTILITÁRIOS =====
-update-deps: ## Atualiza dependências
-	@echo "${YELLOW}📦 Atualizando dependências...${NC}"
-	@find services/ -name "requirements.txt" -exec pip-compile {} \;
-
-security-scan: ## Executa scan de segurança
-	@echo "${YELLOW}🔒 Executando scan de segurança...${NC}"
-	@docker run --rm -v $(PWD):/app -w /app securecodewarrior/docker-image-scanner
-
-env-create: ## Cria arquivo .env a partir do .env.example
-	@echo "${YELLOW}📝 Criando arquivo .env...${NC}"
-	@test -f .env.example || (echo "${RED}❌ Arquivo .env.example não encontrado${NC}" && exit 1)
-	@test ! -f .env || (echo "${RED}❌ Arquivo .env já existe${NC}" && exit 1)
+env-create: ## Cria .env a partir de .env.example
+	@test -f .env.example || (echo "$(RED).env.example não encontrado$(NC)" && exit 1)
+	@test ! -f .env || (echo "$(RED).env já existe$(NC)" && exit 1)
 	@cp .env.example .env
-	@echo "${GREEN}✅ Arquivo .env criado! Edite as variáveis conforme necessário.${NC}"
+	@echo "$(GREEN).env criado.$(NC)"
 
-env-validate: ## Valida configurações do .env
-	@echo "${YELLOW}🔍 Validando configurações do .env...${NC}"
-	@test -f .env || (echo "${RED}❌ Arquivo .env não encontrado${NC}" && exit 1)
-	@echo "${GREEN}✅ Arquivo .env encontrado${NC}"
-	@echo "${BLUE}📋 Verificando variáveis obrigatórias:${NC}"
-	@if grep -q "OPENAI_API_KEY=open_ia_api_key" .env; then \
-		echo "${RED}⚠️  OPENAI_API_KEY não configurada${NC}"; \
-	else \
-		echo "${GREEN}✅ OPENAI_API_KEY configurada${NC}"; \
-	fi
-	@if grep -q "CREDENTIALS_JSON=path_to_credentials" .env; then \
-		echo "${RED}⚠️  CREDENTIALS_JSON não configurada${NC}"; \
-	else \
-		echo "${GREEN}✅ CREDENTIALS_JSON configurada${NC}"; \
-	fi
-	@if grep -q "DID_API_USERNAME=seu_username_aqui" .env; then \
-		echo "${YELLOW}⚠️  DID_API_USERNAME não configurada (opcional)${NC}"; \
-	else \
-		echo "${GREEN}✅ DID_API_USERNAME configurada${NC}"; \
-	fi
-	@echo "${BLUE}📋 Verificando arquivos de credenciais:${NC}"
-	@if [ -f "services/voice-service/credentials/empathia-462921-deff8cdf0d47.json" ]; then \
-		echo "${GREEN}✅ Arquivo de credenciais GCP encontrado${NC}"; \
-	else \
-		echo "${RED}⚠️  Arquivo de credenciais GCP não encontrado${NC}"; \
-		echo "${BLUE}   Coloque o arquivo JSON em: services/voice-service/credentials/${NC}"; \
-	fi
-	@echo "${BLUE}📋 Verificando portas:${NC}"
-	@echo " - Gateway: ${GATEWAY_PORT:-8000}"
-	@echo " - Web UI: ${WEB_UI_PORT:-7860}"
-	@echo " - Admin Panel: ${ADMIN_PANEL_PORT:-3001}"
-	@echo "${GREEN}✅ Validação concluída${NC}"
+env-validate: env-check ## Valida o mínimo esperado no .env
+	@grep -q '^OPENAI_API_KEY=' .env || (echo "$(RED)OPENAI_API_KEY ausente$(NC)" && exit 1)
+	@grep -q '^CREDENTIALS_JSON=' .env || echo "$(YELLOW)CREDENTIALS_JSON ausente ou opcional no seu fluxo$(NC)"
+	@echo "$(GREEN).env encontrado e validado.$(NC)"
 
-# Default target
-.DEFAULT_GOAL := help 
+dev: env-check ## Sobe a stack dev (agora em host network no docker-compose.dev.yml)
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(COMPOSE) up --build
+
+up: dev ## Alias para dev
+
+dev-d: env-check ## Sobe a stack dev em background
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(COMPOSE) up --build -d
+
+services: env-check ## Sobe backend, MongoDB, Redis e Qdrant
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(COMPOSE) up --build $(CORE_SERVICES)
+
+bridge: env-check ## Sobe a stack base em Docker bridge (sem overrides de dev)
+	@set -a; . ./.env; set +a; $(BRIDGE_RUNTIME_ENV) $(BRIDGE_COMPOSE) up --build
+
+bridge-d: env-check ## Sobe a stack base em Docker bridge em background
+	@set -a; . ./.env; set +a; $(BRIDGE_RUNTIME_ENV) $(BRIDGE_COMPOSE) up --build -d
+
+host: env-check ## Sobe stack com overlay host explícito (modo legado)
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(HOST_COMPOSE) up --build
+
+host-d: env-check ## Sobe stack com overlay host explícito em background
+	@set -a; . ./.env; set +a; $(HOST_RUNTIME_ENV) $(HOST_COMPOSE) up --build -d
+
+down: ## Para e remove containers da stack dev
+	@$(COMPOSE) down --remove-orphans
+
+restart: down dev-d ## Reinicia a stack dev em background
+
+ps: ## Mostra containers da stack
+	@$(COMPOSE) ps
+
+build: ## Build das imagens, ou SERVICE=nome para uma imagem
+	@set -a; [ ! -f .env ] || . ./.env; set +a; $(COMPOSE) build $(SERVICE)
+
+build-ai-local: ## Build do ai-service (mantido por compatibilidade com scripts antigos)
+	@set -a; [ ! -f .env ] || . ./.env; set +a; $(COMPOSE) build --no-cache ai-service
+
+logs: ## Logs da stack, ou SERVICE=nome para um serviço
+	@$(COMPOSE) logs -f $(SERVICE)
+
+shell: ## Abre shell em um serviço: make shell SERVICE=ai-service
+	@test -n "$(SERVICE)" || (echo "$(RED)Informe SERVICE. Ex.: make shell SERVICE=ai-service$(NC)" && exit 1)
+	@$(COMPOSE) exec $(SERVICE) bash
+
+test: ## Roda pytest nos backends, ou SERVICE=nome
+	@if [ -n "$(SERVICE)" ]; then \
+		$(COMPOSE) exec $(SERVICE) pytest tests/; \
+	else \
+		status=0; \
+		for service in $(BACKEND_SERVICES); do \
+			echo "$(BLUE)==> $$service$(NC)"; \
+			$(COMPOSE) exec $$service pytest tests/ || status=$$?; \
+		done; exit $$status; \
+	fi
+
+lint: ## Roda flake8 nos backends
+	@status=0; for service in $(BACKEND_SERVICES); do \
+		echo "$(BLUE)==> $$service$(NC)"; \
+		$(COMPOSE) exec $$service flake8 src/ || status=$$?; \
+	done; exit $$status
+
+format: ## Roda black nos backends
+	@status=0; for service in $(BACKEND_SERVICES); do \
+		echo "$(BLUE)==> $$service$(NC)"; \
+		$(COMPOSE) exec $$service black src/ || status=$$?; \
+	done; exit $$status
+
+health: ## Verifica endpoints /health locais
+	@for port in 8000 8001 8002 8003 8004 8005; do \
+		printf ":%s " "$$port"; \
+		curl -fsS "http://localhost:$$port/health" | jq . || true; \
+	done
+
+urls: ## Mostra URLs locais úteis
+	@echo "Web UI:          http://localhost:7860"
+	@echo "Admin Panel:    http://localhost:3001"
+	@echo "Gateway API:    http://localhost:8000/docs"
+	@echo "AI Service:     http://localhost:8001/docs"
+	@echo "Avatar Service: http://localhost:8002/docs"
+	@echo "Emotion API:    http://localhost:8003/docs"
+	@echo "Voice API:      http://localhost:8004/docs"
+	@echo "Knowledge API:  http://localhost:8005/docs"
+	@echo "Mongo Express:  http://localhost:8081"
+
+mongo-shell: ## Abre o shell do MongoDB
+	@$(COMPOSE) exec mongodb mongosh -u admin -p admin123 --authenticationDatabase admin empatia_db
+
+mongo-reset: ## Apaga volumes locais do MongoDB e recria o serviço
+	@read -p "Isto apaga o MongoDB local. Digite 'yes' para continuar: " confirm; \
+	test "$$confirm" = "yes"
+	@$(COMPOSE) stop mongodb
+	@docker volume rm empath-ia_mongodb_data_dev empath-ia_mongodb_data 2>/dev/null || true
+	@$(COMPOSE) up -d mongodb
+
+clean: ## Remove containers, volumes locais e órfãos
+	@$(COMPOSE) down -v --remove-orphans
+
+reset: clean dev-d ## Recria a stack local do zero

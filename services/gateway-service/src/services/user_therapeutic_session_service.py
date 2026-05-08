@@ -11,6 +11,9 @@ import re
 
 logger = logging.getLogger(__name__)
 
+REGISTRATION_SESSION_ID = "session-1"
+
+
 class UserTherapeuticSessionService:
     """Serviço de sessões terapêuticas dos usuários com persistência MongoDB"""
     
@@ -29,17 +32,80 @@ class UserTherapeuticSessionService:
         if self._template_sessions_collection is None:
             self._template_sessions_collection = get_therapeutic_sessions_collection()
         return self._template_sessions_collection
+
+    def _build_registration_session_document(self, username: str) -> Dict[str, Any]:
+        now = datetime.utcnow()
+        return {
+            "username": username,
+            "session_id": REGISTRATION_SESSION_ID,
+            "template_session_id": REGISTRATION_SESSION_ID,
+            "title": "Cadastro e Apresentação",
+            "subtitle": "Vamos nos conhecer melhor",
+            "description": "Sessão inicial para coleta de informações pessoais e estabelecimento do vínculo terapêutico",
+            "objective": "Coletar informações pessoais do usuário e estabelecer o primeiro contato terapêutico",
+            "initial_prompt": "Olá! Eu sou seu assistente terapêutico. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. Primeiro, me conta: qual é a sua idade?",
+            "category": "onboarding",
+            "difficulty": "beginner",
+            "focus_areas": ["cadastro", "autoconhecimento", "vinculo_terapeutico"],
+            "session_type": "registration",
+            "estimated_duration": 30,
+            "generation_method": "registration_seed",
+            "status": "unlocked",
+            "progress": 0,
+            "completed_at": None,
+            "started_at": None,
+            "created_at": now,
+            "updated_at": now,
+            "is_active": True,
+            "is_registration_session": True,
+            "personalized": False,
+        }
+
+    @staticmethod
+    def _format_session(session: Dict[str, Any]) -> Dict[str, Any]:
+        if session and "_id" in session:
+            session["_id"] = str(session["_id"])
+        return session
+
+    async def ensure_registration_session(self, username: str) -> Dict[str, Any]:
+        """Garantir que a sessão de cadastro exista para o usuário."""
+        existing_session = await self.user_sessions_collection.find_one({
+            "username": username,
+            "session_id": REGISTRATION_SESSION_ID,
+        })
+        if existing_session:
+            return existing_session
+
+        session_data = self._build_registration_session_document(username)
+        try:
+            result = await self.user_sessions_collection.insert_one(session_data)
+            if result.inserted_id:
+                logger.info("✅ Session-1 criada automaticamente para usuário %s", username)
+                return session_data
+        except Exception as exc:
+            if "duplicate" not in str(exc).lower():
+                raise
+
+            existing_session = await self.user_sessions_collection.find_one({
+                "username": username,
+                "session_id": REGISTRATION_SESSION_ID,
+            })
+            if existing_session:
+                return existing_session
+            raise
+
+        raise RuntimeError(f"Falha ao criar {REGISTRATION_SESSION_ID} para usuário {username}")
     
     async def create_session_1_for_user(self, username: str) -> Dict[str, Any]:
         """Criar automaticamente a session-1 (cadastro) para um usuário"""
         try:
-            # Verificar se a session-1 já existe para o usuário
-            existing_session = await self.user_sessions_collection.find_one({
+            existed_before = await self.user_sessions_collection.find_one({
                 "username": username,
-                "session_id": "session-1"
+                "session_id": REGISTRATION_SESSION_ID,
             })
-            
-            if existing_session:
+            session = await self.ensure_registration_session(username)
+
+            if existed_before:
                 logger.info(f"ℹ️ Session-1 já existe para usuário {username}")
                 return {
                     "success": True,
@@ -47,51 +113,14 @@ class UserTherapeuticSessionService:
                     "already_exists": True,
                     "message": "Session-1 já existe para este usuário"
                 }
-            
-            # Criar session-1 automaticamente
-            session_1_data = {
-                "username": username,
-                "session_id": "session-1",
-                "template_session_id": "session-1",
-                "title": "Cadastro e Apresentação",
-                "subtitle": "Vamos nos conhecer melhor",
-                "description": "Sessão inicial para coleta de informações pessoais e estabelecimento do vínculo terapêutico",
-                "objective": "Coletar informações pessoais do usuário e estabelecer o primeiro contato terapêutico",
-                "initial_prompt": "Olá! Eu sou seu assistente terapêutico. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você. Primeiro, me conta: qual é a sua idade?",
-                "category": "onboarding",
-                "difficulty": "beginner",
-                "estimated_duration": 30,
-                "status": "unlocked",  # Automaticamente desbloqueada
-                "progress": 0,
-                "completed_at": None,
-                "started_at": None,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
-                "is_active": True,
-                "is_registration_session": True,  # Flag especial para identificar sessão de cadastro
-                "personalized": False  # Esta é a sessão base, não personalizada
+
+            return {
+                "success": True,
+                "created": True,
+                "already_exists": False,
+                "message": "Session-1 criada com sucesso",
+                "session_id": session["session_id"]
             }
-            
-            # Inserir session-1 no banco
-            result = await self.user_sessions_collection.insert_one(session_1_data)
-            
-            if result.inserted_id:
-                logger.info(f"✅ Session-1 criada automaticamente para usuário {username}")
-                return {
-                    "success": True,
-                    "created": True,
-                    "already_exists": False,
-                    "message": "Session-1 criada com sucesso",
-                    "session_id": "session-1"
-                }
-            else:
-                logger.error(f"❌ Falha ao criar session-1 para usuário {username}")
-                return {
-                    "success": False,
-                    "created": False,
-                    "already_exists": False,
-                    "message": "Erro ao criar session-1"
-                }
                 
         except Exception as e:
             logger.error(f"❌ Erro ao criar session-1 para usuário {username}: {e}")
@@ -115,18 +144,19 @@ class UserTherapeuticSessionService:
     async def get_user_sessions(self, username: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Obter sessões de um usuário com filtro opcional por status"""
         try:
+            await self.ensure_registration_session(username)
+
             filter_query = {"username": username, "is_active": True}
             if status:
                 filter_query["status"] = status
             
-            cursor = self.user_sessions_collection.find(filter_query).sort("created_at", 1)
+            cursor = self.user_sessions_collection.find(filter_query).sort("created_at", -1)
             sessions = await cursor.to_list(length=100)
             
             # Formatar dados
             formatted_sessions = []
             for session in sessions:
-                session["_id"] = str(session["_id"])
-                formatted_sessions.append(session)
+                formatted_sessions.append(self._format_session(session))
             
             return formatted_sessions
             
@@ -137,13 +167,16 @@ class UserTherapeuticSessionService:
     async def get_user_session(self, username: str, session_id: str) -> Optional[Dict[str, Any]]:
         """Obter uma sessão específica de um usuário"""
         try:
+            if session_id == REGISTRATION_SESSION_ID:
+                await self.ensure_registration_session(username)
+
             session = await self.user_sessions_collection.find_one({
                 "username": username,
                 "session_id": session_id
             })
             
             if session:
-                session["_id"] = str(session["_id"])
+                self._format_session(session)
             
             return session
             
@@ -226,6 +259,8 @@ class UserTherapeuticSessionService:
             
             if result.modified_count > 0:
                 logger.info(f"✅ Sessão {session_id} marcada como '{status}' para usuário {username}")
+                if status == "completed":
+                    await self.auto_unlock_next_session(username)
                 return True
             else:
                 logger.warning(f"⚠️ Sessão {session_id} não encontrada para usuário {username}")
@@ -467,6 +502,8 @@ class UserTherapeuticSessionService:
         Obter sequência ordenada de sessões do usuário
         """
         try:
+            await self.ensure_registration_session(username)
+
             cursor = self.user_sessions_collection.find(
                 {"username": username},
                 sort=[("created_at", 1)]
@@ -523,6 +560,8 @@ class UserTherapeuticSessionService:
         Verificar se o usuário pode ter uma nova sessão criada
         """
         try:
+            await self.ensure_registration_session(username)
+
             # Verificar se há sessões em andamento ou não iniciadas
             pending_sessions = await self.user_sessions_collection.count_documents({
                 "username": username,

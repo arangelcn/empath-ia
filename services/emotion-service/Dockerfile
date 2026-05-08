@@ -41,10 +41,10 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # Copiar requirements primeiro (para cache do Docker)
 COPY requirements.txt .
 
-# Remover tensorflow do requirements pois já está na imagem base
-# e instalar demais dependências
-RUN sed -i '/^tensorflow/d' requirements.txt && \
-    pip install --no-cache-dir --ignore-installed -r requirements.txt
+# Não usar --ignore-installed aqui: a imagem base já traz TensorFlow 2.13.0.
+# O requirements mantém tensorflow==2.13.0 como constraint satisfeita pela base,
+# evitando backtracking para versões incompatíveis de TensorFlow/Keras.
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Criar diretórios necessários
 RUN mkdir -p /app/models /app/data /shared_data

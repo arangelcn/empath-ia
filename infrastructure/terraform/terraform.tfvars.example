@@ -1,0 +1,37 @@
+# ============================================================
+# terraform.tfvars.example
+# Copie para terraform.tfvars e preencha os valores.
+# NUNCA versione terraform.tfvars (já está no .gitignore).
+# ============================================================
+
+# ---- Projeto GCP ----
+project_id = "empathia-491822"
+region     = "us-central1"
+zone       = "us-central1-a"
+environment = "prod"
+
+# ---- GKE ----
+gke_cluster_name = "empatia-cluster"
+
+# ---- Artifact Registry ----
+artifact_registry_repo = "empatia-images"
+
+# ---- Backend remoto (state) ----
+# Criar o bucket manualmente ANTES de rodar terraform init:
+#   gsutil mb -l us-central1 gs://empathia-462921-terraform-state
+#   gsutil versioning set on gs://empathia-462921-terraform-state
+state_bucket = "empathia-491822-terraform-state"
+
+# ---- Secrets da aplicação ----
+openai_api_key   = "sk-..."
+did_api_username = "seu_did_username"
+did_api_password = "sua_did_password"
+
+# Opcionais: se não fornecidos, passwords aleatórias são geradas
+# mongo_root_password = "sua_password_mongo"
+# redis_password      = "sua_password_redis"
+# jwt_secret_key      = "sua_chave_jwt_min_64_chars"
+
+# ---- GitHub Actions (Workload Identity) ----
+# Formato: "owner/repo" — ex: "minha-org/empath-ia"
+github_repo = "SEU_USUARIO_GITHUB/empath-ia"

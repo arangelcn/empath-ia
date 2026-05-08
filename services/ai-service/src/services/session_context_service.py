@@ -6,7 +6,7 @@ Responsável por armazenar e recuperar contextos de sessão como dados primário
 import os
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
 import pymongo
 from pymongo import IndexModel
@@ -212,52 +212,6 @@ class SessionContextService:
             logger.error(f"❌ Erro ao recuperar contexto da sessão {session_id}: {e}")
             return None
     
-    async def update_session_context(self, session_id: str, username: str, 
-                                   context_updates: Dict[str, Any]) -> bool:
-        """
-        Atualizar contexto de sessão existente
-        
-        Args:
-            session_id: ID da sessão
-            username: Username do usuário
-            context_updates: Atualizações a serem aplicadas
-            
-        Returns:
-            bool: True se atualizado com sucesso
-        """
-        try:
-            if not await self.is_available():
-                logger.warning(f"⚠️ MongoDB indisponível - contexto da sessão {session_id} não atualizado")
-                return False
-            
-            collection = self.database[self.session_contexts_collection]
-            
-            # Preparar atualização
-            update_document = {
-                "$set": {
-                    "updated_at": datetime.utcnow(),
-                    **context_updates
-                },
-                "$inc": {"version": 1}
-            }
-            
-            # Atualizar documento
-            result = await collection.update_one(
-                {"session_id": session_id, "username": username, "is_active": True},
-                update_document
-            )
-            
-            if result.modified_count > 0:
-                logger.info(f"✅ Contexto da sessão {session_id} atualizado (usuário: {username})")
-                return True
-            else:
-                logger.warning(f"⚠️ Contexto da sessão {session_id} não encontrado para atualização")
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ Erro ao atualizar contexto da sessão {session_id}: {e}")
-            return False
-    
     async def list_user_sessions(self, username: str, limit: int = 50, 
                                include_inactive: bool = False) -> List[Dict[str, Any]]:
         """
@@ -362,48 +316,6 @@ class SessionContextService:
             logger.error(f"❌ Erro ao obter estatísticas de sessões: {e}")
             return {}
     
-    async def archive_session(self, session_id: str, username: str) -> bool:
-        """
-        Arquivar sessão (marcar como inativa)
-        
-        Args:
-            session_id: ID da sessão
-            username: Username do usuário
-            
-        Returns:
-            bool: True se arquivada com sucesso
-        """
-        try:
-            if not await self.is_available():
-                logger.warning(f"⚠️ MongoDB indisponível - sessão {session_id} não arquivada")
-                return False
-            
-            collection = self.database[self.session_contexts_collection]
-            
-            # Atualizar documento
-            result = await collection.update_one(
-                {"session_id": session_id, "username": username},
-                {
-                    "$set": {
-                        "is_active": False,
-                        "archived_at": datetime.utcnow(),
-                        "updated_at": datetime.utcnow()
-                    },
-                    "$inc": {"version": 1}
-                }
-            )
-            
-            if result.modified_count > 0:
-                logger.info(f"✅ Sessão {session_id} arquivada (usuário: {username})")
-                return True
-            else:
-                logger.warning(f"⚠️ Sessão {session_id} não encontrada para arquivamento")
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ Erro ao arquivar sessão {session_id}: {e}")
-            return False
-    
     def _summarize_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Criar resumo do contexto para listagem
@@ -421,43 +333,6 @@ class SessionContextService:
             "session_quality": context.get("session_quality", ""),
             "has_insights": len(context.get("key_insights", [])) > 0
         }
-    
-    async def cleanup_old_sessions(self, days_old: int = 365) -> int:
-        """
-        Limpar sessões muito antigas (opcional - apenas para manutenção)
-        
-        Args:
-            days_old: Idade em dias para considerar "antiga"
-            
-        Returns:
-            int: Número de sessões limpas
-        """
-        try:
-            if not await self.is_available():
-                logger.warning("⚠️ MongoDB indisponível - limpeza não executada")
-                return 0
-            
-            collection = self.database[self.session_contexts_collection]
-            
-            # Calcular data limite
-            from datetime import timedelta
-            cutoff_date = datetime.utcnow() - timedelta(days=days_old)
-            
-            # Buscar sessões antigas inativas
-            result = await collection.delete_many({
-                "is_active": False,
-                "updated_at": {"$lt": cutoff_date}
-            })
-            
-            deleted_count = result.deleted_count
-            if deleted_count > 0:
-                logger.info(f"🧹 Limpeza: {deleted_count} sessões antigas removidas")
-            
-            return deleted_count
-            
-        except Exception as e:
-            logger.error(f"❌ Erro na limpeza de sessões antigas: {e}")
-            return 0
     
     async def close(self):
         """Fechar conexão com MongoDB"""

@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Heart, LogOut, Send, Target, Mic } from 'lucide-react';
-import { sendMessage, getChatHistory, getTherapeuticSession, getInitialMessage } from '../../services/api.js';
+import { Bot, CheckCircle2, ChevronLeft, Heart, Mic, Send, Sparkles, Target, X } from 'lucide-react';
+import { sendMessage, getChatHistory, getUserSession, getInitialMessage, generateChatTitle, formatApiError } from '../../services/api.js';
 import Button from '../Common/Button.jsx';
 import Loading from '../Common/Loading.jsx';
 import EmotionBadge from './EmotionBadge.jsx';
@@ -14,6 +14,7 @@ interface Message {
   type: 'user' | 'ai';
   content: string;
   audioUrl?: string;
+  authorName?: string;
 }
 
 interface SessionObjective {
@@ -27,45 +28,169 @@ interface SessionObjective {
 
 const MessageBubble = ({ message, isTyping = false }) => {
   const isUser = message.type === 'user';
-  
+
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-      <div className={`max-w-[80%] px-4 py-3 rounded-2xl shadow-therapy-soft text-sm transition-all duration-200
-        ${isUser 
-          ? 'bg-blue-500 text-white rounded-br-md hover:shadow-lg' 
-          : 'bg-white dark:bg-dark-surface border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-md hover:shadow-lg'
-        }
-      `}>
-        {isTyping ? (
-          <div className="flex items-center gap-2">
-            <div className="flex space-x-1">
-              <div className="w-2 h-2 bg-current rounded-full animate-pulse"></div>
-              <div className="w-2 h-2 bg-current rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-              <div className="w-2 h-2 bg-current rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-            </div>
-            <span className="text-xs opacity-70">Digitando...</span>
+    <div className={`group flex w-full animate-fade-in ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div className={`flex max-w-[94%] gap-3 sm:max-w-[86%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+        <div
+          className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border shadow-sm
+            ${isUser
+              ? 'border-primary-200 bg-primary-50 text-primary-600 dark:border-primary-700/60 dark:bg-primary-900/30 dark:text-primary-200'
+              : 'border-gray-200 bg-white text-primary-500 dark:border-gray-700 dark:bg-dark-surface dark:text-secondary-300'
+            }
+          `}
+          aria-hidden="true"
+        >
+          {isUser ? (
+            <span className="text-xs font-semibold">{(message.authorName || 'Você').charAt(0).toUpperCase()}</span>
+          ) : (
+            <Bot className="h-4 w-4" strokeWidth={2} />
+          )}
+        </div>
+
+        <div className={`flex min-w-0 flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+          <span className="mb-1 px-1 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 dark:text-gray-500">
+            {isUser ? 'Você' : 'Empat.IA'}
+          </span>
+          <div className={`rounded-2xl px-4 py-3 text-[15px] leading-7 transition-all duration-200
+            ${isUser
+              ? 'rounded-tr-md bg-primary-600 text-white shadow-sm shadow-primary-500/20'
+              : 'rounded-tl-md border border-gray-200/80 bg-white text-gray-900 shadow-sm dark:border-gray-700/80 dark:bg-dark-surface dark:text-gray-100'
+            }
+          `}>
+            {isTyping ? (
+              <div className="flex items-center gap-3 text-gray-500 dark:text-gray-300">
+                <div className="flex space-x-1.5">
+                  <div className="h-2 w-2 rounded-full bg-current animate-pulse"></div>
+                  <div className="h-2 w-2 rounded-full bg-current animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                  <div className="h-2 w-2 rounded-full bg-current animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                </div>
+                <span className="text-xs font-medium">Digitando...</span>
+              </div>
+            ) : (
+              <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            )}
           </div>
-        ) : (
-          <p className="leading-relaxed reading-spacing">{message.content}</p>
-        )}
+        </div>
       </div>
     </div>
   );
 };
 
-const ChatScreen = ({ username }) => {
-  const { sessionId } = useParams();
+const EmptyConversation = ({ sessionTitle }) => (
+  <div className="mx-auto flex max-w-xl flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+    <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full border border-primary-100 bg-white text-primary-500 shadow-sm dark:border-primary-800/60 dark:bg-dark-surface">
+      <Sparkles className="h-6 w-6" strokeWidth={2} />
+    </div>
+    <h2 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+      {sessionTitle || 'Vamos começar com calma'}
+    </h2>
+    <p className="mt-3 text-sm leading-6 text-text-secondary dark:text-text-secondary-dark">
+      Respire um instante. Sem pressa.
+    </p>
+  </div>
+);
+
+const ChatComposer = ({
+  inputRef,
+  inputValue,
+  isLoading,
+  onChange,
+  onKeyDown,
+  onSubmit,
+  onVoiceModeToggle,
+}) => {
+  const canSend = inputValue.trim().length > 0 && !isLoading;
+
+  return (
+    <div className="border-t border-gray-200/80 bg-background-light/95 px-4 py-4 backdrop-blur-xl dark:border-gray-800 dark:bg-background-dark/95">
+      <form
+        className="chat-composer mx-auto flex max-w-4xl items-end gap-2 rounded-[1.35rem] border border-gray-200 bg-white p-2 shadow-lg shadow-primary-900/5 transition-colors dark:border-gray-700 dark:bg-dark-surface dark:shadow-black/20"
+        onSubmit={e => {
+          e.preventDefault();
+          if (canSend) {
+            onSubmit();
+            requestAnimationFrame(() => {
+              if (inputRef.current) {
+                inputRef.current.style.height = '44px';
+              }
+            });
+          }
+        }}
+      >
+        <textarea
+          ref={inputRef}
+          className="max-h-40 min-h-[44px] flex-1 resize-none overflow-y-auto rounded-2xl border-0 bg-transparent px-3 py-3 text-[15px] leading-6 text-text-primary placeholder:text-gray-400 focus:ring-0 dark:text-text-primary-dark dark:placeholder:text-gray-500"
+          rows={1}
+          placeholder="Mensagem para Empat.IA"
+          value={inputValue}
+          onChange={e => {
+            onChange(e.target.value);
+            e.currentTarget.style.height = '44px';
+            e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
+          }}
+          onKeyDown={onKeyDown}
+          disabled={isLoading}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-lg"
+          onClick={onVoiceModeToggle}
+          disabled={isLoading}
+          className="shrink-0 text-gray-500 hover:bg-gray-100 hover:text-primary-600 dark:text-gray-300 dark:hover:bg-gray-800"
+          title="Modo de voz"
+        >
+          <Mic className="h-5 w-5" />
+        </Button>
+        <Button
+          type="submit"
+          variant="primary"
+          size="icon-lg"
+          disabled={!canSend}
+          className="shrink-0 rounded-full bg-primary-600 shadow-none hover:bg-primary-700"
+          title="Enviar mensagem"
+        >
+          <Send className="h-5 w-5" />
+        </Button>
+      </form>
+      <p className="mx-auto mt-2 max-w-4xl px-3 text-center text-[11px] text-gray-400 dark:text-gray-500">
+        Empat.IA pode cometer erros. Use a conversa como apoio, não como substituto de cuidado profissional.
+      </p>
+    </div>
+  );
+};
+
+const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => {
+  const { chatId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { playAudio } = useAudioPlayer();
-  
-  // Usar sessionId da URL
-  const currentSessionId = sessionId;
-  
+
+  // Usar chat_id opaco da URL. sessionId legado ainda é aceito como fallback.
+  const currentChatId = chatId || fallbackSessionId;
+  const participantName = displayName || username || 'você';
+
   // Obter informações da sessão do state (passado pelo navigate)
   const sessionInfo = location.state || {};
-  const { sessionTitle, userSession } = sessionInfo;
-  
+  const { sessionTitle, originalSessionId: stateOriginalSessionId } = sessionInfo;
+  const originalSessionId = useMemo(() => {
+    if (stateOriginalSessionId) {
+      return stateOriginalSessionId;
+    }
+
+    if (!currentChatId) {
+      return '';
+    }
+
+    if (username && currentChatId.startsWith(`${username}_`)) {
+      return currentChatId.slice(username.length + 1);
+    }
+
+    const sessionMatch = currentChatId.match(/session-.+$/);
+    return sessionMatch?.[0] || '';
+  }, [currentChatId, stateOriginalSessionId, username]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -78,6 +203,9 @@ const ChatScreen = ({ username }) => {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [sessionContext, setSessionContext] = useState(null);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [dynamicTitle, setDynamicTitle] = useState<string | null>(null);
+  const [dynamicSubtitle, setDynamicSubtitle] = useState<string | null>(null);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -87,39 +215,46 @@ const ChatScreen = ({ username }) => {
     const loadSessionData = async () => {
       try {
         setIsLoadingHistory(true);
-        
-        // Carregar objetivo da sessão
-        if (currentSessionId) {
+
+        let sessionExists = true;
+
+        // Carregar objetivo da sessão do usuário. Sessões dinâmicas não ficam no catálogo global /api/sessions.
+        if (currentChatId) {
           try {
-            // ✅ CORREÇÃO: Extrair o session_id original (remover prefix do username)
-            // currentSessionId formato: "teste_01_session-1"
-            // Precisamos de: "session-1" para buscar na coleção de templates
-            const originalSessionId = currentSessionId.includes('_') 
-              ? currentSessionId.split('_').slice(1).join('_')  // Remove primeiro elemento (username)
-              : currentSessionId; // Fallback se não tiver underscore
-              
-            console.log('🔍 Buscando sessão - currentSessionId:', currentSessionId, 'originalSessionId:', originalSessionId);
-            
-            const sessionResponse = await getTherapeuticSession(originalSessionId);
-            if (sessionResponse.success && sessionResponse.data) {
-              console.log('✅ Session Objective carregado:', sessionResponse.data);
-              setSessionObjective({
-                title: sessionResponse.data.title,
-                subtitle: sessionResponse.data.subtitle,
-                objective: sessionResponse.data.objective,
-                initial_prompt: sessionResponse.data.initial_prompt
-              });
-            } else {
-              console.warn('⚠️ Session não encontrada para ID:', originalSessionId);
+            console.log('🔍 Buscando sessão - currentChatId:', currentChatId, 'originalSessionId:', originalSessionId);
+
+            if (originalSessionId) {
+              const sessionResponse = await getUserSession(username, originalSessionId);
+              if (sessionResponse.success && sessionResponse.data) {
+                console.log('✅ Session Objective carregado:', sessionResponse.data);
+                setSessionObjective({
+                  title: sessionResponse.data.title,
+                  subtitle: sessionResponse.data.subtitle,
+                  objective: sessionResponse.data.objective,
+                  initial_prompt: sessionResponse.data.initial_prompt
+                });
+              } else {
+                console.warn('⚠️ Session não encontrada para ID:', originalSessionId);
+                sessionExists = false;
+                setSessionObjective(null);
+                setSessionError(`A sessão ${originalSessionId} não está disponível para este usuário.`);
+              }
             }
           } catch (error) {
-            console.warn('Erro ao carregar objetivo da sessão:', error);
+            const isMissingSession = error?.response?.status === 404;
+            if (isMissingSession) {
+              sessionExists = false;
+              setSessionObjective(null);
+              setSessionError(`A sessão ${originalSessionId} não está disponível para este usuário.`);
+            } else {
+              setSessionError(formatApiError(error, 'Erro ao carregar objetivo da sessão.'));
+            }
           }
         }
-        
+
         // Carregar histórico de mensagens
-        const response = await getChatHistory(currentSessionId);
-        
+        const response = await getChatHistory(currentChatId);
+
         if (response.success && response.data.history && response.data.history.length > 0) {
           // Converter histórico do backend para o formato do frontend
           const historyMessages: Message[] = response.data.history.map((msg: any) => ({
@@ -127,38 +262,45 @@ const ChatScreen = ({ username }) => {
             type: msg.type === 'user' ? 'user' : 'ai',
             content: msg.content,
             audioUrl: msg.audio_url || undefined,
+            authorName: msg.type === 'user' ? participantName : undefined,
           }));
-          
+
           setMessages(historyMessages);
         } else {
+          if (!sessionExists) {
+            setMessages([]);
+            return;
+          }
+
           // ✅ NOVO: Se não há histórico, tentar gerar mensagem inicial automática
           console.log('🤖 Sessão sem histórico, gerando mensagem inicial automática...');
-          
+
           try {
-            const initialMessageResponse = await getInitialMessage(currentSessionId);
+            const initialMessageResponse = await getInitialMessage(currentChatId);
             console.log('🔍 DEBUG - Resposta inicial:', initialMessageResponse);
-            
+
             if (initialMessageResponse.success && initialMessageResponse.data) {
               // ✅ CORREÇÃO: Aguardar um pouco para garantir que o backend salvou a mensagem
               console.log('⏳ Aguardando backend finalizar salvamento...');
               await new Promise(resolve => setTimeout(resolve, 1000));
-              
+
               // ✅ CORREÇÃO: Recarregar histórico DIRETAMENTE após gerar mensagem inicial
               console.log('🔄 Recarregando histórico após mensagem inicial...');
-              const updatedHistory = await getChatHistory(currentSessionId);
+              const updatedHistory = await getChatHistory(currentChatId);
               console.log('🔍 DEBUG - Histórico atualizado:', updatedHistory);
-              
+
               if (updatedHistory.success && updatedHistory.data.history && updatedHistory.data.history.length > 0) {
                 const historyMessages: Message[] = updatedHistory.data.history.map((msg: any) => ({
                   id: msg.id,
                   type: msg.type === 'user' ? 'user' : 'ai',
                   content: msg.content,
                   audioUrl: msg.audio_url || undefined,
+                  authorName: msg.type === 'user' ? participantName : undefined,
                 }));
-                
+
                 setMessages(historyMessages);
                 console.log('✅ Histórico carregado com sucesso após mensagem inicial:', historyMessages.length, 'mensagens');
-                
+
                 // ✅ NOVO: Reproduzir áudio se disponível para a mensagem inicial
                 const initialMessage = historyMessages.find(msg => msg.type === 'ai');
                 if (initialMessage && initialMessage.audioUrl) {
@@ -171,7 +313,7 @@ const ChatScreen = ({ username }) => {
               } else {
                 // ✅ FALLBACK: Se histórico ainda não foi atualizado, usar dados da resposta inicial
                 console.warn('⚠️ Histórico ainda não atualizado, usando dados da resposta inicial');
-                
+
                 if (initialMessageResponse.data.message) {
                   const fallbackMessage: Message = {
                     id: initialMessageResponse.data.message.id,
@@ -179,10 +321,10 @@ const ChatScreen = ({ username }) => {
                     content: initialMessageResponse.data.message.content,
                     audioUrl: initialMessageResponse.data.message.audioUrl || undefined,
                   };
-                  
+
                   setMessages([fallbackMessage]);
                   console.log('🔄 Usando mensagem inicial como fallback');
-                  
+
                   // Reproduzir áudio se disponível
                   if (fallbackMessage.audioUrl) {
                     setTimeout(() => {
@@ -210,13 +352,13 @@ const ChatScreen = ({ username }) => {
       }
     };
 
-    if (currentSessionId && username) {
+    if (currentChatId && username) {
       loadSessionData();
     }
-  }, [currentSessionId, username]);
+  }, [currentChatId, originalSessionId, participantName, username]);
 
   // useEffect removido - emoção agora é atualizada via WebcamEmotionCapture
-  
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -237,34 +379,31 @@ const ChatScreen = ({ username }) => {
       id: `user-${Date.now()}`,
       type: 'user',
       content: inputValue,
+      authorName: participantName,
     };
     setMessages(prev => [...prev, userMessage]);
     const currentInput = inputValue;
     setInputValue('');
     setIsLoading(true);
+    setSessionError(null);
 
     try {
       // ✅ CORREÇÃO: Para session-1 (cadastro), não passar sessionObjective 
       // Para outras sessões, passar apenas se for a primeira mensagem
       const isFirstMessage = messages.length === 0;
-      
-      // Extrair o session_id original para verificar se é session-1
-      const originalSessionId = currentSessionId.includes('_') 
-        ? currentSessionId.split('_').slice(1).join('_')
-        : currentSessionId;
-      
+
       // session-1 é a sessão de cadastro, não deve receber título/objetivo
       const isRegistrationSession = originalSessionId === 'session-1';
-      
+
       let objectiveToSend = null;
       if (isFirstMessage && !isRegistrationSession) {
         // Apenas para sessões que NÃO são de cadastro
         objectiveToSend = sessionObjective;
       }
-      
+
       console.log(`🔍 Session Info: originalSessionId=${originalSessionId}, isRegistrationSession=${isRegistrationSession}, isFirstMessage=${isFirstMessage}, willSendObjective=${objectiveToSend !== null}`);
-      
-      const response = await sendMessage(currentInput, currentSessionId, objectiveToSend);
+
+      const response = await sendMessage(currentInput, currentChatId, objectiveToSend);
       if (response.success) {
         const { ai_response } = response.data;
         const aiMessage: Message = {
@@ -274,45 +413,55 @@ const ChatScreen = ({ username }) => {
           audioUrl: ai_response.audioUrl,
         };
         setMessages(prev => [...prev, aiMessage]);
-        
+
+        // Gerar título após a 1ª mensagem do usuário (não bloqueia a conversa)
+        if (isFirstMessage) {
+          generateChatTitle(currentChatId, 'initial').then(result => {
+            if (result.success && result.title) {
+              setDynamicTitle(result.title);
+              if (result.subtitle) setDynamicSubtitle(result.subtitle);
+            }
+          }).catch(() => { });
+        }
+
         // ✅ NOVO: Verificar se o cadastro foi finalizado
         if (response.data.registration_completed && response.data.redirect_to_home) {
           console.log('🎉 CADASTRO FINALIZADO - Processando redirecionamento...');
-          
+
           // Mostrar mensagem de sucesso
           if (response.data.completion_message) {
             console.log('📋 Mensagem de finalização:', response.data.completion_message);
           }
-          
+
           // Usar tempo de redirecionamento definido pelo backend (padrão 3 segundos)
           const redirectDelay = response.data.auto_redirect_delay || 3000;
           console.log(`⏳ Redirecionamento automático em ${redirectDelay}ms`);
-          
+
           // Redirecionar para home após tempo especificado
           setTimeout(() => {
             console.log('🏠 Redirecionando para home...');
-            navigate('/home', { 
-              state: { 
+            navigate('/home', {
+              state: {
                 message: 'Cadastro finalizado com sucesso! Agora você pode acessar todas as sessões terapêuticas.',
                 fromRegistration: true,
                 finalize_success: response.data.finalize_success
-              } 
+              }
             });
           }, redirectDelay);
         }
-        
+
         // ✅ NOVO: Verificar se a conversa foi finalizada automaticamente
         if (response.data.conversation_ended) {
           console.log('🔚 Conversa finalizada automaticamente');
           setIsConversationEnded(true);
           setShowFinalizeButton(false);
-          
+
           // Aguardar um pouco antes de mostrar o resumo
           setTimeout(() => {
             finalizeSession();
           }, 2000);
         }
-        
+
         // Detectar fim de conversa baseado na mensagem do usuário
         if (checkConversationEnd(currentInput)) {
           console.log('🔚 Fim de conversa detectado pela mensagem do usuário');
@@ -320,17 +469,30 @@ const ChatScreen = ({ username }) => {
             finalizeSession();
           }, 3000);
         }
+      } else {
+        const message = response.error || 'A IA não conseguiu gerar uma resposta agora.';
+        setSessionError(message);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            type: 'ai',
+            content: message,
+          },
+        ]);
       }
     } catch (error) {
+      const message = formatApiError(error, 'A IA não conseguiu gerar uma resposta agora.');
+      setSessionError(message);
       const errorMessage = {
         id: `error-${Date.now()}`,
         type: 'ai',
-        content: "Desculpe, não consegui processar sua mensagem. Tente novamente mais tarde.",
+        content: message,
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-      
+
       // Manter foco no input após enviar mensagem
       // Usar setTimeout para garantir que o DOM seja atualizado antes de focar
       setTimeout(() => {
@@ -343,11 +505,16 @@ const ChatScreen = ({ username }) => {
       }, 100);
     }
   };
-  
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          inputRef.current.style.height = '44px';
+        }
+      });
     }
   };
 
@@ -369,34 +536,49 @@ const ChatScreen = ({ username }) => {
   // Função para finalizar sessão
   const finalizeSession = async () => {
     if (isFinalizing) return;
-    
+
     setIsFinalizing(true);
-    console.log('🔚 Iniciando finalização da sessão:', currentSessionId);
-    
+    setSessionError(null);
+    console.log('🔚 Iniciando finalização da sessão:', currentChatId);
+
     try {
-      const response = await fetch(`/api/chat/finalize/${currentSessionId}`, {
+      const response = await fetch(`/api/chat/finalize/${currentChatId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      
+
       const result = await response.json();
       console.log('📋 Resultado da finalização:', result);
-      
+
+      if (!response.ok) {
+        throw new Error(result.detail || result.error || 'Falha ao finalizar a sessão.');
+      }
+
       if (result.success) {
         console.log('✅ Sessão finalizada com sucesso');
         console.log('📄 Contexto da sessão:', result.data.context);
-        
+
         setIsConversationEnded(true);
         setSessionContext(result.data.context);
         setShowSessionSummary(true);
         setShowFinalizeButton(false);
-        
+
+        // Usar título gerado server-side (já persistido no banco)
+        const generatedTitle = result.data?.generated_title;
+        const generatedSubtitle = result.data?.generated_subtitle;
+        if (generatedTitle) {
+          setDynamicTitle(generatedTitle);
+          if (generatedSubtitle) setDynamicSubtitle(generatedSubtitle);
+        }
+
         console.log('🎯 States atualizados - Modal deve aparecer agora');
       } else {
         console.error('❌ Erro ao finalizar sessão:', result);
+        setSessionError(result.error || result.data?.error || 'Falha ao finalizar a sessão.');
       }
     } catch (error) {
       console.error('❌ Erro na finalização da sessão:', error);
+      setSessionError(error instanceof Error ? error.message : 'Falha ao finalizar a sessão.');
     } finally {
       setIsFinalizing(false);
     }
@@ -423,12 +605,20 @@ const ChatScreen = ({ username }) => {
     setMessages(prev => [...prev, message]);
   };
 
+  const handleVoiceMessageUpdate = (messageId, update) => {
+    setMessages(prev => prev.map(message => {
+      if (message.id !== messageId) return message;
+      const patch = typeof update === 'function' ? update(message) : update;
+      return { ...message, ...patch };
+    }));
+  };
+
   // Função para obter contexto da sessão
   const getSessionContext = async () => {
     try {
-      const response = await fetch(`/api/chat/context/${currentSessionId}`);
+      const response = await fetch(`/api/chat/context/${currentChatId}`);
       const result = await response.json();
-      
+
       if (result.success) {
         setSessionContext(result.data.context);
       }
@@ -450,19 +640,10 @@ const ChatScreen = ({ username }) => {
 
   // Modal de resumo da sessão
   const SessionSummaryModal = () => {
-    console.log('🔍 SessionSummaryModal - States:', {
-      showSessionSummary,
-      sessionContext,
-      hasContext: !!sessionContext
-    });
-    
     if (!showSessionSummary || !sessionContext) {
-      console.log('⚠️ Modal não será mostrado - showSessionSummary:', showSessionSummary, 'sessionContext:', !!sessionContext);
       return null;
     }
-    
-    console.log('✅ Modal será mostrado com contexto:', sessionContext);
-    
+
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
         <div className="bg-white dark:bg-dark-surface rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -470,13 +651,13 @@ const ChatScreen = ({ username }) => {
             <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">
               Resumo da Sessão
             </h2>
-            
+
             <div className="space-y-4">
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Resumo</h3>
                 <p className="text-gray-600 dark:text-gray-400">{sessionContext.summary}</p>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Temas Principais</h3>
                 <div className="flex flex-wrap gap-2">
@@ -487,7 +668,7 @@ const ChatScreen = ({ username }) => {
                   ))}
                 </div>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Estado Emocional</h3>
                 <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
@@ -502,7 +683,7 @@ const ChatScreen = ({ username }) => {
                   </p>
                 </div>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Insights Principais</h3>
                 <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1">
@@ -511,7 +692,7 @@ const ChatScreen = ({ username }) => {
                   ))}
                 </ul>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Recomendações</h3>
                 <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1">
@@ -520,20 +701,19 @@ const ChatScreen = ({ username }) => {
                   ))}
                 </ul>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Qualidade da Sessão</h3>
-                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-                  sessionContext.session_quality === 'excelente' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                  sessionContext.session_quality === 'boa' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                  sessionContext.session_quality === 'regular' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                  'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                }`}>
+                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${sessionContext.session_quality === 'excelente' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                    sessionContext.session_quality === 'boa' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                      sessionContext.session_quality === 'regular' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                        'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                  }`}>
                   {sessionContext.session_quality}
                 </span>
               </div>
             </div>
-            
+
             <div className="flex justify-end gap-3 mt-6">
               <Button
                 variant="secondary"
@@ -561,105 +741,134 @@ const ChatScreen = ({ username }) => {
     );
   };
 
+  const displaySessionTitle = dynamicTitle || sessionTitle || sessionObjective?.title || 'Sessão terapêutica';
+  const displaySessionSubtitle = dynamicSubtitle || sessionObjective?.subtitle || `Conversando com ${participantName}`;
+
   return (
-    <div className="min-h-screen flex flex-col bg-background-light dark:bg-background-dark transition-colors duration-300">
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden bg-background-light text-text-primary transition-colors duration-300 dark:bg-background-dark dark:text-text-primary-dark lg:h-screen">
       {/* Header */}
-      <div className="relative z-10 bg-white/95 dark:bg-dark-surface/95 backdrop-blur-xl border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="avatar-therapy-calm p-1">
-              <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center">
-                <Heart className="w-5 h-5 text-primary-500" strokeWidth={2} />
-              </div>
-            </div>
-            <div>
-              <h1 className="font-heading font-semibold text-text-primary dark:text-text-primary-dark">
-                <span className="text-gradient-therapy">Empath</span>.IA
-              </h1>
-              <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-                Seu companheiro terapêutico
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <EmotionBadge emotion={currentEmotion} />
-            {showFinalizeButton && !isConversationEnded && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={finalizeSession}
-                disabled={isFinalizing}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão'}
-              </Button>
-            )}
+      <div className="relative z-10 border-b border-gray-200/80 bg-white/90 px-4 py-3 backdrop-blur-xl dark:border-gray-800 dark:bg-dark-surface/90">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => navigate('/home')}
-              title="Sair da sessão"
+              title="Voltar"
+              className="shrink-0 text-gray-500 hover:text-primary-600 dark:text-gray-300"
             >
-              <LogOut className="w-5 h-5" />
+              <ChevronLeft className="h-5 w-5" />
             </Button>
+            <div className="avatar-therapy-calm hidden p-1 sm:block">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
+                <Heart className="h-5 w-5 text-primary-500" strokeWidth={2} />
+              </div>
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate font-heading text-base font-semibold text-text-primary dark:text-text-primary-dark">
+                {displaySessionTitle}
+              </h1>
+              <p className="truncate text-xs text-text-secondary dark:text-text-secondary-dark">
+                {displaySessionSubtitle}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <EmotionBadge emotion={currentEmotion} />
+            {showFinalizeButton && !isConversationEnded && (
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={finalizeSession}
+                  disabled={isFinalizing}
+                  className="hidden bg-green-600 text-white hover:bg-green-700 sm:inline-flex"
+                >
+                  {isFinalizing ? 'Finalizando...' : 'Finalizar Sessão'}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="icon"
+                  onClick={finalizeSession}
+                  disabled={isFinalizing}
+                  className="bg-green-600 text-white hover:bg-green-700 sm:hidden"
+                  title="Finalizar sessão"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* WebcamEmotionCapture invisível - análise automática em background */}
-      <WebcamEmotionCapture 
-        onEmotionDetected={handleWebcamEmotion} 
-        autoStart={true} 
+      <WebcamEmotionCapture
+        onEmotionDetected={handleWebcamEmotion}
+        autoStart={false}
         hidden={true}
         username={username}
-        sessionId={currentSessionId}
+        sessionId={currentChatId}
       />
 
       {/* Objetivo da Sessão */}
       {sessionObjective && showObjective && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-blue-200 dark:border-blue-800 px-4 py-3">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <Target className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  <h3 className="font-medium text-blue-900 dark:text-blue-100">
+        <div className="border-b border-primary-100 bg-primary-50/70 px-4 py-3 dark:border-primary-900/50 dark:bg-primary-900/15">
+          <div className="mx-auto max-w-4xl">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <Target className="h-4 w-4 shrink-0 text-primary-600 dark:text-primary-300" />
+                  <h3 className="truncate text-sm font-semibold text-primary-900 dark:text-primary-100">
                     {sessionObjective.title}
                   </h3>
                 </div>
                 {sessionObjective.subtitle && (
-                  <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
+                  <p className="mb-1 text-sm text-primary-700 dark:text-primary-200">
                     {sessionObjective.subtitle}
                   </p>
                 )}
-                <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed">
+                <p className="text-sm leading-6 text-primary-800 dark:text-primary-100/90">
                   <strong>Objetivo:</strong> {sessionObjective.objective}
                 </p>
               </div>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon"
                 onClick={() => setShowObjective(false)}
-                className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                className="shrink-0 text-primary-600 hover:bg-primary-100 hover:text-primary-800 dark:text-primary-200 dark:hover:bg-primary-900/40"
+                title="Ocultar objetivo"
               >
-                ✕
+                <X className="h-4 w-4" />
               </Button>
             </div>
           </div>
         </div>
       )}
 
+      {sessionError && (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-100">
+          <div className="mx-auto max-w-4xl">
+            {sessionError}
+          </div>
+        </div>
+      )}
+
       {/* Área de mensagens */}
-      <div className="flex-1 flex flex-col max-w-4xl mx-auto w-full px-2 sm:px-0 py-4 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-4">
         {isLoadingHistory ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex h-full items-center justify-center">
             <Loading size="lg" text="Carregando conversa..." />
           </div>
         ) : (
-          <div className="flex-1 flex flex-col gap-4 pb-4">
-            {messages.map((msg, idx) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
+          <div className="mx-auto flex min-h-full max-w-4xl flex-col gap-5 py-6">
+            {messages.length === 0 && !isLoading ? (
+              <EmptyConversation sessionTitle={displaySessionTitle} />
+            ) : (
+              messages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))
+            )}
             {isLoading && <MessageBubble message={{ id: 'typing', type: 'ai', content: '' }} isTyping />}
             <div ref={messagesEndRef} />
           </div>
@@ -667,53 +876,27 @@ const ChatScreen = ({ username }) => {
       </div>
 
       {/* Input fixo no rodapé */}
-      <div className="w-full max-w-4xl mx-auto px-2 sm:px-0 pb-4 sticky bottom-0 z-20 bg-background-light dark:bg-background-dark">
-        <form
-          className="flex items-center gap-2 bg-white dark:bg-dark-surface border border-gray-200 dark:border-gray-700 rounded-2xl shadow-md px-4 py-2"
-          onSubmit={e => { e.preventDefault(); handleSendMessage(); }}
-        >
-          <textarea
-            ref={inputRef}
-            className="flex-1 resize-none bg-transparent outline-none text-sm text-text-primary dark:text-text-primary-dark placeholder-gray-400 py-2"
-            rows={1}
-            placeholder="Digite sua mensagem..."
-            value={inputValue}
-            onChange={e => setInputValue(e.target.value)}
-            onKeyDown={handleKeyPress}
-            disabled={isLoading}
-          />
-          <Button
-            type="button"
-            variant="primary"
-            size="icon-lg"
-            onClick={handleVoiceModeToggle}
-            disabled={isLoading}
-            className="mr-2"
-            title="Modo de Voz"
-          >
-            <Mic className="w-5 h-5 md:w-6 md:h-6" />
-          </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            size="icon-lg"
-            disabled={isLoading || !inputValue.trim()}
-          >
-            <Send className="w-5 h-5 md:w-6 md:h-6" />
-          </Button>
-        </form>
-      </div>
-      
+      <ChatComposer
+        inputRef={inputRef}
+        inputValue={inputValue}
+        isLoading={isLoading}
+        onChange={setInputValue}
+        onKeyDown={handleKeyPress}
+        onSubmit={handleSendMessage}
+        onVoiceModeToggle={handleVoiceModeToggle}
+      />
+
       {/* Modal de resumo da sessão */}
       <SessionSummaryModal />
-      
+
       {/* Modo conversacional de voz */}
       <VoiceConversationMode
-        sessionId={currentSessionId}
+        sessionId={currentChatId}
         username={username}
         isOpen={isVoiceModeOpen}
         onClose={handleVoiceModeClose}
         onNewMessage={handleVoiceMessage}
+        onUpdateMessage={handleVoiceMessageUpdate}
         lastAIMessage={messages.filter(msg => msg.type === 'ai').pop() || null}
       />
     </div>

@@ -39,7 +39,9 @@ class UserEmotionService:
             # Preparar documento para salvamento
             document = {
                 "username": emotion_data.get("username"),
+                "chat_id": emotion_data.get("chat_id"),
                 "session_id": emotion_data.get("session_id"),
+                "therapeutic_session_id": emotion_data.get("therapeutic_session_id"),
                 "dominant_emotion": emotion_data.get("dominant_emotion"),
                 "emotions": emotion_data.get("emotions", {}),
                 "confidence": emotion_data.get("confidence", 0),

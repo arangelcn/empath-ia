@@ -69,12 +69,8 @@ const SessionManagement = () => {
         }
       }
 
-      console.log('Chamando API de sessões com parâmetros:', apiParams);
-      
       // Usar o novo endpoint administrativo que já inclui os contextos
       const response = await apiService.getAllUserSessionsWithContexts(apiParams);
-
-      console.log('Resposta da API de sessões:', response);
 
       if (response.success) {
         setSessions(response.data.sessions || []);
@@ -88,7 +84,7 @@ const SessionManagement = () => {
       }
     } catch (err) {
       console.error('Erro ao carregar sessões:', err);
-      setError('Erro ao carregar sessões. Verifique a conexão com o servidor.');
+      setError(apiService.formatError(err, 'Erro ao carregar sessões. Verifique a conexão com o servidor.'));
       setSessions([]);
     } finally {
       setLoading(false);
@@ -112,7 +108,7 @@ const SessionManagement = () => {
       setShowSessionDetails(true);
     } catch (err) {
       console.error('Erro ao carregar detalhes da sessão:', err);
-      alert('Erro ao carregar detalhes da sessão');
+      setError(apiService.formatError(err, 'Erro ao carregar detalhes da sessão'));
     }
   };
 

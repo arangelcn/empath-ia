@@ -1,0 +1,858 @@
+# Documentação Técnica — Empat.IA
+
+> Referência técnica completa: arquitetura, APIs, banco de dados, variáveis de ambiente, infra e decisões de design.
+> Para a visão geral do produto, acesse o [README principal](../README.md).
+
+---
+
+## Índice
+
+1. [Serviços e Responsabilidades](#1-serviços-e-responsabilidades)
+2. [Variáveis de Ambiente](#2-variáveis-de-ambiente)
+3. [API Reference — Gateway](#3-api-reference--gateway)
+4. [Schema do Banco de Dados](#4-schema-do-banco-de-dados)
+5. [Autenticação Google + JWT](#5-autenticação-google--jwt)
+6. [Sistema de Análise Emocional](#6-sistema-de-análise-emocional)
+7. [Síntese de Voz](#7-síntese-de-voz)
+8. [Sessões Terapêuticas e Contexto](#8-sessões-terapêuticas-e-contexto)
+9. [Gerenciamento de Prompts](#9-gerenciamento-de-prompts)
+10. [Infraestrutura e Deploy](#10-infraestrutura-e-deploy)
+11. [Desenvolvimento Local](#11-desenvolvimento-local)
+
+---
+
+## 1. Serviços e Responsabilidades
+
+| Serviço | Porta | Runtime | Responsabilidade |
+|---------|-------|---------|------------------|
+| `gateway-service` | 8000 | Python 3.11 + FastAPI | Ponto único de entrada: roteamento, auth, chat, sessões, proxy para microserviços |
+| `ai-service` | 8001 | Python 3.11 + FastAPI | Respostas terapêuticas via Gemma local/GGUF como padrão, fallback OpenAI, geração de contexto e próxima sessão |
+| `avatar-service` | 8002 | Python 3.11 + FastAPI | Proxy para DID.ai (avatares animados) |
+| `emotion-service` | 8003 | TensorFlow 2.13 GPU | Análise emocional facial (DeepFace, MediaPipe) e de vídeo |
+| `voice-service` | 8004 | Python 3.11 + FastAPI | Text-to-Speech via Google Cloud TTS; arquivos de áudio servidos via gateway |
+| `knowledge-service` | 8005 | Python 3.11 + FastAPI | Fundação do RAG controlado pelo Admin: lifecycle de documentos, contrato de retrieval, proveniência e futura indexação |
+| `web-ui` | 3000→7860 | Node 18 → nginx | Frontend principal do usuário (React + Vite) |
+| `admin-panel` | 3000→3001 | Node 18 → nginx | Painel administrativo do terapeuta (React + Vite) |
+| `mongodb` | 27017 | MongoDB 7 | Banco de dados principal |
+| `redis` | 6379 | Redis 7 | Cache e filas (AI service) |
+| `qdrant` | 6333 | Qdrant | Vector store local planejado para embeddings do Knowledge Service |
+
+### Dependências entre serviços
+
+```
+browser → web-ui (nginx) → /api/* proxy → gateway:8000
+browser → admin-panel (nginx) → /api/* proxy → gateway:8000
+gateway → ai-service:8001
+gateway → voice-service:8004
+gateway → emotion-service:8003
+gateway → avatar-service:8002
+gateway → knowledge-service:8005
+gateway → mongodb:27017
+ai-service → mongodb:27017
+ai-service → redis:6379
+knowledge-service → mongodb:27017
+knowledge-service → qdrant:6333
+```
+
+### Gateway refatorado
+
+O `gateway-service` agora mantém `main.py` como composição do app: CORS, startup/shutdown, índices, auto-inicialização de prompts e inclusão de routers. As responsabilidades HTTP ficam em `src/api/*.py` e `src/api/admin_*.py`.
+
+Peças principais:
+- `src/api/chat.py`: envio, streaming, histórico e abertura de conversa.
+- `src/api/chat_context.py`: mensagem inicial, finalização, contexto e título.
+- `src/api/users.py`: usuário, preferências e login.
+- `src/api/sessions.py`: templates terapêuticos e sessões por usuário.
+- `src/api/voice.py`: proxy para Voice Service.
+- `src/api/admin_*.py`: rotas administrativas separadas por domínio.
+- `src/domain/conversation_identity.py`: compatibilidade entre `chat_id`, `legacy_session_id`, `username` e `therapeutic_session_id`.
+- `src/services/registration_service.py`, `session_context_service.py`, `next_session_service.py`, `voice_synthesis_service.py`, `chat_title_service.py` e `user_profile_service.py`: responsabilidades extraídas do antigo `ChatService`.
+
+O `UserTherapeuticSessionService` garante `session-1` de forma idempotente quando a jornada do usuário é lida. Isso evita Home vazia para usuários que chegam em `/api/user/{username}/sessions` antes de passar pelo endpoint de login.
+
+### Decisão RAG / Knowledge Service
+
+O novo sistema de RAG será implementado como um microserviço interno dedicado, chamado `knowledge-service`, em vez de ficar embutido no `ai-service`.
+
+Referência arquitetural: [`architecture/KNOWLEDGE_SERVICE.md`](architecture/KNOWLEDGE_SERVICE.md).
+
+Resumo da decisão:
+
+- Admin Panel controla upload, revisão, aprovação, ativação, arquivamento, reindexação e auditoria.
+- Gateway mantém autenticação, autorização e roteamento das APIs administrativas.
+- Knowledge Service possui ingestão, chunking, embeddings, busca vetorial, busca lexical, re-ranking e proveniência.
+- AI Service consome contexto recuperado por contrato interno e continua focado em geração.
+- A primeira estratégia local-first combina MongoDB para metadados, Qdrant para vetores e SQLite FTS5 para busca lexical.
+
+Status atual da fundação:
+
+- `services/knowledge-service/` existe como microserviço FastAPI.
+- `GET /health` expõe estado operacional para Gateway/Admin.
+- `POST /api/v1/documents` registra documentos em estado `draft`.
+- `POST /api/v1/documents/{document_id}/content` recebe texto extraído e gera chunks semânticos rastreáveis com `langchain-text-splitters`.
+- `GET /api/v1/documents/{document_id}/chunks` permite revisar chunks antes de ativação.
+- `PATCH /api/v1/documents/{document_id}/status` move documentos pelo lifecycle administrativo.
+- `POST /api/v1/retrieve` já define o contrato de recuperação usado futuramente pelo AI Service.
+- O Gateway expõe proxy protegido em `/api/admin/knowledge/*`.
+
+---
+
+## 2. Variáveis de Ambiente
+
+Copie `.env.example` para `.env`. Variáveis marcadas com ⚠️ são obrigatórias para o funcionamento básico.
+
+### Autenticação e Segurança
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `GOOGLE_CLIENT_ID` | ⚠️ | OAuth 2.0 Client ID (console.cloud.google.com → APIs & Credentials) |
+| `SECRET_KEY` | ⚠️ | Chave para assinar JWTs. Gere com: `openssl rand -hex 32` |
+| `ALGORITHM` | — | Algoritmo JWT. Padrão: `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | — | Validade do token. Padrão: `10080` (7 dias) |
+
+### OpenAI
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `OPENAI_API_KEY` | — | Chave da API OpenAI. Usada como fallback quando `LLM_FALLBACK_PROVIDER=openai`. |
+| `MODEL_NAME` | — | Modelo OpenAI de fallback. Padrão histórico: `gpt-3.5-turbo`. |
+
+### Modelo Local / Gemma
+
+| Variável | Descrição |
+|----------|-----------|
+| `LLM_PROVIDER` | Provider primário. Padrão atual recomendado: `local`. |
+| `LLM_FALLBACK_PROVIDER` | Provider secundário. Padrão recomendado: `openai`. |
+| `ENABLE_LOCAL_LLM` | Habilita runtime local via `llama-cpp-python`. |
+| `LOCAL_MODEL_DIR` | Diretório interno para GGUF. Padrão: `/models/local-llm`. |
+| `LOCAL_MODEL_REPO_ID` | Repositório Hugging Face usado se o modelo precisar ser baixado. |
+| `LOCAL_MODEL_INCLUDE` | Arquivo GGUF esperado. Ex.: `gemma-4-E4B-it-Q4_K_M.gguf`. |
+| `LOCAL_LLM_MODEL` | Nome lógico exposto em métricas/respostas. Ex.: `gemma4:e4b`. |
+| `LOCAL_LLM_N_CTX` | Context window do modelo local. |
+| `LOCAL_LLM_N_GPU_LAYERS` | Camadas em GPU para `llama.cpp`. |
+| `LOCAL_LLM_N_THREADS` | Threads de CPU para o runtime local. |
+
+### MongoDB
+
+| Variável | Descrição |
+|----------|-----------|
+| `MONGO_INITDB_ROOT_USERNAME` | Usuário admin do MongoDB. Padrão: `admin` |
+| `MONGO_INITDB_ROOT_PASSWORD` | Senha do admin. Padrão: `admin123` (mude em produção) |
+| `MONGODB_URL` | URL completa. Padrão: `mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin` |
+| `DATABASE_NAME` | Nome do banco. Padrão: `empatia` |
+
+### Google Cloud (Síntese de Voz)
+
+| Variável | Descrição |
+|----------|-----------|
+| `CREDENTIALS_JSON` | Conteúdo do JSON da Service Account GCP (para TTS) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Caminho para o arquivo JSON dentro do container |
+
+### Frontend
+
+| Variável | Descrição |
+|----------|-----------|
+| `VITE_API_URL` | URL da API para o browser. Dev: `http://localhost:8000`. Prod: `https://api.empat-ia.io` |
+| `VITE_GOOGLE_CLIENT_ID` | Client ID no bundle do Vite. **Definido automaticamente a partir de `GOOGLE_CLIENT_ID`** |
+| `VITE_GOOGLE_REDIRECT_URI` | URI de redirecionamento OAuth. Dev: `http://localhost:7860` |
+| `WEB_UI_PORT` | Porta exposta do Web UI. Padrão: `7860` |
+| `ADMIN_PANEL_PORT` | Porta exposta do Admin. Padrão: `3001` |
+
+### Gateway
+
+| Variável | Descrição |
+|----------|-----------|
+| `GATEWAY_PORT` | Porta do gateway. Padrão: `8000` |
+| `ALLOWED_ORIGINS` | CORS. Ex.: `https://app.empat-ia.io,https://admin.empat-ia.io` |
+| `LOG_LEVEL` | Nível de log. Padrão: `INFO` |
+| `DEBUG` | Modo debug. Padrão: `false` |
+| `AI_SERVICE_URL` | URL interna do AI service. Padrão: `http://ai-service:8001` |
+| `VOICE_SERVICE_URL` | URL interna do Voice service. Padrão: `http://voice-service:8004` |
+| `EMOTION_SERVICE_URL` | URL interna do Emotion service. Padrão: `http://emotion-service:8003` |
+| `KNOWLEDGE_SERVICE_URL` | URL interna do Knowledge service. Padrão: `http://knowledge-service:8005` |
+
+### Knowledge Service
+
+| Variável | Descrição |
+|----------|-----------|
+| `KNOWLEDGE_SERVICE_PORT` | Porta do Knowledge Service. Padrão: `8005`. |
+| `KNOWLEDGE_STORAGE_BACKEND` | Backend atual de metadados. Fundação inicial: `in-memory`. |
+| `KNOWLEDGE_STORAGE_DIR` | Diretório para artefatos locais de conhecimento. Padrão: `/knowledge_data`. |
+| `KNOWLEDGE_LEXICAL_INDEX` | Estratégia de índice lexical. Fundação inicial: `sqlite-fts5-planned`. |
+| `QDRANT_URL` | URL interna do Qdrant para o futuro vector store. Padrão: `http://qdrant:6333`. |
+| `QDRANT_PORT` | Porta local do Qdrant em desenvolvimento. Padrão: `6333`. |
+
+### DID (Avatares — opcional)
+
+| Variável | Descrição |
+|----------|-----------|
+| `DID_API_USERNAME` | Usuário DID.ai |
+| `DID_API_PASSWORD` | Senha DID.ai |
+
+---
+
+## 3. API Reference — Gateway
+
+Base URL: `http://localhost:8000` (dev) · `https://api.empat-ia.io` (prod)
+
+Documentação interativa: `GET /docs` (Swagger) · `GET /redoc`
+
+### Autenticação — `/api/auth`
+
+```
+GET  /api/auth/google/status
+     → { "available": true|false }
+     Verifica se GOOGLE_CLIENT_ID está configurado no servidor.
+     O frontend chama isso antes de carregar o SDK do Google.
+
+POST /api/auth/google
+     Body: { "credential": "<id_token_jwt>" }
+     → { "access_token": "...", "token_type": "bearer", "user": { ... } }
+     Valida o ID Token com as chaves públicas do Google,
+     faz upsert do usuário no MongoDB e retorna JWT de sessão.
+```
+
+O JWT retornado deve ser enviado em todas as requisições subsequentes:
+```
+Authorization: Bearer <access_token>
+```
+
+### Chat — `/api/chat`
+
+```
+POST /api/chat/send
+     Body: { "message": "...", "session_id": "...", "session_objective": {...}, "is_voice_mode": false }
+     → { "response": "...", "audio_url": "...", "session_id": "..." }
+
+POST /api/chat/send-stream
+     Body: { "message": "...", "session_id": "...", "session_objective": {...}, "is_voice_mode": true }
+     Content-Type: text/event-stream
+     Eventos: meta, text_delta, audio_chunk, audio_url, metrics, done, error
+     Usado pelo modo de voz para iniciar reprodução antes do fim da resposta completa.
+
+GET  /api/chat/history/{session_id}
+     → { "history": [{ "type": "user|ai", "content": "...", "timestamp": "..." }] }
+
+GET  /api/chat/initial-message/{session_id}
+     → { "success": true, "data": { "message": {...}, "is_initial_message": true } }
+     Gera a primeira mensagem de uma sessão (sem input do usuário).
+
+POST /api/chat/finalize/{session_id}
+     Finaliza a sessão: gera contexto estruturado via AI Service e cria próxima sessão.
+     → { "success": true, "data": { "context": {...}, "session_completed": true } }
+
+GET  /api/chat/context/{session_id}
+     → { "success": true, "data": { "context": {...} } }
+```
+
+### Usuário — `/api/user`
+
+```
+POST /api/user/create              Body: { "username", "email", "preferences" }
+GET  /api/user/{username}
+PUT  /api/user/{username}/preferences
+POST /api/user/{username}/login    Registra login e garante session-1 automaticamente
+GET  /api/user/{username}/stats
+GET  /api/user/status/{session_id}
+POST /api/user/preferences         Body: { "session_id", "username", "selected_voice", "voice_enabled" }
+```
+
+### Sessões Terapêuticas — `/api/user/{username}/sessions`
+
+```
+GET  /api/user/{username}/sessions                         → lista sessões
+GET  /api/user/{username}/sessions/{session_id}            → detalhe
+POST /api/user/{username}/sessions/{session_id}/start      → inicia
+POST /api/user/{username}/sessions/{session_id}/complete   → conclui (body: { "progress": 100 })
+POST /api/user/{username}/sessions/{session_id}/unlock     → desbloqueia
+GET  /api/user/{username}/progress                         → progresso geral
+GET  /api/user/{username}/sessions/info                    → estatísticas detalhadas
+```
+
+`GET /api/user/{username}/sessions`, `GET /api/user/{username}/sessions/session-1`, `GET /api/user/{username}/progress`, a sequência e o cálculo de permissão para próxima sessão garantem a existência da `session-1` antes de consultar o banco. A criação é idempotente e preserva filtros de status.
+
+### Emoções — `/api/emotions`
+
+```
+GET  /api/emotions/{username}?session_id=...&limit=100&hours_back=24
+GET  /api/emotions/{username}/summary?session_id=...&hours_back=24
+GET  /api/emotions/{username}/timeline?hours_back=24&interval_minutes=5
+POST /api/emotion/analyze-realtime   Body: { "image": "<base64>", "username": "...", "session_id": "..." }
+```
+
+### Voz — `/api/voice`
+
+```
+POST /api/voice/speak        Body: { "text": "...", "voice": "pt-BR-Neural2-B" }
+POST /api/voice/synthesize   Alias de /speak
+POST /api/voice/synthesize-stream
+     Body: { "text": "...", "voice_name": "pt-BR-Neural2-B" }
+     → áudio PCM/LINEAR16 em streaming quando GCP Chirp 3 HD estiver disponível
+GET  /api/voice/audio/{filename}   Serve o arquivo MP3/WAV gerado
+GET  /api/voice/health
+GET  /api/voice/models
+```
+
+### Prompts — `/api/prompts`
+
+```
+GET    /api/prompts?prompt_type=...&active_only=true
+POST   /api/prompts              Body: { "key", "name", "content", "prompt_type", ... }
+GET    /api/prompts/{key}
+GET    /api/prompts/active/{key}
+PUT    /api/prompts/{key}
+DELETE /api/prompts/{key}        Soft delete
+GET    /api/prompts/type/{type}
+POST   /api/prompts/initialize   Cria prompts padrão do sistema
+GET    /api/prompts/stats
+POST   /api/prompts/render/{key} Body: { "variavel": "valor" } → renderiza com substituição
+```
+
+### Admin — `/api/admin`
+
+```
+GET /api/admin/stats
+GET /api/admin/conversations
+GET /api/admin/conversations/{session_id}
+GET /api/admin/emotions/analysis
+GET /api/admin/emotions/realtime-stats
+GET /api/admin/activity/realtime
+CRUD /api/admin/therapeutic-sessions
+CRUD /api/admin/users
+GET /api/admin/session-contexts
+GET /api/admin/user-sessions
+```
+
+---
+
+## 4. Schema do Banco de Dados
+
+### Coleções principais
+
+#### `users`
+```json
+{
+  "username": "email@exemplo.com",
+  "email": "email@exemplo.com",
+  "google_id": "sub do Google",
+  "name": "Nome Completo",
+  "full_name": "Nome Completo informado pelo usuário",
+  "display_name": "Nome usado na interface e nos prompts",
+  "picture": "https://...",
+  "email_verified": true,
+  "auth_method": "google",
+  "preferences": {
+    "selected_voice": "pt-BR-Neural2-B",
+    "voice_enabled": true,
+    "full_name": "Nome Completo informado pelo usuário",
+    "display_name": "Nome usado na interface e nos prompts",
+    "theme": "dark",
+    "language": "pt-BR"
+  },
+  "user_profile": { ... },
+  "profile_completed": false,
+  "created_at": "ISO8601",
+  "last_login": "ISO8601",
+  "is_active": true,
+  "login_count": 1,
+  "session_count": 0
+}
+```
+
+#### `conversations`
+```json
+{
+  "session_id": "usuario@email.com_session-2",
+  "username": "usuario@email.com",
+  "message_count": 15,
+  "session_context_ref": "ObjectId → session_contexts",
+  "session_finalized": false,
+  "user_preferences": { "username": "...", "selected_voice": "...", "completed_welcome": true },
+  "registration_data": { ... },
+  "registration_step": 5,
+  "is_registration_complete": true,
+  "created_at": "ISO8601",
+  "updated_at": "ISO8601"
+}
+```
+
+#### `session_contexts` _(fonte única de contextos)_
+```json
+{
+  "session_id": "usuario@email.com_session-2",
+  "username": "usuario@email.com",
+  "context": {
+    "summary": "...",
+    "main_themes": ["ansiedade", "trabalho"],
+    "key_insights": ["..."],
+    "emotional_state": { "dominant": "neutro", "progression": "melhora" },
+    "user_progress": "...",
+    "next_session_focus": "..."
+  },
+  "conversation_text": "texto completo da conversa",
+  "emotions_data": [ { "emotion": "alegria", "confidence": 0.87, "timestamp": "..." } ],
+  "source": "ai_service | gateway_fallback",
+  "version": 1,
+  "is_active": true,
+  "created_at": "ISO8601",
+  "updated_at": "ISO8601"
+}
+```
+
+#### `user_therapeutic_sessions`
+```json
+{
+  "username": "usuario@email.com",
+  "session_id": "session-1",
+  "template_session_id": "session-1",
+  "title": "Cadastro e Apresentação",
+  "subtitle": "...",
+  "objective": "...",
+  "initial_prompt": "...",
+  "focus_areas": ["autoconhecimento", "relacionamentos"],
+  "status": "unlocked | in_progress | completed | locked",
+  "progress": 100,
+  "is_registration_session": true,
+  "personalized": false,
+  "generation_method": "registration_seed | ai_service | template",
+  "based_on_session": "session-1 (opcional em sessões dinâmicas)",
+  "connection_to_previous": "... (opcional em sessões dinâmicas)",
+  "created_at": "ISO8601",
+  "updated_at": "ISO8601"
+}
+```
+
+#### `user_emotions`
+```json
+{
+  "username": "usuario@email.com",
+  "session_id": "usuario@email.com_session-2",
+  "dominant_emotion": "alegria",
+  "emotions": { "alegria": 0.87, "neutro": 0.10, "surpresa": 0.03 },
+  "confidence": 0.87,
+  "face_detected": true,
+  "source": "webcam | text_analysis",
+  "timestamp": "ISO8601"
+}
+```
+
+#### `prompts`
+```json
+{
+  "key": "next_session_generation",
+  "name": "Geração de Próxima Sessão",
+  "description": "...",
+  "content": "Você é um terapeuta... {context} {user_profile}",
+  "prompt_type": "session_generation | system | fallback | analysis",
+  "variables": ["context", "user_profile"],
+  "is_active": true,
+  "version": 2,
+  "created_at": "ISO8601",
+  "updated_at": "ISO8601"
+}
+```
+
+---
+
+## 5. Autenticação Google + JWT
+
+**Fluxo:**
+
+```
+1. Frontend carrega Google Identity Services SDK
+2. Usuário clica "Fazer Login com o Google" → popup Google
+3. Google retorna ID Token (JWT assinado pelo Google)
+4. Frontend envia: POST /api/auth/google { "credential": "<id_token>" }
+5. Gateway verifica assinatura com chaves públicas Google (google-auth lib)
+6. Gateway faz upsert do usuário no MongoDB (por google_id ou email)
+7. Gateway emite JWT próprio assinado com SECRET_KEY
+8. Frontend armazena JWT em localStorage ("empatia_access_token")
+9. Todas as requisições seguintes incluem: Authorization: Bearer <jwt>
+```
+
+**Por que não usar GOOGLE_CLIENT_SECRET?**
+O fluxo usa Google Identity Services (GIS), não o fluxo de autorização OAuth clássico. O servidor verifica o ID Token diretamente com as chaves públicas do Google — sem client secret.
+
+**Configuração no Google Cloud Console:**
+- APIs & Services → Credentials → OAuth 2.0 Client ID
+- Authorized JavaScript origins: `http://localhost:7860`, `https://app.empat-ia.io`
+- Authorized redirect URIs: não necessário para GIS popup
+
+---
+
+## 6. Sistema de Análise Emocional
+
+### Pipeline de detecção
+
+```
+Webcam frame (base64)
+    ↓
+POST /api/emotion/analyze-realtime
+    ↓
+Gateway → Emotion Service (porta 8003)
+    ↓
+DeepFace.analyze(frame, actions=["emotion"])   ← detecção facial
+    +
+MediaPipe FaceMesh                              ← landmarks
+    ↓
+{ dominant_emotion, emotions: {alegria: 0.87, ...}, confidence, face_detected }
+    ↓
+Gateway salva em user_emotions (async, não bloqueia resposta)
+    ↓
+Frontend exibe EmotionBadge na interface
+```
+
+### Dados disponíveis
+
+- **Por sessão**: `GET /api/emotions/{username}?session_id=...`
+- **Resumo agregado**: `GET /api/emotions/{username}/summary`
+- **Timeline temporal**: `GET /api/emotions/{username}/timeline?interval_minutes=5`
+- **Analytics admin**: `GET /api/admin/emotions/analysis` (todos os usuários)
+
+### Integração com IA
+
+O contexto enviado ao AI Service inclui os dados emocionais da sessão:
+```python
+# em chat_service.py
+context["emotions_summary"] = await get_emotion_summary(username, session_id)
+```
+
+---
+
+## 7. Síntese de Voz
+
+**Tecnologia:** Google Cloud Text-to-Speech (Neural2 e WaveNet)
+
+### Vozes disponíveis (português brasileiro)
+
+| ID | Tipo | Descrição |
+|----|------|-----------|
+| `pt-BR-Neural2-B` | Neural2 | Masculina — tom confiante (padrão recomendado) |
+| `pt-BR-Neural2-A` | Neural2 | Feminina — tom natural |
+| `pt-BR-Wavenet-A` | WaveNet | Feminina profissional |
+| `pt-BR-Wavenet-B` | WaveNet | Masculina amigável |
+| `pt-BR-Wavenet-C` | WaveNet | Feminina calorosa |
+
+### Fluxo de geração
+
+```
+POST /api/voice/speak { "text": "...", "voice": "pt-BR-Neural2-B" }
+    ↓
+Gateway → Voice Service
+    ↓
+Google Cloud TTS API
+    ↓
+Arquivo MP3 salvo em /data/tts_output/output_{hash}.mp3
+    ↓
+Voice Service retorna: { "audio_url": "/api/v1/audio/output_{hash}.mp3" }
+    ↓
+Gateway reescreve para: { "audio_url": "/api/voice/audio/output_{hash}.mp3" }
+    ↓
+Frontend faz GET /api/voice/audio/{filename} e reproduz
+```
+
+**Por que reescrever a URL?** O browser não tem acesso direto à porta 8004 do Voice Service — o gateway atua como proxy para o arquivo de áudio.
+
+### Fluxo de baixa latência para modo de voz
+
+```
+browser → POST /api/chat/send-stream
+    ↓
+Gateway emite SSE meta + text_delta
+    ↓
+AI Service → /openai/chat/stream com stream=True no OpenAI ou llama.cpp local
+    ↓
+Gateway agrega deltas em frases curtas
+    ↓
+Voice Service → /api/v1/synthesize-stream com GCP Chirp 3 HD
+    ↓
+Gateway emite audio_chunk PCM base64
+    ↓
+Frontend enfileira PCM em AudioContext
+```
+
+Este fluxo foi priorizado antes do Pipeline RAG/Admin. O objetivo desta etapa foi estabilizar a sensação conversacional: texto parcial, áudio parcial e fallback seguro, usando o modelo local como caminho principal.
+
+Eventos SSE principais:
+
+| Evento | Uso |
+|---|---|
+| `meta` | `trace_id`, ids de conversa e mensagem do usuário. |
+| `text_delta` | Trechos incrementais da resposta para atualizar a bolha de chat. |
+| `audio_chunk` | PCM base64 com `sequence`, `sample_rate_hz` e `encoding`. |
+| `audio_url` | Fallback MP3/WAV. Pode ser segmentado por frase (`segment: true`) quando streaming TTS falha, ou final quando nenhum trecho foi gerado. |
+| `metrics` | Baseline de latência por etapa: primeiro texto, primeiro áudio, total gateway/AI. |
+| `done` | Resultado final persistido no histórico. |
+| `error` | Erro recuperável ou fatal do stream. |
+
+O AI Service streama tokens tanto com OpenAI quanto com o modelo local GGUF via `llama-cpp-python` (`create_chat_completion(..., stream=True)`). O caminho validado atualmente usa Gemma local como provider primário:
+
+```json
+{
+  "provider": "local",
+  "model": "gemma4:e4b"
+}
+```
+
+Se o provider local não conseguir carregar, a cadeia de fallback continua tentando OpenAI ou o template seguro.
+
+O modo streaming de voz usa vozes GCP Chirp 3 HD, porque o streaming bidirecional do Google Cloud TTS é compatível com esse modelo. As preferências Neural2/WaveNet continuam válidas no fluxo batch e são mapeadas para uma voz Chirp 3 HD equivalente durante o streaming.
+
+Validação local de referência:
+
+| Etapa | Resultado observado |
+|---|---|
+| AI Service `/openai/chat/stream` | Gemma local retornou múltiplos `text_delta`; primeiro delta em ~993ms. |
+| Gateway `/api/chat/send-stream` | `text_delta` + `audio_chunk`; primeiro texto em ~1070ms e primeiro áudio em ~1742ms. |
+| Voice Service `/api/v1/synthesize-stream` | Chirp 3 HD respondeu `200 OK`, PCM 24kHz, `x-voice-used: pt-BR-Chirp3-HD-Orus`. |
+
+O alvo de primeiro áudio `< 800ms` continua sendo meta de otimização. A v1 validada garante streaming funcional e fallback sem aguardar a resposta completa.
+
+Chunking:
+
+- O Gateway faz flush imediato em pontuação de fim de frase.
+- Flush por tamanho usa `VOICE_CHUNK_MAX_CHARS`.
+- Flush por tempo usa `VOICE_CHUNK_MAX_WAIT_MS`, mas exige trecho mínimo falável por `VOICE_CHUNK_MIN_TIMED_CHARS` e `VOICE_CHUNK_MIN_TIMED_WORDS`.
+- Essa trava evita o fallback batch falando uma palavra por vez quando o TTS streaming está indisponível ou lento.
+
+Personalização de nome em voz:
+
+- O AI Service pode receber `display_name`/`full_name`, mas o prompt instrui que o tratamento use somente o primeiro nome.
+- Exemplo: `Toni Neto` deve ser tratado como `Toni`.
+- E-mails, usernames e ids técnicos não devem ser usados como forma de tratamento.
+
+Fallbacks:
+
+- Se o stream de áudio falhar, o gateway mantém o texto e tenta gerar áudio batch.
+- Quando o stream de áudio falha em um trecho, o gateway sintetiza aquele trecho imediatamente e envia `audio_url` segmentado; o frontend enfileira esses arquivos para não esperar a resposta inteira.
+- Se o GCP TTS falhar e `TTS_LOCAL_PROVIDER=piper` estiver configurado com `PIPER_MODEL_PATH`, o Voice Service tenta gerar WAV local com Piper.
+- Cache Redis de TTS só é usado para frases genéricas em `TTS_CACHE_ALLOWLIST`; conteúdo pessoal de conversa não entra em cache.
+
+Limitações atuais:
+
+- RAG/Admin ainda não foi implementado nesta etapa; a recuperação de conhecimento aprovado continua pendente na Prioridade 6.
+- Prompt Control possui fallback seguro para `voice_short_response`, mas versionamento/auditoria completos seguem na Prioridade 5.
+- STT continua no browser via Web Speech API nesta etapa.
+
+---
+
+## 8. Sessões Terapêuticas e Contexto
+
+### Ciclo de vida de uma sessão
+
+```
+1. POST /api/user/{username}/login
+   → cria session-1 (template "Cadastro e Apresentação")
+   → desbloqueia session-1
+
+   Observação: as leituras da jornada (`GET /api/user/{username}/sessions`, detalhe da `session-1`, progresso e sequência) também garantem essa sessão de forma idempotente, para cobrir usuários existentes ou fluxos que não chamaram login antes da Home.
+
+2. Usuário completa session-1 (onboarding com perguntas)
+   → perfil estruturado salvo em users.user_profile
+
+3. POST /api/chat/finalize/{session_id}
+   → AI Service gera contexto estruturado (summary, temas, insights, estado emocional)
+   → salvo em session_contexts
+   → AI Service gera session-2 personalizada
+   → session-2 desbloqueada
+
+4. Sessões 2+ repetem o ciclo com contexto acumulado
+```
+
+### Geração automática de sessões
+
+O AI Service recebe:
+- Contexto da sessão anterior (`session_contexts`)
+- Perfil do usuário (`users.user_profile`)
+- Dados emocionais (`user_emotions`)
+
+E gera:
+```json
+{
+  "title": "Aprofundando nosso conhecimento",
+  "subtitle": "...",
+  "objective": "...",
+  "initial_prompt": "Olá {username}! Na nossa última conversa...",
+  "focus_areas": ["autoconhecimento", "relacionamentos"],
+  "connection_to_previous": "..."
+}
+```
+
+### Formato de session_id
+
+```
+{username}_{session_id_original}
+Ex: toni.rc.neto@gmail.com_session-2
+```
+
+O gateway extrai `username` e `session_id` a partir do separador `_session-`.
+
+---
+
+## 9. Gerenciamento de Prompts
+
+O sistema de prompts permite que o terapeuta configure o comportamento da IA via Admin Panel sem tocar no código.
+
+### Tipos de prompts
+
+| Tipo | Chave padrão | Uso |
+|------|-------------|-----|
+| `system` | `system_rogers` | Prompt principal do terapeuta (abordagem Rogers, tom, limites) |
+| `session_generation` | `next_session_generation` | Instrução para gerar próximas sessões |
+| `session_generation` | `session_context_analysis` | Instrução para gerar contexto estruturado |
+| `fallback` | `fallback_default` | Resposta quando OpenAI não está disponível |
+| `fallback` | `fallback_goodbye` | Resposta automática para despedidas |
+| `fallback` | `fallback_anger` | Resposta automática para raiva |
+| `fallback` | `fallback_gratitude` | Resposta automática para gratidão |
+
+### Variáveis dinâmicas
+
+Os prompts suportam substituição de variáveis com `{variavel}`:
+```
+"Olá {username}! Na nossa última sessão, conversamos sobre {themes}..."
+```
+
+Renderização: `POST /api/prompts/render/{key}` com `{ "username": "Toni", "themes": "ansiedade" }`
+
+### Sistema de fallback
+
+Se o prompt ativo não for encontrado no banco, o sistema usa o prompt hardcoded em `prompt_service.py`. Isso garante que a plataforma nunca fique sem resposta.
+
+---
+
+## 10. Infraestrutura e Deploy
+
+### Kubernetes (GKE Autopilot)
+
+Todos os manifests em `infrastructure/k8s/`:
+
+```
+namespace.yaml          → namespace "empatia"
+configmap.yaml          → variáveis de configuração (inclui GOOGLE_CLIENT_ID)
+serviceaccount.yaml     → Workload Identity para acesso ao GCP
+gateway/                → deployment + service + HPA
+ai-service/
+voice-service/
+emotion-service/
+avatar-service/
+web-ui/
+admin-panel/
+mongodb/                → StatefulSet + PVC
+redis/
+ingress.yaml            → GCE Ingress + ManagedCertificate (HTTPS)
+```
+
+### ConfigMap vs Secrets
+
+| Tipo | O que contém |
+|------|-------------|
+| **ConfigMap** `empatia-config` | `GOOGLE_CLIENT_ID`, URLs de serviços, `ALLOWED_ORIGINS`, `DATABASE_NAME`, `LOG_LEVEL` |
+| **K8s Secret** `empatia-secrets` | `OPENAI_API_KEY`, `MONGO_ROOT_PASSWORD`, `REDIS_PASSWORD`, `JWT_SECRET_KEY`, `DID_API_*` |
+
+Os secrets são sincronizados do **GCP Secret Manager** no pipeline de deploy.
+
+### Pipeline CI/CD (`.github/workflows/deploy.yml`)
+
+Trigger: push para `main` ou `workflow_dispatch`
+
+```
+1. Build & Push → imagens Docker para Artifact Registry (us-central1)
+   - Build args: VITE_GOOGLE_CLIENT_ID, VITE_API_URL, VITE_VOICE_URL
+
+2. Deploy → GKE Autopilot
+   - Sincroniza K8s Secret do GCP Secret Manager
+   - Aplica ConfigMap, deployments, ingress
+   - Aguarda rollout de todos os deployments
+```
+
+### Terraform (`infrastructure/terraform/`)
+
+Provisiona:
+- VPC + subnets
+- GKE Autopilot cluster
+- Artifact Registry
+- GCP Secret Manager (secrets)
+- Cloud DNS (zona `empat-ia.io`, registos A)
+- IAM + Workload Identity
+
+```bash
+cd infrastructure/terraform
+terraform init
+terraform plan -var-file="terraform.tfvars"
+terraform apply
+```
+
+### Domínios e Ingress
+
+```yaml
+# ingress.yaml
+app.empat-ia.io    → web-ui:3000
+admin.empat-ia.io  → admin-panel:3000
+api.empat-ia.io    → gateway:8000
+api.empat-ia.io/voice-service/* → voice-service:8004
+```
+
+HTTPS provisionado via **Google Managed Certificate** (auto-renovação).
+
+---
+
+## 11. Desenvolvimento Local
+
+### Subir stack completa
+
+```bash
+docker compose up -d
+```
+
+### Subir com dev overrides (hot reload + Mongo Express)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
+### Perfis opcionais
+
+```bash
+# OpenFace (análise facial avançada)
+docker compose --profile tools up -d
+
+# PostgreSQL (futuro)
+docker compose --profile database up -d
+```
+
+### Recompilar imagem específica
+
+```bash
+docker compose build gateway-service --no-cache
+docker compose up -d gateway-service
+```
+
+### Acessar MongoDB diretamente (dev)
+
+```bash
+# Mongo Express: http://localhost:8081
+# Credenciais: admin / admin123
+
+# Ou via mongosh:
+docker exec -it empatia-mongodb mongosh -u admin -p admin123 --authenticationDatabase admin
+```
+
+### Verificar saúde dos serviços
+
+```bash
+curl http://localhost:8000/health/all
+```
+
+### Variáveis de build do frontend
+
+As variáveis `VITE_*` são **embutidas no bundle** em tempo de build — não em runtime. Para mudá-las, é necessário recompilar:
+
+```bash
+docker compose build web-ui
+```
+
+No Docker Compose, `VITE_GOOGLE_CLIENT_ID` é passado como build arg a partir de `GOOGLE_CLIENT_ID` (definido no `.env`).
+
+---
+
+*Última atualização: Maio 2026*

@@ -1,11 +1,70 @@
 import axios from 'axios';
 
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api';
+
 const apiClient = axios.create({
-  baseURL: '/api', // O gateway irá redirecionar
+  baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+/** Extrai mensagem legível de erros FastAPI/Axios (detail string ou lista de validação). */
+export function formatApiError(error, fallback = 'Ocorreu um erro. Tente novamente.') {
+  const d = error.response?.data?.detail;
+  if (Array.isArray(d)) {
+    return d
+      .map((item) => (typeof item === 'string' ? item : item?.msg || JSON.stringify(item)))
+      .join(' ');
+  }
+  if (typeof d === 'string' && d.trim()) return d;
+  if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+    return 'Não foi possível contactar o servidor. Confirme que a API está a correr e VITE_API_URL.';
+  }
+  if (error.message) return error.message;
+  return fallback;
+}
+
+// Anexa o JWT de sessão em todas as requisições, se disponível
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('empatia_access_token');
+  if (token) {
+    config.headers['Authorization'] = `Bearer ${token}`;
+  }
+  return config;
+});
+
+/**
+ * Verifica se a autenticação Google está disponível no servidor.
+ * @returns {Promise<boolean>}
+ */
+export const checkGoogleAuthStatus = async () => {
+  try {
+    const response = await apiClient.get('/auth/google/status');
+    return response.data?.available === true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Autentica com Google enviando o ID Token ao backend para verificação server-side.
+ * @param {string} credential - ID Token JWT emitido pelo Google Identity Services.
+ * @returns {Promise<{access_token: string, user: object}>}
+ */
+export const loginWithGoogle = async (credential) => {
+  try {
+    const response = await apiClient.post('/auth/google', { credential });
+    const { access_token, user } = response.data;
+    localStorage.setItem('empatia_access_token', access_token);
+    return { access_token, user };
+  } catch (error) {
+    console.error('Erro na autenticação Google:', error.response?.data || error.message);
+    throw error;
+  }
+};
 
 /**
  * Envia uma mensagem para o chat e recebe a resposta da IA.
@@ -22,7 +81,7 @@ export const sendMessage = async (message, sessionId, sessionObjective = null, i
       session_id: sessionId,
       is_voice_mode: isVoiceMode, // ✅ NOVO: Indicador de modo de voz
     };
-    
+
     // Adicionar objetivo da sessão se fornecido
     if (sessionObjective) {
       payload.session_objective = {
@@ -32,18 +91,18 @@ export const sendMessage = async (message, sessionId, sessionObjective = null, i
         initial_prompt: sessionObjective.initial_prompt
       };
     }
-    
+
     console.log(`🚀 API - Iniciando envio de mensagem`);
     console.log(`📋 API - SessionId: ${sessionId}`);
     console.log(`💬 API - Mensagem: "${message}"`);
     console.log(`🎤 API - VoiceMode: ${isVoiceMode ? 'ATIVO' : 'INATIVO'}`);
     console.log(`📦 API - Payload completo:`, payload);
-    
+
     const response = await apiClient.post('/chat/send', payload);
-    
+
     console.log(`✅ API - Resposta recebida:`, response.data);
     console.log(`🔍 API - Status: ${response.status}`);
-    
+
     return response.data;
   } catch (error) {
     console.error('❌ API - Erro completo:', error);
@@ -51,6 +110,92 @@ export const sendMessage = async (message, sessionId, sessionObjective = null, i
     console.error('❌ API - Status:', error.response?.status);
     console.error('❌ API - Headers:', error.response?.headers);
     throw error;
+  }
+};
+
+export const sendMessageStream = async (message, sessionId, sessionObjective = null, handlers = {}) => {
+  const payload = {
+    message,
+    session_id: sessionId,
+    is_voice_mode: true,
+  };
+
+  if (sessionObjective) {
+    payload.session_objective = {
+      title: sessionObjective.title,
+      subtitle: sessionObjective.subtitle,
+      objective: sessionObjective.objective,
+      initial_prompt: sessionObjective.initial_prompt,
+    };
+  }
+
+  if (handlers.clientMetrics) {
+    payload.client_metrics = handlers.clientMetrics;
+  }
+
+  const token = localStorage.getItem('empatia_access_token');
+  const response = await fetch(`${API_BASE}/chat/send-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream indisponível: HTTP ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  const dispatchFrame = (frame) => {
+    const lines = frame.split('\n');
+    let event = 'message';
+    const dataLines = [];
+
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        event = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trim());
+      }
+    }
+
+    if (!dataLines.length) return;
+
+    let data = {};
+    try {
+      data = JSON.parse(dataLines.join('\n'));
+    } catch (error) {
+      console.warn('Evento SSE inválido:', frame, error);
+      return;
+    }
+
+    handlers.onEvent?.(event, data);
+    if (event === 'meta') handlers.onMeta?.(data);
+    if (event === 'text_delta') handlers.onTextDelta?.(data);
+    if (event === 'audio_chunk') handlers.onAudioChunk?.(data);
+    if (event === 'audio_url') handlers.onAudioUrl?.(data);
+    if (event === 'metrics') handlers.onMetrics?.(data);
+    if (event === 'done') handlers.onDone?.(data);
+    if (event === 'error') handlers.onError?.(data);
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split('\n\n');
+    buffer = frames.pop() || '';
+    frames.forEach(dispatchFrame);
+  }
+
+  if (buffer.trim()) {
+    dispatchFrame(buffer);
   }
 };
 
@@ -80,6 +225,9 @@ export const getUserStatus = async (sessionId) => {
  */
 export const saveUserPreferences = async (sessionId, username, selectedVoice, voiceEnabled = true, userData = null) => {
   try {
+    const fullName = userData?.full_name || userData?.fullName || userData?.display_name || userData?.name || '';
+    const displayName = userData?.display_name || userData?.displayName || fullName || '';
+
     // Primeiro, criar ou atualizar o usuário no sistema
     if (userData && userData.authMethod === 'google') {
       // Para usuários Google, criar/atualizar no sistema de usuários
@@ -89,11 +237,13 @@ export const saveUserPreferences = async (sessionId, username, selectedVoice, vo
         preferences: {
           selected_voice: selectedVoice,
           voice_enabled: voiceEnabled,
+          full_name: fullName,
+          display_name: displayName,
           theme: 'dark',
           language: 'pt-BR'
         }
       };
-      
+
       try {
         await apiClient.post('/user/create', userPayload);
       } catch (error) {
@@ -101,7 +251,9 @@ export const saveUserPreferences = async (sessionId, username, selectedVoice, vo
           console.warn('Erro ao criar usuário:', error);
         }
       }
-      
+
+      await apiClient.put(`/user/${username}/preferences`, userPayload.preferences);
+
       // Registrar login
       await apiClient.post(`/user/${username}/login`);
     }
@@ -112,6 +264,8 @@ export const saveUserPreferences = async (sessionId, username, selectedVoice, vo
       username,
       selected_voice: selectedVoice,
       voice_enabled: voiceEnabled,
+      full_name: fullName,
+      display_name: displayName,
     };
 
     // Adicionar dados do usuário se disponíveis
@@ -143,6 +297,24 @@ export const getChatHistory = async (sessionId) => {
 };
 
 /**
+ * Inicia ou recupera a conversa de uma sessão do usuário.
+ * A rota do chat deve usar chat_id, não username_session-N.
+ */
+export const startChatConversation = async (username, therapeuticSessionId) => {
+  try {
+    const response = await apiClient.post('/chat/start', {
+      session_id: `${username}_${therapeuticSessionId}`,
+      username,
+      therapeutic_session_id: therapeuticSessionId,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao iniciar conversa:', error.response?.data || error.message);
+    throw error;
+  }
+};
+
+/**
  * Criar novo usuário.
  * @param {string} username - Nome do usuário.
  * @param {string} email - Email do usuário (opcional).
@@ -154,7 +326,7 @@ export const createUser = async (username, email = null, preferences = null) => 
     const payload = { username };
     if (email) payload.email = email;
     if (preferences) payload.preferences = preferences;
-    
+
     const response = await apiClient.post('/user/create', payload);
     return response.data;
   } catch (error) {
@@ -246,6 +418,22 @@ export const getActiveTherapeuticSessions = async (limit = 50) => {
  */
 export const getTherapeuticSession = async (sessionId) => {
   try {
+    const storedUserRaw = localStorage.getItem('empatia_user');
+    let storedUser = null;
+    if (storedUserRaw) {
+      try {
+        storedUser = JSON.parse(storedUserRaw);
+      } catch {
+        storedUser = null;
+      }
+    }
+    const storedUsername = storedUser?.username || storedUser?.email || storedUser?.name;
+
+    if (sessionId?.startsWith('session-') && storedUsername) {
+      const response = await apiClient.get(`/user/${storedUsername}/sessions/${sessionId}`);
+      return response.data;
+    }
+
     const response = await apiClient.get(`/sessions/${sessionId}`);
     return response.data;
   } catch (error) {
@@ -279,10 +467,10 @@ export const getUserSessions = async (username, status = null) => {
   try {
     const params = new URLSearchParams();
     if (status) params.append('status', status);
-    
+
     const url = `/user/${username}/sessions?${params}`;
     const response = await apiClient.get(url);
-    
+
     return response.data;
   } catch (error) {
     console.error('Erro ao buscar sessões do usuário:', error.response?.data || error.message);
@@ -295,7 +483,9 @@ export const getUserSession = async (username, sessionId) => {
     const response = await apiClient.get(`/user/${username}/sessions/${sessionId}`);
     return response.data;
   } catch (error) {
-    console.error('Erro ao buscar sessão do usuário:', error.response?.data || error.message);
+    if (error.response?.status !== 404) {
+      console.error('Erro ao buscar sessão do usuário:', error.response?.data || error.message);
+    }
     throw error;
   }
 };
@@ -342,7 +532,7 @@ export const getUserProgress = async (username) => {
 
 export const getInitialMessage = async (sessionId) => {
   try {
-    const response = await fetch(`/api/chat/initial-message/${sessionId}`, {
+    const response = await fetch(`${API_BASE}/chat/initial-message/${sessionId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -361,7 +551,23 @@ export const getInitialMessage = async (sessionId) => {
   }
 };
 
-// ===== APIs DE USUÁRIO ===== 
+/**
+ * Gerar título e subtítulo para uma sessão de chat usando IA.
+ * @param {string} chatId - ID do chat (chat_id ou session_id).
+ * @param {'initial'|'final'} mode - 'initial' usa a 1ª troca; 'final' usa toda a conversa.
+ * @returns {Promise<{success: boolean, title: string|null, subtitle: string|null}>}
+ */
+export const generateChatTitle = async (chatId, mode = 'initial') => {
+  try {
+    const response = await apiClient.post(`/chat/generate-title/${chatId}`, { mode });
+    return response.data;
+  } catch (error) {
+    console.warn('Erro ao gerar título do chat:', error?.response?.data || error.message);
+    return { success: false, title: null, subtitle: null };
+  }
+};
+
+// ===== APIs DE USUÁRIO =====
 
 export const getSessions = async () => {
   try {
@@ -371,4 +577,4 @@ export const getSessions = async () => {
     console.error('Erro ao buscar sessões:', error.response?.data || error.message);
     throw error;
   }
-}; 
+};

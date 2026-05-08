@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Query, File, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..services.gcp_tts_service import GCPTextToSpeechService
@@ -99,6 +99,47 @@ async def text_to_speech(request: SpeakRequest):
         logger.error(f"❌ Erro inesperado na síntese: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Erro interno do servidor durante a síntese.")
 
+@router.post("/synthesize-stream")
+async def synthesize_text_stream(request: SpeakRequest):
+    """
+    Sintetizar áudio em streaming usando Google Cloud Chirp 3 HD.
+    Retorna PCM/LINEAR16 em chunks para reprodução via AudioContext no frontend.
+    """
+    try:
+        if not voice_service.is_streaming_supported():
+            raise HTTPException(
+                status_code=503,
+                detail="Streaming TTS indisponível; use síntese batch como fallback.",
+            )
+
+        def audio_stream():
+            try:
+                yield from voice_service.stream_text_to_speech(
+                    text=request.text,
+                    voice_name=request.voice_name,
+                    language_code=request.language_code,
+                )
+            except Exception as exc:
+                logger.error("❌ Erro durante streaming TTS: %s", exc, exc_info=True)
+                raise
+
+        streaming_voice = voice_service.map_to_streaming_voice(request.voice_name)
+        return StreamingResponse(
+            audio_stream(),
+            media_type="audio/L16; rate=24000; channels=1",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Audio-Encoding": voice_service.streaming_audio_encoding,
+                "X-Audio-Sample-Rate": str(voice_service.streaming_sample_rate_hertz),
+                "X-Voice-Used": streaming_voice,
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Erro inesperado no streaming de síntese: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno do servidor durante streaming de síntese.")
+
 @router.get("/audio/{filename}")
 async def get_audio_file(filename: str):
     """
@@ -106,7 +147,7 @@ async def get_audio_file(filename: str):
     """
     try:
         # Validar nome do arquivo
-        if not filename.endswith('.mp3') or not filename.startswith('output_'):
+        if not (filename.endswith('.mp3') or filename.endswith('.wav')) or not filename.startswith('output_'):
             raise HTTPException(status_code=400, detail="Nome de arquivo inválido")
         
         # Construir caminho do arquivo
@@ -117,9 +158,10 @@ async def get_audio_file(filename: str):
             raise HTTPException(status_code=404, detail="Arquivo não encontrado")
         
         # Retornar arquivo
+        media_type = "audio/wav" if filename.endswith(".wav") else "audio/mpeg"
         return FileResponse(
             path=file_path,
-            media_type="audio/mpeg",
+            media_type=media_type,
             filename=filename
         )
         
