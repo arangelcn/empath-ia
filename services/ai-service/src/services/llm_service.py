@@ -61,8 +61,10 @@ def _load_prompt_file(filename: str) -> str:
         return ""
 
 _SYSTEM_ROGERS_PROMPT = _load_prompt_file("system_rogers.txt")
+_SYSTEM_ROGERS_LOCAL_PROMPT = _load_prompt_file("system_rogers_local.txt")
 _VOICE_SHORT_PROMPT   = _load_prompt_file("voice_short_response.txt")
 _SESSION_ANALYSIS_TMPL = _load_prompt_file("session_context_analysis.txt")
+_SESSION_ANALYSIS_LOCAL_TMPL = _load_prompt_file("session_context_analysis_local.txt")
 _NEXT_SESSION_TMPL     = _load_prompt_file("next_session_generation.txt")
 
 try:
@@ -119,6 +121,14 @@ def _extract_braced_json(text: str) -> Optional[str]:
         return None
     return text[start_idx:end_idx]
 
+
+def _render_prompt_template(template: str, **variables: Any) -> str:
+    """Render only known placeholders without treating JSON braces as format markers."""
+    rendered = template
+    for key, value in variables.items():
+        rendered = rendered.replace(f"{{{key}}}", str(value))
+    return rendered
+
 class LLMService:
     """
     Serviço LLM principal usando endpoint OpenAI-compatible.
@@ -131,19 +141,23 @@ class LLMService:
         self.fallback_provider = os.getenv("LLM_FALLBACK_PROVIDER", "none").lower()
         self.provider = self.primary_provider
         self.openai_base_url = self._resolve_openai_base_url()
+        self.local_openai_compatible = self._is_local_openai_compatible_base(self.openai_base_url)
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.effective_api_key = self._resolve_openai_api_key(self.api_key, self.openai_base_url)
         self.openai_model = os.getenv("MODEL_NAME", "gpt-4o")
         self.model = self.openai_model
-        self.max_tokens = int(os.getenv("MAX_TOKENS", "700"))
-        self.voice_max_tokens = int(os.getenv("VOICE_MAX_TOKENS", "180"))
+        self.max_tokens = int(os.getenv("MAX_TOKENS", "220" if self.local_openai_compatible else "700"))
+        self.voice_max_tokens = int(os.getenv("VOICE_MAX_TOKENS", "120" if self.local_openai_compatible else "180"))
         self.temperature = float(os.getenv("TEMPERATURE", "0.3"))
         self.request_timeout_seconds = float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "90"))
 
         # Configurações de contexto
-        self.max_history_messages = int(os.getenv("MAX_HISTORY_MESSAGES", "6"))
+        self.max_history_messages = int(os.getenv("MAX_HISTORY_MESSAGES", "4" if self.local_openai_compatible else "6"))
         self.max_context_tokens = int(os.getenv("MAX_CONTEXT_TOKENS", "2000"))
         self.enable_context_compression = os.getenv("ENABLE_CONTEXT_COMPRESSION", "true").lower() == "true"
+        self.local_profile_context_chars = int(os.getenv("LOCAL_PROFILE_CONTEXT_CHARS", "360"))
+        self.local_previous_context_chars = int(os.getenv("LOCAL_PREVIOUS_CONTEXT_CHARS", "420"))
+        self.local_session_analysis_chars = int(os.getenv("LOCAL_SESSION_ANALYSIS_CHARS", "3200"))
 
         # Cache em memória por usuário
         self.user_context_cache: Dict[str, Any] = {}
@@ -578,7 +592,7 @@ class LLMService:
             
             if system_prompt:
                 logger.info("✅ Prompt de sistema carregado do banco de dados")
-                return system_prompt
+                return self._normalize_system_prompt_for_runtime(system_prompt)
             else:
                 logger.warning("⚠️ Usando prompt de sistema fallback")
                 return self._get_fallback_system_prompt()
@@ -589,6 +603,14 @@ class LLMService:
     
     def _get_fallback_system_prompt(self) -> str:
         """Prompt de sistema Dr. Rogers — carregado do arquivo, com literal embutido de última instância."""
+        if self.local_openai_compatible:
+            if _SYSTEM_ROGERS_LOCAL_PROMPT:
+                return _SYSTEM_ROGERS_LOCAL_PROMPT
+            return (
+                "Você é o Dr. Rogers, um psicólogo virtual acolhedor em português brasileiro. "
+                "Use escuta ativa, valide emoções, responda com brevidade e faça no máximo uma pergunta aberta. "
+                "Evite listas, diagnósticos e respostas longas. Em risco imediato, priorize segurança e orientação urgente."
+            )
         if _SYSTEM_ROGERS_PROMPT:
             return _SYSTEM_ROGERS_PROMPT
         # literal mínimo de emergência caso o arquivo não exista
@@ -597,6 +619,44 @@ class LLMService:
             "Responda sempre em português brasileiro. "
             "Priorize escuta ativa, segurança do usuário e respeito à autonomia."
         )
+
+    def _normalize_system_prompt_for_runtime(self, system_prompt: str) -> str:
+        """Swap in a compact local prompt when using a local OpenAI-compatible runtime."""
+        if self.local_openai_compatible:
+            return _SYSTEM_ROGERS_LOCAL_PROMPT or system_prompt
+        return system_prompt
+
+    @staticmethod
+    def _compact_context_block(text: str, max_chars: int) -> str:
+        """Reduce verbose profile/session context for smaller local models."""
+        if not text:
+            return ""
+
+        filtered_lines: List[str] = []
+        skip_markers = (
+            "username:",
+            "identificador técnico",
+            "timestamp:",
+            "sessão:",
+            "session_id",
+        )
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            lower_line = line.lower()
+            if any(marker in lower_line for marker in skip_markers):
+                continue
+            filtered_lines.append(line)
+
+        compact = "\n".join(filtered_lines).strip()
+        if len(compact) <= max_chars:
+            return compact
+
+        truncated = compact[:max_chars].rsplit("\n", 1)[0].rstrip()
+        if not truncated:
+            truncated = compact[:max_chars].rstrip()
+        return f"{truncated}\n[contexto resumido]"
     
     async def _create_conversation_context(self, session_id: str, username: str, user_message: str, conversation_history: Optional[List[Dict]] = None, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None, previous_session_context: Optional[Dict[str, Any]] = None, is_voice_mode: bool = False) -> List[Dict]:
         """
@@ -1392,37 +1452,45 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         try:
             # Processar dados de emoções
             emotion_summary = self._process_emotions_data(emotions_data)
-            
-            # Buscar prompt para análise de contexto do banco de dados
-            context_prompt = await self.prompt_client.get_session_analysis_prompt({
-                "conversation_text": conversation_text,
-                "emotion_summary": emotion_summary
-            })
-            
-            if not context_prompt:
-                logger.warning("⚠️ Usando prompt de análise de sessão do arquivo local")
-                template = _SESSION_ANALYSIS_TMPL or (
-                    "Analise a conversa terapêutica abaixo e retorne um JSON com: "
-                    "summary, main_themes, emotional_state, key_insights, therapeutic_progress, "
-                    "next_session_recommendations, risk_indicators, session_quality.\n\n"
-                    "CONVERSA:\n{conversation_text}\n\nDADOS EMOCIONAIS:\n{emotion_summary}\n\n"
-                    "IMPORTANTE: Retorne apenas o JSON, sem texto adicional."
+
+            llm_result = None
+
+            if self.local_openai_compatible:
+                llm_result = await self._generate_session_context_local(
+                    conversation_text,
+                    emotion_summary,
                 )
-                emotion_summary_str = json.dumps(emotion_summary, ensure_ascii=False)
-                context_prompt = template.format(
-                    conversation_text=conversation_text,
-                    emotion_summary=emotion_summary_str,
+            else:
+                # Buscar prompt para análise de contexto do banco de dados
+                context_prompt = await self.prompt_client.get_session_analysis_prompt({
+                    "conversation_text": conversation_text,
+                    "emotion_summary": emotion_summary
+                })
+
+                if not context_prompt:
+                    logger.warning("⚠️ Usando prompt de análise de sessão do arquivo local")
+                    template = _SESSION_ANALYSIS_TMPL or (
+                        "Analise a conversa terapêutica abaixo e retorne um JSON com: "
+                        "summary, main_themes, emotional_state, key_insights, therapeutic_progress, "
+                        "next_session_recommendations, risk_indicators, session_quality.\n\n"
+                        "CONVERSA:\n{conversation_text}\n\nDADOS EMOCIONAIS:\n{emotion_summary}\n\n"
+                        "IMPORTANTE: Retorne apenas o JSON, sem texto adicional."
+                    )
+                    emotion_summary_str = json.dumps(emotion_summary, ensure_ascii=False)
+                    context_prompt = _render_prompt_template(
+                        template,
+                        conversation_text=conversation_text,
+                        emotion_summary=emotion_summary_str,
+                    )
+
+                llm_result = await self._call_llm(
+                    [
+                        {"role": "system", "content": "Você é um especialista em análise de conversas terapêuticas. Sempre responda em JSON válido."},
+                        {"role": "user", "content": context_prompt}
+                    ],
+                    max_tokens=1000,
+                    temperature=0.3,
                 )
-            
-            # Gerar contexto com cadeia de endpoints OpenAI-compatible
-            llm_result = await self._call_llm(
-                [
-                    {"role": "system", "content": "Você é um especialista em análise de conversas terapêuticas. Sempre responda em JSON válido."},
-                    {"role": "user", "content": context_prompt}
-                ],
-                max_tokens=1000,
-                temperature=0.3,
-            )
 
             if not llm_result:
                 raise RuntimeError("Nenhum provedor LLM disponível para gerar contexto da sessão")
@@ -1432,12 +1500,171 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             if not context_data:
                 raise ValueError("LLM retornou contexto de sessão em JSON inválido")
 
+            context_data = self._normalize_session_context_payload(context_data, emotion_summary)
             self._validate_session_context(context_data)
             return context_data
 
         except Exception as e:
             logger.error(f"❌ Erro ao gerar contexto da sessão: {e}")
             raise
+
+    async def _generate_session_context_local(
+        self,
+        conversation_text: str,
+        emotion_summary: Dict[str, Any],
+    ) -> Optional[Dict[str, str]]:
+        """Use a compact schema and shorter conversation window for local runtimes."""
+        compact_conversation = self._compact_session_conversation_for_local_analysis(
+            conversation_text,
+            max_chars=self.local_session_analysis_chars,
+        )
+        emotion_summary_str = json.dumps(emotion_summary, ensure_ascii=False)
+        prompt_template = _SESSION_ANALYSIS_LOCAL_TMPL or (
+            "Analise a conversa abaixo e retorne apenas JSON válido.\n"
+            "Resumo curto. Campos: summary, main_themes, emotional_state, key_insights, "
+            "next_session_recommendations, therapeutic_notes, future_sessions.\n\n"
+            "CONVERSA:\n{conversation_text}\n\nEMOCOES:\n{emotion_summary}"
+        )
+
+        prompt = _render_prompt_template(
+            prompt_template,
+            conversation_text=compact_conversation,
+            emotion_summary=emotion_summary_str,
+        )
+
+        llm_result = await self._call_llm(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Você resume sessões terapêuticas em JSON puro. "
+                        "Não use markdown, não use crases, não explique, não escreva raciocínio. "
+                        "Prefira completar um JSON curto e válido."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=700,
+            temperature=0.1,
+        )
+        if llm_result and _extract_json_payload(llm_result.get("content")):
+            return llm_result
+
+        logger.warning("⚠️ Retry local de contexto da sessão com prompt ainda mais compacto")
+        retry_prompt = (
+            "Retorne APENAS um JSON válido e curto, sem markdown.\n"
+            "Use no máximo 2 frases no summary e listas com no máximo 3 itens.\n"
+            "Campos obrigatórios: summary, main_themes, emotional_state, key_insights.\n"
+            "Campos opcionais: next_session_recommendations, therapeutic_notes, future_sessions.\n\n"
+            f"CONVERSA:\n{compact_conversation}\n\n"
+            f"EMOCOES:\n{emotion_summary_str}"
+        )
+        return await self._call_llm(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Gere imediatamente o JSON final. "
+                        "Sem markdown, sem texto fora do JSON, sem raciocínio intermediário."
+                    ),
+                },
+                {"role": "user", "content": retry_prompt},
+            ],
+            max_tokens=900,
+            temperature=0.0,
+        )
+
+    def _compact_session_conversation_for_local_analysis(self, conversation_text: str, max_chars: int) -> str:
+        """Shrink the conversation before sending it to a smaller local model."""
+        lines = []
+        for raw_line in conversation_text.splitlines():
+            line = re.sub(r"\s+", " ", raw_line.strip())
+            if not line:
+                continue
+            if len(line) > 220:
+                line = f"{line[:217].rstrip()}..."
+            lines.append(line)
+
+        if len(lines) > 18:
+            lines = lines[:6] + ["[trechos intermediários resumidos]"] + lines[-11:]
+
+        compact_text = "\n".join(lines).strip()
+        if len(compact_text) <= max_chars:
+            return compact_text
+
+        head_chars = max_chars // 2
+        tail_chars = max_chars - head_chars - len("\n[trechos omitidos]\n")
+        head = compact_text[:head_chars].rstrip()
+        tail = compact_text[-tail_chars:].lstrip()
+        return f"{head}\n[trechos omitidos]\n{tail}"
+
+    def _normalize_session_context_payload(
+        self,
+        context_data: Dict[str, Any],
+        emotion_summary: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Normalize local-model JSON into the richer internal shape we expect."""
+        normalized = dict(context_data or {})
+
+        main_themes = normalized.get("main_themes", [])
+        if isinstance(main_themes, str):
+            main_themes = [main_themes]
+        normalized["main_themes"] = [str(theme).strip() for theme in main_themes if str(theme).strip()]
+
+        key_insights = normalized.get("key_insights", [])
+        if isinstance(key_insights, str):
+            key_insights = [key_insights]
+        normalized["key_insights"] = [str(insight).strip() for insight in key_insights if str(insight).strip()]
+
+        emotional_state = normalized.get("emotional_state")
+        if not isinstance(emotional_state, dict):
+            emotional_state = {}
+        dominant_emotion = (
+            emotional_state.get("dominant_emotion")
+            or emotional_state.get("final")
+            or emotional_state.get("initial")
+            or emotion_summary.get("dominant_emotion")
+            or "neutro"
+        )
+        emotional_journey = (
+            emotional_state.get("emotional_journey")
+            or emotional_state.get("progression")
+            or emotional_state.get("journey")
+            or "Sem jornada emocional detalhada."
+        )
+        emotional_state.setdefault("dominant_emotion", dominant_emotion)
+        emotional_state.setdefault("emotional_journey", emotional_journey)
+        emotional_state.setdefault("stability", emotional_state.get("stability") or "em_transição")
+        normalized["emotional_state"] = emotional_state
+
+        recommendations = normalized.get("next_session_recommendations", [])
+        if isinstance(recommendations, str):
+            recommendations = [recommendations]
+        normalized["next_session_recommendations"] = [
+            str(item).strip() for item in recommendations if str(item).strip()
+        ][:3]
+
+        therapeutic_notes = normalized.get("therapeutic_notes")
+        if not isinstance(therapeutic_notes, dict):
+            therapeutic_notes = {}
+        therapeutic_progress = normalized.get("therapeutic_progress")
+        if isinstance(therapeutic_progress, dict):
+            engagement_level = therapeutic_progress.get("engagement_level")
+            if engagement_level and not therapeutic_notes.get("engagement_level"):
+                therapeutic_notes["engagement_level"] = engagement_level
+        normalized["therapeutic_notes"] = therapeutic_notes
+
+        future_sessions = normalized.get("future_sessions")
+        if not isinstance(future_sessions, dict):
+            future_sessions = {}
+        if not future_sessions.get("suggested_topics") and normalized["next_session_recommendations"]:
+            future_sessions["suggested_topics"] = normalized["next_session_recommendations"][:2]
+        normalized["future_sessions"] = future_sessions
+
+        normalized.setdefault("summary", str(normalized.get("summary", "")).strip())
+        normalized.setdefault("risk_indicators", [])
+        normalized.setdefault("session_quality", "boa")
+        return normalized
 
     def _process_emotions_data(self, emotions_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Processar dados de emoções para análise"""
