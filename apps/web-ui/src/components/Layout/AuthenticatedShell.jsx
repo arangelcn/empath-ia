@@ -39,14 +39,10 @@ const statusConfig = {
   },
 };
 
-const getSessionRank = (session) => {
-  const ranks = {
-    in_progress: 0,
-    unlocked: 1,
-    completed: 2,
-    locked: 3,
-  };
-  return ranks[session?.status] ?? 4;
+const getSessionTimestamp = (session) => {
+  const value = session?.created_at || session?.updated_at;
+  const time = new Date(value || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
 };
 
 const SidebarSession = ({ session, onOpen, disabled }) => {
@@ -93,7 +89,7 @@ const SidebarContent = ({
 
   const visibleSessions = useMemo(() => (
     [...userSessions]
-      .sort((a, b) => getSessionRank(a) - getSessionRank(b) || String(a.title || '').localeCompare(String(b.title || '')))
+      .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))
       .slice(0, 7)
   ), [userSessions]);
 

@@ -58,6 +58,10 @@ class ApiService {
       ...options,
     };
 
+    if (config.body instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+
     try {
       const response = await fetch(url, config);
       const text = await response.text();
@@ -102,6 +106,14 @@ class ApiService {
   async put(endpoint, data) {
     return this.request(endpoint, {
       method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Métodos PATCH
+  async patch(endpoint, data) {
+    return this.request(endpoint, {
+      method: 'PATCH',
       body: JSON.stringify(data),
     });
   }
@@ -291,6 +303,53 @@ class ApiService {
 
   async renderPrompt(promptKey, variables) {
     return this.post(`/api/prompts/${promptKey}/render`, { variables });
+  }
+
+  // Knowledge Service
+  async getKnowledgeDocuments(params = {}) {
+    const queryString = this.buildQuery(params);
+    const endpoint = `/api/admin/knowledge/documents${queryString ? `?${queryString}` : ''}`;
+    return this.get(endpoint);
+  }
+
+  async getKnowledgeDocument(documentId) {
+    return this.get(`/api/admin/knowledge/documents/${documentId}`);
+  }
+
+  async createKnowledgeDocument(documentData) {
+    return this.post('/api/admin/knowledge/documents', documentData);
+  }
+
+  async ingestKnowledgeDocumentContent(documentId, contentData) {
+    return this.post(`/api/admin/knowledge/documents/${documentId}/content`, contentData);
+  }
+
+  async uploadKnowledgeDocumentFile(documentId, { file, section, ingested_by }) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (section) formData.append('section', section);
+    if (ingested_by) formData.append('ingested_by', ingested_by);
+
+    return this.request(`/api/admin/knowledge/documents/${documentId}/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async getKnowledgeDocumentChunks(documentId) {
+    return this.get(`/api/admin/knowledge/documents/${documentId}/chunks`);
+  }
+
+  async updateKnowledgeDocumentStatus(documentId, statusData) {
+    return this.patch(`/api/admin/knowledge/documents/${documentId}/status`, statusData);
+  }
+
+  async getKnowledgeAuditEvents() {
+    return this.get('/api/admin/knowledge/audit/events');
+  }
+
+  async retrieveKnowledge(payload) {
+    return this.post('/api/admin/knowledge/retrieve', payload);
   }
 }
 

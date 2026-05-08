@@ -10,10 +10,14 @@ from ..models.knowledge import (
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeDocumentCreate,
+    RetrievalCitation,
     RetrievalRequest,
     RetrievalResponse,
+    RetrievalResult,
+    RetrievalScore,
 )
 from .chunking_service import SemanticChunkingService
+from .file_ingestion_service import KnowledgeFileIngestionService
 
 
 class KnowledgeDocumentService:
@@ -31,6 +35,7 @@ class KnowledgeDocumentService:
         self._chunks: Dict[str, List[KnowledgeChunk]] = {}
         self._audit_events: List[dict] = []
         self._chunking_service = SemanticChunkingService()
+        self._file_ingestion_service = KnowledgeFileIngestionService()
 
     def create_document(self, payload: KnowledgeDocumentCreate) -> KnowledgeDocument:
         """Register a document and keep it in `draft` until Admin advances it."""
@@ -91,6 +96,66 @@ class KnowledgeDocumentService:
         )
         return document
 
+    def ingest_uploaded_file(
+        self,
+        document_id: str,
+        filename: str,
+        file_bytes: bytes,
+        content_type: Optional[str],
+        section: Optional[str],
+        ingested_by: Optional[str],
+    ) -> Optional[dict]:
+        """Extract text from one uploaded file and ingest it into the document."""
+        document = self._documents.get(document_id)
+        if not document:
+            return None
+
+        extracted_upload = self._file_ingestion_service.extract_upload(
+            document_id=document_id,
+            filename=filename,
+            content_type=content_type,
+            file_bytes=file_bytes,
+        )
+
+        if not document.source_uri:
+            document.source_uri = extracted_upload.stored_uri
+        document.updated_at = datetime.utcnow()
+        self._documents[document_id] = document
+
+        indexed_document = self.ingest_document_content(
+            document_id=document_id,
+            payload=DocumentContentIngest(
+                content=extracted_upload.content,
+                content_type=extracted_upload.content_type,
+                section=section,
+                ingested_by=ingested_by,
+            ),
+        )
+
+        self._record_audit_event(
+            action="document.file_uploaded",
+            document_id=document_id,
+            actor=ingested_by,
+            details={
+                "filename": extracted_upload.original_filename,
+                "stored_uri": extracted_upload.stored_uri,
+                "byte_size": extracted_upload.byte_size,
+                "content_type": extracted_upload.content_type.value,
+                "section": section,
+            },
+        )
+
+        return {
+            "document": indexed_document,
+            "upload": {
+                "filename": extracted_upload.original_filename,
+                "stored_uri": extracted_upload.stored_uri,
+                "byte_size": extracted_upload.byte_size,
+                "content_type": extracted_upload.content_type.value,
+                "extracted_characters": len(extracted_upload.content),
+            },
+        }
+
     def list_documents(
         self,
         status: Optional[DocumentStatus] = None,
@@ -145,18 +210,101 @@ class KnowledgeDocumentService:
         return document
 
     def retrieve(self, request: RetrievalRequest) -> RetrievalResponse:
-        """Return retrieved chunks for a prompt-scoped query.
+        """Return retrieved chunks for a prompt-scoped query using lexical scoring.
 
-        This foundation slice performs a safe metadata check and returns an
-        empty result set until vector/lexical retrieval is implemented. It still
-        records the retrieval attempt so Admin can audit RAG behavior.
+        Filters eligible chunks (from INDEXED/APPROVED/ACTIVE documents whose scopes
+        overlap with the requested allowed_scopes) and ranks them by token overlap
+        with the query. Returns the top_k results sorted by lexical score.
         """
-        warning = (
-            "Retrieval contract is available, but vector and lexical indexes are not implemented yet."
-        )
+        warnings: list = []
 
         if not request.allowed_scopes:
-            warning = "No allowed scopes were provided by Prompt Control; retrieval skipped."
+            warnings.append(
+                "No allowed scopes were provided by Prompt Control; retrieval skipped."
+            )
+            self._record_audit_event(
+                action="retrieval.requested",
+                document_id="retrieval",
+                actor=request.prompt_key,
+                details={
+                    "chat_id": request.chat_id,
+                    "prompt_version": request.prompt_version,
+                    "allowed_scopes": request.allowed_scopes,
+                    "top_k": request.top_k,
+                    "trace_id": request.trace_id,
+                    "result_count": 0,
+                },
+            )
+            return RetrievalResponse(
+                success=True,
+                index_version="knowledge-index-lexical-v1",
+                results=[],
+                warnings=warnings,
+            )
+
+        eligible_statuses = {
+            DocumentStatus.INDEXED,
+            DocumentStatus.APPROVED,
+            DocumentStatus.ACTIVE,
+        }
+
+        # Tokenize query: lowercase, split on whitespace/punctuation
+        import re as _re
+        query_tokens = [
+            token
+            for token in _re.split(r"[\s\.,;:!?\"'()\[\]{}/\\]+", request.query.lower())
+            if len(token) > 2
+        ]
+        # Fallback: keep all tokens if none survived the length filter
+        if not query_tokens:
+            query_tokens = request.query.lower().split()
+
+        scored: list = []
+
+        for document_id, document in self._documents.items():
+            if document.status not in eligible_statuses:
+                continue
+            if not any(scope in document.scopes for scope in request.allowed_scopes):
+                continue
+
+            chunks = self._chunks.get(document_id, [])
+            for chunk in chunks:
+                content_lower = chunk.content.lower()
+                match_count = sum(1 for token in query_tokens if token in content_lower)
+                if match_count == 0:
+                    continue
+                score = match_count / len(query_tokens)
+                scored.append((score, chunk))
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        top_results = scored[: request.top_k]
+
+        results = []
+        for score, chunk in top_results:
+            results.append(
+                RetrievalResult(
+                    chunk_id=chunk.chunk_id,
+                    content=chunk.content,
+                    citation=RetrievalCitation(
+                        document_id=chunk.document_id,
+                        document_version=chunk.document_version,
+                        title=chunk.title,
+                        section=chunk.section,
+                    ),
+                    scores=RetrievalScore(
+                        lexical=round(score, 4),
+                        final=round(score, 4),
+                    ),
+                    retrieval_reason="lexical_match",
+                )
+            )
+
+        if not results:
+            warnings.append(
+                "No matching chunks found. Verify that documents have been ingested, "
+                "their status is active/indexed/approved, and their scopes overlap "
+                "with the requested allowed_scopes."
+            )
 
         self._record_audit_event(
             action="retrieval.requested",
@@ -168,16 +316,15 @@ class KnowledgeDocumentService:
                 "allowed_scopes": request.allowed_scopes,
                 "top_k": request.top_k,
                 "trace_id": request.trace_id,
-                "result_count": 0,
-                "warning": warning,
+                "result_count": len(results),
             },
         )
 
         return RetrievalResponse(
             success=True,
-            index_version="knowledge-index-uninitialized",
-            results=[],
-            warnings=[warning],
+            index_version="knowledge-index-lexical-v1",
+            results=results,
+            warnings=warnings,
         )
 
     def get_audit_events(self) -> List[dict]:
@@ -198,6 +345,6 @@ class KnowledgeDocumentService:
                 "document_id": document_id,
                 "actor": actor,
                 "details": details,
-                "created_at": datetime.utcnow()_audit_events.isoformat(),
+                "created_at": datetime.utcnow().isoformat(),
             }
         )

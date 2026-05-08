@@ -42,17 +42,43 @@ O gateway é o coração da aplicação. É o único serviço exposto externamen
 ```
 services/gateway-service/
 ├── src/
-│   ├── main.py                          # App FastAPI, todos os endpoints inline, proxies para microserviços
+│   ├── main.py                          # App FastAPI, CORS, startup/shutdown e inclusão de routers
 │   ├── api/
 │   │   ├── auth.py                      # Router /api/auth/* (Google OAuth + JWT)
-│   │   └── admin.py                     # Router /api/admin/* (painel administrativo)
+│   │   ├── chat.py                      # /api/chat/send, send-stream, history, start
+│   │   ├── chat_context.py              # initial-message, context, finalize e título
+│   │   ├── users.py                     # /api/user/*: perfil, preferências e login
+│   │   ├── sessions.py                  # sessões terapêuticas públicas e por usuário
+│   │   ├── voice.py                     # proxy para Voice Service e rewrite de audio_url
+│   │   ├── emotions.py                  # emoções persistidas e proxy realtime
+│   │   ├── prompts.py                   # CRUD/renderização de prompts
+│   │   ├── proxy.py                     # proxies legados para AI/avatar
+│   │   ├── health.py                    # health/config
+│   │   ├── admin.py                     # compatibilidade/imports do admin
+│   │   ├── admin_dashboard.py           # métricas e status admin
+│   │   ├── admin_knowledge.py           # proxy protegido para Knowledge Service
+│   │   ├── admin_conversations.py       # conversas e analytics
+│   │   ├── admin_sessions.py            # CRUD de therapeutic sessions
+│   │   ├── admin_users.py               # CRUD/estatísticas de usuários
+│   │   └── admin_contexts.py            # session contexts e user sessions
 │   ├── services/
-│   │   ├── chat_service.py              # Lógica de chat: salvar/recuperar mensagens, processar input
+│   │   ├── chat_service.py              # Orquestração de chat e streaming
+│   │   ├── registration_service.py      # Fluxo especial da session-1/cadastro
+│   │   ├── session_context_service.py   # Finalização e contexto estruturado
+│   │   ├── next_session_service.py      # Criação da próxima sessão personalizada
+│   │   ├── voice_synthesis_service.py   # Síntese de voz e URLs públicas do gateway
+│   │   ├── chat_title_service.py        # Título/subtítulo via AI Service
+│   │   ├── user_profile_service.py      # Normalização de perfil e registration_data
+│   │   ├── streaming_utils.py           # Chunking de sentenças e frames SSE
 │   │   ├── user_service.py              # CRUD de usuários no MongoDB
 │   │   ├── therapeutic_session_service.py       # Templates globais de sessões terapêuticas
 │   │   ├── user_therapeutic_session_service.py  # Sessões por usuário (unlock, start, complete)
 │   │   ├── user_emotion_service.py      # Salvar e consultar emoções por usuário/sessão
 │   │   └── prompt_service.py            # CRUD de prompts; fallback hardcoded se banco vazio
+│   ├── domain/
+│   │   └── conversation_identity.py     # chat_id, legacy_session_id, username e therapeutic_session_id
+│   ├── repositories/
+│   │   └── conversation_repository.py   # Persistência de conversas e mensagens
 │   └── models/
 │       └── database.py                  # Conexão Motor (async MongoDB), get_collection(), índices
 ├── requirements.txt
@@ -62,11 +88,9 @@ services/gateway-service/
 ### Arquivos críticos do gateway
 
 **`src/main.py`**
-- Instancia todos os services na startup
-- Define `SERVICE_URLS` (URLs dos microserviços via env)
-- Chama `auto_initialize_prompts()` na startup
-- Contém `_rewrite_audio_url()` — reescreve URLs de áudio do voice service
-- Extrai `username` e `session_id` de `full_session_id` usando `rfind("_session-")`
+- Cria o app FastAPI, CORS e eventos de startup/shutdown.
+- Inicializa MongoDB, índices e prompts padrão.
+- Inclui os routers extraídos em `src/api/`.
 
 **`src/models/database.py`**
 - `init_mongodb()` — abre conexão Motor na startup
@@ -74,13 +98,14 @@ services/gateway-service/
 - Define índices de segurança em `messages` (compound index em `username + session_id`)
 
 **`src/services/chat_service.py`**
-- `process_user_message()` — fluxo principal: salva mensagem do usuário, chama AI Service, salva resposta, gera áudio
-- `finalize_session_context()` — ao finalizar sessão: chama AI Service para gerar contexto estruturado
-- `_save_message()` — salva mensagem na coleção `messages`
-- `_generate_audio_if_available()` — chama voice service se voz habilitada
+- `process_user_message()` — fluxo principal: salva mensagem do usuário, chama AI Service, salva resposta, gera áudio.
+- `process_user_message_stream()` — streaming SSE de texto/áudio.
+- `start_or_get_conversation()` — cria/recupera conversa por `chat_id`, preservando `legacy_session_id`.
+- Delega cadastro, contexto, próxima sessão, título, perfil e voz para services específicos.
 
 **`src/services/user_therapeutic_session_service.py`**
-- `create_session_1_for_user()` — cria a sessão de onboarding para novos usuários
+- `ensure_registration_session()` — garante `session-1` para listagem/progresso da jornada.
+- `create_session_1_for_user()` — cria a sessão de onboarding para novos usuários de forma idempotente.
 - `create_dynamic_session()` — cria sessão personalizada gerada pela IA
 - `can_create_next_session()` — verifica se usuário pode ter nova sessão (sem sessões pendentes)
 - `complete_session()` — marca sessão como concluída e aciona geração da próxima
@@ -94,23 +119,25 @@ services/ai-service/
 ├── src/
 │   ├── main.py                    # App FastAPI, inclui router openai
 │   ├── api/
-│   │   └── openai_routes.py       # POST /openai/chat — geração de resposta terapêutica
+│   │   └── chat_routes.py         # Chat, streaming, contexto, próxima sessão e util/complete
 │   └── services/
-│       ├── openai_service.py      # Wrapper OpenAI SDK (chat completions)
-│       ├── redis_service.py       # Cache de contexto de sessão no Redis
+│       ├── llm_service.py         # Orquestra OpenAI/local LLM, contexto e geração terapêutica
+│       ├── local_llm_service.py   # Loader local GGUF via llama-cpp quando habilitado
+│       ├── token_economy_service.py     # MongoDB como repositório + Redis como performance
+│       ├── redis_performance_service.py # Cache curto de performance durante sessões ativas
 │       ├── session_context_service.py  # Lógica de contexto acumulado entre sessões
-│       ├── prompt_client.py       # Busca prompts ativos via HTTP no gateway
-│       └── token_service.py       # Controle de tokens (contexto cabe no modelo)
+│       ├── prompt_client_service.py     # Busca prompts ativos via HTTP no gateway
+│       └── deps.py                # Instâncias compartilhadas dos services
 ├── requirements.txt
 └── Dockerfile
 ```
 
 **Fluxo no AI Service:**
-1. Recebe request de `/openai/chat` do gateway
-2. Busca prompt ativo via `prompt_client.py` (chama `GET /api/prompts/active/{key}` no gateway)
+1. Recebe request do gateway em `/chat`, `/openai/chat/stream`, `/openai/generate-session-context` ou `/openai/generate-next-session`
+2. Busca prompt ativo via `prompt_client_service.py` (chama `GET /api/prompts/active/{key}` no gateway)
 3. Monta contexto: histórico + perfil do usuário + dados emocionais + contexto de sessões anteriores
-4. Chama OpenAI API via `openai_service.py`
-5. Retorna resposta estruturada
+4. Usa LLM local quando configurado, com fallback OpenAI quando permitido
+5. Retorna resposta, contexto estruturado ou próxima sessão personalizada
 
 ## `services/knowledge-service/`
 
@@ -211,7 +238,6 @@ apps/web-ui/
 │   ├── components/
 │   │   ├── LandingScreen.jsx      # Tela inicial (não autenticado)
 │   │   ├── LoginScreen.jsx        # Login com Google + seleção de voz
-│   │   ├── ComingSoonScreen.jsx   # Placeholder /login
 │   │   ├── Home/
 │   │   │   └── HomeScreen.jsx     # Jornada terapêutica: lista de sessões, progresso
 │   │   └── Chat/

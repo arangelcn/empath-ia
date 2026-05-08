@@ -29,7 +29,7 @@ Arquivos centrais já afetados:
 - `services/gateway-service/src/main.py`
 - `services/gateway-service/src/services/chat_service.py`
 - `services/gateway-service/src/services/prompt_service.py`
-- `services/ai-service/src/services/openai_service.py`
+- `services/ai-service/src/services/llm_service.py`
 - `services/ai-service/src/services/local_llm_service.py`
 - `services/voice-service/src/`
 - `services/emotion-service/src/`
@@ -60,7 +60,7 @@ Objetivo: definir a arquitetura do novo sistema de conhecimento antes de impleme
 Arquivos prováveis:
 
 - `services/knowledge-service/`
-- `services/gateway-service/src/api/admin.py`
+- `services/gateway-service/src/api/admin_knowledge.py`
 - `services/gateway-service/src/services/knowledge_client_service.py`
 - `services/ai-service/src/services/rag_client_service.py`
 - `apps/admin-panel/src/pages/`
@@ -91,7 +91,7 @@ Arquivos prováveis:
 - `apps/admin-panel/src/pages/KnowledgeBase.js`
 - `apps/admin-panel/src/pages/KnowledgeDocuments.js`
 - `apps/admin-panel/src/services/api.js`
-- `services/gateway-service/src/api/admin.py`
+- `services/gateway-service/src/api/admin_knowledge.py`
 - `services/gateway-service/src/models/database.py`
 - `docs/TECHNICAL.md`
 
@@ -114,7 +114,7 @@ Arquivos prováveis:
 
 - `services/gateway-service/src/services/prompt_service.py`
 - `services/gateway-service/src/services/chat_service.py`
-- `services/ai-service/src/services/openai_service.py`
+- `services/ai-service/src/services/llm_service.py`
 - `services/ai-service/src/services/rag_client_service.py`
 - `docs/TECHNICAL.md`
 
@@ -142,7 +142,7 @@ Arquivos prováveis:
 - `services/knowledge-service/src/services/chunking_service.py`
 - `services/knowledge-service/src/services/document_service.py`
 - `services/knowledge-service/src/models/knowledge.py`
-- `services/gateway-service/src/api/admin.py`
+- `services/gateway-service/src/api/admin_knowledge.py`
 - `apps/admin-panel/src/pages/`
 - `docs/TECHNICAL.md`
 
@@ -232,7 +232,7 @@ Critérios de aceite:
 Arquivos prováveis:
 
 - `services/ai-service/src/services/local_llm_service.py`
-- `services/ai-service/src/services/openai_service.py`
+- `services/ai-service/src/services/llm_service.py`
 - `services/gateway-service/src/services/chat_service.py`
 - `services/gateway-service/src/services/eval_service.py`
 - `services/gateway-service/src/services/prompt_service.py`
@@ -377,7 +377,7 @@ Arquivos prováveis:
 - `services/gateway-service/src/main.py`
 - `services/gateway-service/src/middleware/`
 - `services/gateway-service/src/services/privacy_service.py`
-- `services/ai-service/src/services/openai_service.py`
+- `services/ai-service/src/services/llm_service.py`
 - `docs/TECHNICAL.md`
 
 Critérios de aceite:
@@ -443,6 +443,7 @@ Ordem recomendada para execução:
 
 - [x] Login Google para usuário novo.
 - [x] Login Google para usuário existente.
+- [x] `session-1` garantida na jornada mesmo quando o usuário chega direto na Home.
 - [x] Atualização de dados pessoais e voz.
 - [x] Navegação desktop com sidebar.
 - [x] Navegação mobile com menu recolhido.

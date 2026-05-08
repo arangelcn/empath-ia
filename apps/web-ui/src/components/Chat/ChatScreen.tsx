@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Bot, CheckCircle2, ChevronLeft, Heart, Mic, Send, Sparkles, Target, X } from 'lucide-react';
-import { sendMessage, getChatHistory, getTherapeuticSession, getInitialMessage } from '../../services/api.js';
+import { sendMessage, getChatHistory, getUserSession, getInitialMessage, generateChatTitle, formatApiError } from '../../services/api.js';
 import Button from '../Common/Button.jsx';
 import Loading from '../Common/Loading.jsx';
 import EmotionBadge from './EmotionBadge.jsx';
@@ -28,7 +28,7 @@ interface SessionObjective {
 
 const MessageBubble = ({ message, isTyping = false }) => {
   const isUser = message.type === 'user';
-  
+
   return (
     <div className={`group flex w-full animate-fade-in ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div className={`flex max-w-[94%] gap-3 sm:max-w-[86%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -53,8 +53,8 @@ const MessageBubble = ({ message, isTyping = false }) => {
             {isUser ? 'Você' : 'Empat.IA'}
           </span>
           <div className={`rounded-2xl px-4 py-3 text-[15px] leading-7 transition-all duration-200
-            ${isUser 
-              ? 'rounded-tr-md bg-primary-600 text-white shadow-sm shadow-primary-500/20' 
+            ${isUser
+              ? 'rounded-tr-md bg-primary-600 text-white shadow-sm shadow-primary-500/20'
               : 'rounded-tl-md border border-gray-200/80 bg-white text-gray-900 shadow-sm dark:border-gray-700/80 dark:bg-dark-surface dark:text-gray-100'
             }
           `}>
@@ -166,11 +166,11 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
   const location = useLocation();
   const navigate = useNavigate();
   const { playAudio } = useAudioPlayer();
-  
+
   // Usar chat_id opaco da URL. sessionId legado ainda é aceito como fallback.
   const currentChatId = chatId || fallbackSessionId;
   const participantName = displayName || username || 'você';
-  
+
   // Obter informações da sessão do state (passado pelo navigate)
   const sessionInfo = location.state || {};
   const { sessionTitle, originalSessionId: stateOriginalSessionId } = sessionInfo;
@@ -190,7 +190,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     const sessionMatch = currentChatId.match(/session-.+$/);
     return sessionMatch?.[0] || '';
   }, [currentChatId, stateOriginalSessionId, username]);
-  
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -203,6 +203,9 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [sessionContext, setSessionContext] = useState(null);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [dynamicTitle, setDynamicTitle] = useState<string | null>(null);
+  const [dynamicSubtitle, setDynamicSubtitle] = useState<string | null>(null);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -212,14 +215,16 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     const loadSessionData = async () => {
       try {
         setIsLoadingHistory(true);
-        
-        // Carregar objetivo da sessão
+
+        let sessionExists = true;
+
+        // Carregar objetivo da sessão do usuário. Sessões dinâmicas não ficam no catálogo global /api/sessions.
         if (currentChatId) {
           try {
             console.log('🔍 Buscando sessão - currentChatId:', currentChatId, 'originalSessionId:', originalSessionId);
-            
+
             if (originalSessionId) {
-              const sessionResponse = await getTherapeuticSession(originalSessionId);
+              const sessionResponse = await getUserSession(username, originalSessionId);
               if (sessionResponse.success && sessionResponse.data) {
                 console.log('✅ Session Objective carregado:', sessionResponse.data);
                 setSessionObjective({
@@ -230,16 +235,26 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                 });
               } else {
                 console.warn('⚠️ Session não encontrada para ID:', originalSessionId);
+                sessionExists = false;
+                setSessionObjective(null);
+                setSessionError(`A sessão ${originalSessionId} não está disponível para este usuário.`);
               }
             }
           } catch (error) {
-            console.warn('Erro ao carregar objetivo da sessão:', error);
+            const isMissingSession = error?.response?.status === 404;
+            if (isMissingSession) {
+              sessionExists = false;
+              setSessionObjective(null);
+              setSessionError(`A sessão ${originalSessionId} não está disponível para este usuário.`);
+            } else {
+              setSessionError(formatApiError(error, 'Erro ao carregar objetivo da sessão.'));
+            }
           }
         }
-        
+
         // Carregar histórico de mensagens
         const response = await getChatHistory(currentChatId);
-        
+
         if (response.success && response.data.history && response.data.history.length > 0) {
           // Converter histórico do backend para o formato do frontend
           const historyMessages: Message[] = response.data.history.map((msg: any) => ({
@@ -249,26 +264,31 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
             audioUrl: msg.audio_url || undefined,
             authorName: msg.type === 'user' ? participantName : undefined,
           }));
-          
+
           setMessages(historyMessages);
         } else {
+          if (!sessionExists) {
+            setMessages([]);
+            return;
+          }
+
           // ✅ NOVO: Se não há histórico, tentar gerar mensagem inicial automática
           console.log('🤖 Sessão sem histórico, gerando mensagem inicial automática...');
-          
+
           try {
             const initialMessageResponse = await getInitialMessage(currentChatId);
             console.log('🔍 DEBUG - Resposta inicial:', initialMessageResponse);
-            
+
             if (initialMessageResponse.success && initialMessageResponse.data) {
               // ✅ CORREÇÃO: Aguardar um pouco para garantir que o backend salvou a mensagem
               console.log('⏳ Aguardando backend finalizar salvamento...');
               await new Promise(resolve => setTimeout(resolve, 1000));
-              
+
               // ✅ CORREÇÃO: Recarregar histórico DIRETAMENTE após gerar mensagem inicial
               console.log('🔄 Recarregando histórico após mensagem inicial...');
               const updatedHistory = await getChatHistory(currentChatId);
               console.log('🔍 DEBUG - Histórico atualizado:', updatedHistory);
-              
+
               if (updatedHistory.success && updatedHistory.data.history && updatedHistory.data.history.length > 0) {
                 const historyMessages: Message[] = updatedHistory.data.history.map((msg: any) => ({
                   id: msg.id,
@@ -277,10 +297,10 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                   audioUrl: msg.audio_url || undefined,
                   authorName: msg.type === 'user' ? participantName : undefined,
                 }));
-                
+
                 setMessages(historyMessages);
                 console.log('✅ Histórico carregado com sucesso após mensagem inicial:', historyMessages.length, 'mensagens');
-                
+
                 // ✅ NOVO: Reproduzir áudio se disponível para a mensagem inicial
                 const initialMessage = historyMessages.find(msg => msg.type === 'ai');
                 if (initialMessage && initialMessage.audioUrl) {
@@ -293,7 +313,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
               } else {
                 // ✅ FALLBACK: Se histórico ainda não foi atualizado, usar dados da resposta inicial
                 console.warn('⚠️ Histórico ainda não atualizado, usando dados da resposta inicial');
-                
+
                 if (initialMessageResponse.data.message) {
                   const fallbackMessage: Message = {
                     id: initialMessageResponse.data.message.id,
@@ -301,10 +321,10 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                     content: initialMessageResponse.data.message.content,
                     audioUrl: initialMessageResponse.data.message.audioUrl || undefined,
                   };
-                  
+
                   setMessages([fallbackMessage]);
                   console.log('🔄 Usando mensagem inicial como fallback');
-                  
+
                   // Reproduzir áudio se disponível
                   if (fallbackMessage.audioUrl) {
                     setTimeout(() => {
@@ -338,7 +358,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
   }, [currentChatId, originalSessionId, participantName, username]);
 
   // useEffect removido - emoção agora é atualizada via WebcamEmotionCapture
-  
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -365,23 +385,24 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     const currentInput = inputValue;
     setInputValue('');
     setIsLoading(true);
+    setSessionError(null);
 
     try {
       // ✅ CORREÇÃO: Para session-1 (cadastro), não passar sessionObjective 
       // Para outras sessões, passar apenas se for a primeira mensagem
       const isFirstMessage = messages.length === 0;
-      
+
       // session-1 é a sessão de cadastro, não deve receber título/objetivo
       const isRegistrationSession = originalSessionId === 'session-1';
-      
+
       let objectiveToSend = null;
       if (isFirstMessage && !isRegistrationSession) {
         // Apenas para sessões que NÃO são de cadastro
         objectiveToSend = sessionObjective;
       }
-      
+
       console.log(`🔍 Session Info: originalSessionId=${originalSessionId}, isRegistrationSession=${isRegistrationSession}, isFirstMessage=${isFirstMessage}, willSendObjective=${objectiveToSend !== null}`);
-      
+
       const response = await sendMessage(currentInput, currentChatId, objectiveToSend);
       if (response.success) {
         const { ai_response } = response.data;
@@ -392,45 +413,55 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
           audioUrl: ai_response.audioUrl,
         };
         setMessages(prev => [...prev, aiMessage]);
-        
+
+        // Gerar título após a 1ª mensagem do usuário (não bloqueia a conversa)
+        if (isFirstMessage) {
+          generateChatTitle(currentChatId, 'initial').then(result => {
+            if (result.success && result.title) {
+              setDynamicTitle(result.title);
+              if (result.subtitle) setDynamicSubtitle(result.subtitle);
+            }
+          }).catch(() => { });
+        }
+
         // ✅ NOVO: Verificar se o cadastro foi finalizado
         if (response.data.registration_completed && response.data.redirect_to_home) {
           console.log('🎉 CADASTRO FINALIZADO - Processando redirecionamento...');
-          
+
           // Mostrar mensagem de sucesso
           if (response.data.completion_message) {
             console.log('📋 Mensagem de finalização:', response.data.completion_message);
           }
-          
+
           // Usar tempo de redirecionamento definido pelo backend (padrão 3 segundos)
           const redirectDelay = response.data.auto_redirect_delay || 3000;
           console.log(`⏳ Redirecionamento automático em ${redirectDelay}ms`);
-          
+
           // Redirecionar para home após tempo especificado
           setTimeout(() => {
             console.log('🏠 Redirecionando para home...');
-            navigate('/home', { 
-              state: { 
+            navigate('/home', {
+              state: {
                 message: 'Cadastro finalizado com sucesso! Agora você pode acessar todas as sessões terapêuticas.',
                 fromRegistration: true,
                 finalize_success: response.data.finalize_success
-              } 
+              }
             });
           }, redirectDelay);
         }
-        
+
         // ✅ NOVO: Verificar se a conversa foi finalizada automaticamente
         if (response.data.conversation_ended) {
           console.log('🔚 Conversa finalizada automaticamente');
           setIsConversationEnded(true);
           setShowFinalizeButton(false);
-          
+
           // Aguardar um pouco antes de mostrar o resumo
           setTimeout(() => {
             finalizeSession();
           }, 2000);
         }
-        
+
         // Detectar fim de conversa baseado na mensagem do usuário
         if (checkConversationEnd(currentInput)) {
           console.log('🔚 Fim de conversa detectado pela mensagem do usuário');
@@ -438,17 +469,30 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
             finalizeSession();
           }, 3000);
         }
+      } else {
+        const message = response.error || 'A IA não conseguiu gerar uma resposta agora.';
+        setSessionError(message);
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            type: 'ai',
+            content: message,
+          },
+        ]);
       }
     } catch (error) {
+      const message = formatApiError(error, 'A IA não conseguiu gerar uma resposta agora.');
+      setSessionError(message);
       const errorMessage = {
         id: `error-${Date.now()}`,
         type: 'ai',
-        content: "Desculpe, não consegui processar sua mensagem. Tente novamente mais tarde.",
+        content: message,
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-      
+
       // Manter foco no input após enviar mensagem
       // Usar setTimeout para garantir que o DOM seja atualizado antes de focar
       setTimeout(() => {
@@ -461,7 +505,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
       }, 100);
     }
   };
-  
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -492,34 +536,49 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
   // Função para finalizar sessão
   const finalizeSession = async () => {
     if (isFinalizing) return;
-    
+
     setIsFinalizing(true);
+    setSessionError(null);
     console.log('🔚 Iniciando finalização da sessão:', currentChatId);
-    
+
     try {
       const response = await fetch(`/api/chat/finalize/${currentChatId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      
+
       const result = await response.json();
       console.log('📋 Resultado da finalização:', result);
-      
+
+      if (!response.ok) {
+        throw new Error(result.detail || result.error || 'Falha ao finalizar a sessão.');
+      }
+
       if (result.success) {
         console.log('✅ Sessão finalizada com sucesso');
         console.log('📄 Contexto da sessão:', result.data.context);
-        
+
         setIsConversationEnded(true);
         setSessionContext(result.data.context);
         setShowSessionSummary(true);
         setShowFinalizeButton(false);
-        
+
+        // Usar título gerado server-side (já persistido no banco)
+        const generatedTitle = result.data?.generated_title;
+        const generatedSubtitle = result.data?.generated_subtitle;
+        if (generatedTitle) {
+          setDynamicTitle(generatedTitle);
+          if (generatedSubtitle) setDynamicSubtitle(generatedSubtitle);
+        }
+
         console.log('🎯 States atualizados - Modal deve aparecer agora');
       } else {
         console.error('❌ Erro ao finalizar sessão:', result);
+        setSessionError(result.error || result.data?.error || 'Falha ao finalizar a sessão.');
       }
     } catch (error) {
       console.error('❌ Erro na finalização da sessão:', error);
+      setSessionError(error instanceof Error ? error.message : 'Falha ao finalizar a sessão.');
     } finally {
       setIsFinalizing(false);
     }
@@ -559,7 +618,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     try {
       const response = await fetch(`/api/chat/context/${currentChatId}`);
       const result = await response.json();
-      
+
       if (result.success) {
         setSessionContext(result.data.context);
       }
@@ -581,19 +640,10 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
 
   // Modal de resumo da sessão
   const SessionSummaryModal = () => {
-    console.log('🔍 SessionSummaryModal - States:', {
-      showSessionSummary,
-      sessionContext,
-      hasContext: !!sessionContext
-    });
-    
     if (!showSessionSummary || !sessionContext) {
-      console.log('⚠️ Modal não será mostrado - showSessionSummary:', showSessionSummary, 'sessionContext:', !!sessionContext);
       return null;
     }
-    
-    console.log('✅ Modal será mostrado com contexto:', sessionContext);
-    
+
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
         <div className="bg-white dark:bg-dark-surface rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -601,13 +651,13 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
             <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-gray-100">
               Resumo da Sessão
             </h2>
-            
+
             <div className="space-y-4">
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Resumo</h3>
                 <p className="text-gray-600 dark:text-gray-400">{sessionContext.summary}</p>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Temas Principais</h3>
                 <div className="flex flex-wrap gap-2">
@@ -618,7 +668,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                   ))}
                 </div>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Estado Emocional</h3>
                 <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
@@ -633,7 +683,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                   </p>
                 </div>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Insights Principais</h3>
                 <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1">
@@ -642,7 +692,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                   ))}
                 </ul>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Recomendações</h3>
                 <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1">
@@ -651,20 +701,19 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                   ))}
                 </ul>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Qualidade da Sessão</h3>
-                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-                  sessionContext.session_quality === 'excelente' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                  sessionContext.session_quality === 'boa' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                  sessionContext.session_quality === 'regular' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                  'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                }`}>
+                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${sessionContext.session_quality === 'excelente' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                    sessionContext.session_quality === 'boa' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                      sessionContext.session_quality === 'regular' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                        'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                  }`}>
                   {sessionContext.session_quality}
                 </span>
               </div>
             </div>
-            
+
             <div className="flex justify-end gap-3 mt-6">
               <Button
                 variant="secondary"
@@ -692,8 +741,8 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     );
   };
 
-  const displaySessionTitle = sessionTitle || sessionObjective?.title || 'Sessão terapêutica';
-  const displaySessionSubtitle = sessionObjective?.subtitle || `Conversando com ${participantName}`;
+  const displaySessionTitle = dynamicTitle || sessionTitle || sessionObjective?.title || 'Sessão terapêutica';
+  const displaySessionSubtitle = dynamicSubtitle || sessionObjective?.subtitle || `Conversando com ${participantName}`;
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden bg-background-light text-text-primary transition-colors duration-300 dark:bg-background-dark dark:text-text-primary-dark lg:h-screen">
@@ -754,9 +803,9 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
       </div>
 
       {/* WebcamEmotionCapture invisível - análise automática em background */}
-      <WebcamEmotionCapture 
-        onEmotionDetected={handleWebcamEmotion} 
-        autoStart={true} 
+      <WebcamEmotionCapture
+        onEmotionDetected={handleWebcamEmotion}
+        autoStart={false}
         hidden={true}
         username={username}
         sessionId={currentChatId}
@@ -797,6 +846,14 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
         </div>
       )}
 
+      {sessionError && (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-100">
+          <div className="mx-auto max-w-4xl">
+            {sessionError}
+          </div>
+        </div>
+      )}
+
       {/* Área de mensagens */}
       <div className="flex-1 overflow-y-auto px-4">
         {isLoadingHistory ? (
@@ -828,10 +885,10 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
         onSubmit={handleSendMessage}
         onVoiceModeToggle={handleVoiceModeToggle}
       />
-      
+
       {/* Modal de resumo da sessão */}
       <SessionSummaryModal />
-      
+
       {/* Modo conversacional de voz */}
       <VoiceConversationMode
         sessionId={currentChatId}

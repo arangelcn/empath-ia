@@ -8,6 +8,7 @@ import {
   AcademicCapIcon,
   ChartBarIcon,
   ChatBubbleLeftRightIcon,
+  CircleStackIcon,
   CommandLineIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon
@@ -21,6 +22,7 @@ const navigation = [
   { name: 'Sessões', href: '/sessions', icon: AcademicCapIcon },
   { name: 'Conversas', href: '/conversations', icon: ChatBubbleLeftRightIcon },
   { name: 'Prompts', href: '/prompts', icon: CommandLineIcon },
+  { name: 'Knowledge', href: '/knowledge', icon: CircleStackIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   { name: 'Status do Sistema', href: '/system-status', icon: CpuChipIcon },
   { name: 'Configurações', href: '/settings', icon: Cog6ToothIcon },

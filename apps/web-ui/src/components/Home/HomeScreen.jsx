@@ -44,14 +44,10 @@ const statusStyles = {
   },
 };
 
-const getSessionRank = (session) => {
-  const ranks = {
-    in_progress: 0,
-    unlocked: 1,
-    completed: 2,
-    locked: 3,
-  };
-  return ranks[session?.status] ?? 4;
+const getSessionTimestamp = (session) => {
+  const value = session?.created_at || session?.updated_at;
+  const time = new Date(value || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
 };
 
 const Metric = ({ label, value, tone = 'text-gray-900' }) => (
@@ -76,7 +72,7 @@ const HomeScreen = () => {
   } = useOutletContext();
 
   const sortedSessions = useMemo(() => (
-    [...userSessions].sort((a, b) => getSessionRank(a) - getSessionRank(b) || String(a.title || '').localeCompare(String(b.title || '')))
+    [...userSessions].sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))
   ), [userSessions]);
 
   useEffect(() => {

@@ -1,5 +1,5 @@
 """
-Endpoints para integração com OpenAI
+Endpoints de chat do AI Service (LLM local + fallback OpenAI)
 """
 
 from fastapi import APIRouter, HTTPException
@@ -10,22 +10,18 @@ import json
 import logging
 from datetime import datetime
 
-from ..services.openai_service import OpenAIService
-from ..services.token_economy_service import TokenEconomyService
-from ..services.session_context_service import SessionContextService
-from ..services.redis_performance_service import RedisPerformanceService
+from ..services.deps import (
+    llm_service as openai_service,
+    token_economy_svc as token_economy_service,
+    session_context_svc as session_context_service,
+    redis_performance_svc as redis_performance_service,
+)
 
 # Configurar logging
 logger = logging.getLogger(__name__)
 
 # Criar router
 router = APIRouter(prefix="/openai", tags=["OpenAI"])
-
-# Inicializar serviços
-openai_service = OpenAIService()
-token_economy_service = TokenEconomyService()
-session_context_service = SessionContextService()
-redis_performance_service = RedisPerformanceService()
 
 class ChatRequest(BaseModel):
     message: str
@@ -390,6 +386,8 @@ async def generate_session_context(request: dict):
             }.get(source, "Fonte desconhecida")
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao gerar contexto da sessão: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
@@ -442,6 +440,8 @@ async def generate_next_session(request: dict):
             }.get(source, "Fonte desconhecida")
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro ao gerar próxima sessão: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")

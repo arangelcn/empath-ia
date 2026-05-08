@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 
 from ..models.knowledge import (
     DocumentStatus,
@@ -51,6 +51,32 @@ async def ingest_document_content(document_id: str, request: DocumentContentInge
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
     return {"success": True, "data": document}
+
+
+@router.post("/documents/{document_id}/upload")
+async def upload_document_file(
+    document_id: str,
+    file: UploadFile = File(...),
+    section: Optional[str] = Form(default=None),
+    ingested_by: Optional[str] = Form(default=None),
+):
+    """Receive one uploaded file, extract text, and ingest it into the document."""
+    try:
+        result = document_service.ingest_uploaded_file(
+            document_id=document_id,
+            filename=file.filename or "uploaded_document",
+            file_bytes=await file.read(),
+            content_type=file.content_type,
+            section=section,
+            ingested_by=ingested_by,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    return {"success": True, "data": result}
 
 
 @router.get("/documents/{document_id}/chunks")

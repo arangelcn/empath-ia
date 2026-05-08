@@ -395,6 +395,22 @@ Segurança do usuário > fidelidade ao contexto real > postura Rogeriana > brevi
                     "is_active": True
                 },
                 {
+                    "prompt_key": "voice_short_response",
+                    "prompt_type": "voice",
+                    "title": "Resposta Curta para Voz",
+                    "description": "Prompt curto para respostas em modo de voz",
+                    "content": """MODO DE VOZ ATIVO:
+- Responda em português brasileiro natural, como fala acolhedora.
+- Se for chamar o usuário pelo nome, use somente o primeiro nome, nunca nome completo ou sobrenome.
+- Use 2 a 4 frases curtas, sem listas, salvo se o usuário pedir.
+- Faça no máximo uma pergunta aberta.
+- Não dê diagnóstico, prescrição, laudo ou plano clínico autônomo.
+- Em crise ou risco imediato, priorize segurança e orientação urgente.""",
+                    "variables": ["username", "preferred_name", "session_id"],
+                    "tags": ["voz", "curto", "terapia", "resposta"],
+                    "is_active": True
+                },
+                {
                     "prompt_key": "fallback_greeting",
                     "prompt_type": "fallback",
                     "title": "Resposta de Fallback - Saudação",

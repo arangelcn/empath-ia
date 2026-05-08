@@ -1,13 +1,13 @@
-import os
 import logging
 import asyncio
 from typing import Optional
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
 # Variáveis de conexão MongoDB
-MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://admin:password@mongodb:27017/empatia?authSource=admin")
-DATABASE_NAME = os.getenv("MONGODB_DATABASE", "empatia")
+MONGODB_URL = settings.mongodb_url
+DATABASE_NAME = settings.mongodb_database
 
 # Cliente MongoDB global
 client = None
