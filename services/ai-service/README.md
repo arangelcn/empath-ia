@@ -30,7 +30,7 @@ docker compose up ai-service
 
 Notas:
 
-- Para usar GPU dentro do Docker, o host precisa ter NVIDIA Container Toolkit configurado.
+- A imagem do AI Service é CPU-only e usa endpoint LLM externo (OpenAI-compatible).
 - O AI Service não faz download/cópia/serving de modelo local; ele atua como cliente de endpoint LLM.
 - Se quiser trocar de provider/modelo entre ambientes, ajuste apenas `LLM_BASE_URL`, `MODEL_NAME` e, quando necessário, `OPENAI_API_KEY`.
 

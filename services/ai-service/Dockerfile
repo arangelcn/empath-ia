@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-ARG AI_SERVICE_BASE_IMAGE=nvidia/cuda:12.4.1-devel-ubuntu22.04
+ARG AI_SERVICE_BASE_IMAGE=python:3.12-slim
 FROM ${AI_SERVICE_BASE_IMAGE}
 
 WORKDIR /app
@@ -15,12 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     curl \
     git \
-    python3 \
     python3-dev \
-    python3-pip \
-    python3-venv \
-    && ln -sf /usr/bin/python3 /usr/local/bin/python \
-    && ln -sf /usr/bin/pip3 /usr/local/bin/pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements e instalar dependências Python
