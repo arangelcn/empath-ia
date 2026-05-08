@@ -138,6 +138,7 @@ class LLMService:
         self.max_tokens = int(os.getenv("MAX_TOKENS", "700"))
         self.voice_max_tokens = int(os.getenv("VOICE_MAX_TOKENS", "180"))
         self.temperature = float(os.getenv("TEMPERATURE", "0.3"))
+        self.request_timeout_seconds = float(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "90"))
 
         # Configurações de contexto
         self.max_history_messages = int(os.getenv("MAX_HISTORY_MESSAGES", "6"))
@@ -1137,6 +1138,20 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 if yielded:
                     return
 
+                logger.warning(
+                    "⚠️ Streaming do provedor %s não retornou conteúdo visível; tentando fallback interno non-stream",
+                    provider,
+                )
+                content = await self._call_openai(messages, max_tokens, temperature)
+                if content:
+                    yield {
+                        "type": "delta",
+                        "content": content,
+                        "provider": provider,
+                        "model": self.openai_model,
+                    }
+                    return
+
         return
 
     async def _call_openai_stream(
@@ -1156,7 +1171,7 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature if temperature is not None else self.temperature,
                 stream=True,
-                timeout=30,
+                timeout=self.request_timeout_seconds,
             )
 
         try:
@@ -1180,6 +1195,11 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 content = getattr(delta, "content", None)
                 if content:
                     yield content
+                    continue
+
+                reasoning_content = getattr(delta, "reasoning_content", None)
+                if reasoning_content:
+                    logger.debug("Streaming retornou apenas reasoning_content; aguardando conteúdo final visível")
         except Exception as exc:
             logger.error("❌ ERRO no streaming OpenAI: %s", exc)
             return
@@ -1216,7 +1236,7 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                     messages=messages,
                     max_tokens=max_tokens or self.max_tokens,
                     temperature=temperature if temperature is not None else self.temperature,
-                    timeout=30,
+                    timeout=self.request_timeout_seconds,
                 )
 
             response = await asyncio.to_thread(_create_completion)
@@ -1347,6 +1367,7 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             "openai_model": self.openai_model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
+            "request_timeout_seconds": self.request_timeout_seconds,
             "api_key_present": bool(self.api_key),
             "effective_api_key_present": bool(self.effective_api_key),
             "openai_base_url": self.openai_base_url,

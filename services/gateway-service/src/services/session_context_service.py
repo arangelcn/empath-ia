@@ -3,6 +3,7 @@ Service responsible for session context generation and retrieval.
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
@@ -35,6 +36,7 @@ class SessionContextService:
         next_session_service,
     ):
         self.ai_service_url = ai_service_url
+        self.ai_context_timeout_seconds = float(os.getenv("SESSION_CONTEXT_AI_TIMEOUT_SECONDS", "180"))
         self._repo = conversation_repo
         self._resolve_ref = resolve_ref
         self._extract_username = extract_username
@@ -487,7 +489,7 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
             }
 
             # Chamar o endpoint correto do SessionContextService
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=self.ai_context_timeout_seconds) as client:
                 response = await client.post(
                     f"{self.ai_service_url}/openai/generate-session-context",
                     json=ai_request,
@@ -516,8 +518,16 @@ RESPONDA APENAS COM O JSON, SEM TEXTO ADICIONAL.
         except httpx.ConnectError:
             logger.warning(f"⚠️ SessionContextService não disponível, usando análise básica para {session_id}")
             return None
+        except httpx.TimeoutException as e:
+            logger.error(
+                "❌ Timeout ao chamar SessionContextService para contexto (%ss) na sessão %s: %s",
+                self.ai_context_timeout_seconds,
+                session_id,
+                repr(e),
+            )
+            return None
         except Exception as e:
-            logger.error(f"❌ Erro ao chamar SessionContextService para contexto: {e}")
+            logger.error(f"❌ Erro ao chamar SessionContextService para contexto: {repr(e)}")
             return None
 
     def _parse_ai_context_response(self, ai_response: str) -> Dict[str, Any]:

@@ -394,6 +394,12 @@ class ChatService:
         tts_stream_disabled = False
         audio_url = None
         first_audio_ms: Optional[int] = None
+        text_chunker = SentenceChunker(
+            max_chars=220,
+            max_wait_ms=450,
+            min_timed_flush_chars=32,
+            min_timed_flush_words=4,
+        )
         first_text_ms: Optional[int] = None
 
         try:
@@ -408,6 +414,7 @@ class ChatService:
             parsed_original_session_id = identity.get("therapeutic_session_id") or legacy_session_id.split("_")[-1]
             if parsed_original_session_id == "session-1":
                 selected_voice, voice_enabled = await self._get_voice_config(username, is_voice_mode)
+                voice_enabled = voice_enabled and is_voice_mode
                 result = await self.process_user_message(
                     legacy_session_id,
                     user_message,
@@ -462,6 +469,7 @@ class ChatService:
             await self.start_or_get_conversation(legacy_session_id)
 
             selected_voice, voice_enabled = await self._get_voice_config(username, is_voice_mode)
+            voice_enabled = voice_enabled and is_voice_mode
 
             initial_prompt = None
             if not session_objective:
@@ -497,7 +505,7 @@ class ChatService:
                 "session_objective": session_objective,
                 "initial_prompt": initial_prompt,
                 "previous_session_context": previous_session_context,
-                "is_voice_mode": True,
+                "is_voice_mode": is_voice_mode,
                 "trace_id": trace_id,
             }
 
@@ -536,14 +544,25 @@ class ChatService:
                             if first_text_ms is None:
                                 first_text_ms = now_ms(started_at)
                             full_response += delta
-                            yield {
-                                "event": "text_delta",
-                                "data": {
-                                    "delta": delta,
-                                    "trace_id": trace_id,
-                                    "elapsed_ms": now_ms(started_at),
-                                },
-                            }
+                            if is_voice_mode:
+                                yield {
+                                    "event": "text_delta",
+                                    "data": {
+                                        "delta": delta,
+                                        "trace_id": trace_id,
+                                        "elapsed_ms": now_ms(started_at),
+                                    },
+                                }
+                            else:
+                                for text_chunk in text_chunker.push(delta):
+                                    yield {
+                                        "event": "text_delta",
+                                        "data": {
+                                            "delta": text_chunk,
+                                            "trace_id": trace_id,
+                                            "elapsed_ms": now_ms(started_at),
+                                        },
+                                    }
                             if voice_enabled and not tts_stream_disabled:
                                 for text_chunk in chunker.push(delta):
                                     async for audio_event in self._stream_tts_or_batch_chunk(
@@ -591,6 +610,18 @@ class ChatService:
                         tts_stream_failed = True
                         tts_stream_disabled = True
                     yield audio_event
+
+            if not is_voice_mode:
+                remaining_text = text_chunker.flush()
+                if remaining_text:
+                    yield {
+                        "event": "text_delta",
+                        "data": {
+                            "delta": remaining_text,
+                            "trace_id": trace_id,
+                            "elapsed_ms": now_ms(started_at),
+                        },
+                    }
 
             final_text = (ai_done_data.get("response") or full_response).strip()
             if voice_enabled and audio_sequence == 0 and final_text:
@@ -850,9 +881,9 @@ class ChatService:
             # Usar apenas resposta real do AI Service; fallback terapêutico é tratado como erro.
             simulated_response = ai_service_response
             
-            # Gerar áudio se habilitado
+            # Chat texto não deve esperar TTS síncrono.
             audio_url = None
-            if voice_enabled:
+            if voice_enabled and is_voice_mode:
                 if is_voice_mode:
                     logger.info(f"🎤 Iniciando síntese de voz para VoiceMode - Texto: {simulated_response['response'][:50]}...")
                 audio_url = await self._generate_audio(simulated_response['response'], selected_voice, is_voice_mode)

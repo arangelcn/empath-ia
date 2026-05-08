@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Bot, CheckCircle2, ChevronLeft, Heart, Mic, Send, Sparkles, Target, X } from 'lucide-react';
-import { sendMessage, getChatHistory, getUserSession, getInitialMessage, generateChatTitle, formatApiError } from '../../services/api.js';
+import { sendMessage, sendMessageTextStream, getChatHistory, getUserSession, getInitialMessage, generateChatTitle, formatApiError } from '../../services/api.js';
 import Button from '../Common/Button.jsx';
 import Loading from '../Common/Loading.jsx';
 import EmotionBadge from './EmotionBadge.jsx';
 import WebcamEmotionCapture from '../EmotionAnalysis/WebcamEmotionCapture.jsx';
 import VoiceConversationMode from './VoiceConversationMode.jsx';
 import { useAudioPlayer } from '../../hooks/useAudioPlayer.js';
+
+const initialMessageRequestsInFlight = new Set<string>();
 
 interface Message {
   id: string;
@@ -207,8 +209,17 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
   const [dynamicTitle, setDynamicTitle] = useState<string | null>(null);
   const [dynamicSubtitle, setDynamicSubtitle] = useState<string | null>(null);
   const [isVoiceModeOpen, setIsVoiceModeOpen] = useState(false);
+  const [activeStreamingAiMessageId, setActiveStreamingAiMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  const mapHistoryToMessages = (history: any[] = []): Message[] => history.map((msg: any) => ({
+    id: msg.id,
+    type: msg.type === 'user' ? 'user' : 'ai',
+    content: msg.content,
+    audioUrl: msg.audio_url || undefined,
+    authorName: msg.type === 'user' ? participantName : undefined,
+  }));
 
   // Carregar objetivo da sessão e histórico de mensagens quando o componente for montado
   useEffect(() => {
@@ -256,16 +267,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
         const response = await getChatHistory(currentChatId);
 
         if (response.success && response.data.history && response.data.history.length > 0) {
-          // Converter histórico do backend para o formato do frontend
-          const historyMessages: Message[] = response.data.history.map((msg: any) => ({
-            id: msg.id,
-            type: msg.type === 'user' ? 'user' : 'ai',
-            content: msg.content,
-            audioUrl: msg.audio_url || undefined,
-            authorName: msg.type === 'user' ? participantName : undefined,
-          }));
-
-          setMessages(historyMessages);
+          setMessages(mapHistoryToMessages(response.data.history));
         } else {
           if (!sessionExists) {
             setMessages([]);
@@ -276,10 +278,23 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
           console.log('🤖 Sessão sem histórico, gerando mensagem inicial automática...');
 
           try {
-            const initialMessageResponse = await getInitialMessage(currentChatId);
+            const requestKey = currentChatId;
+            const requestAlreadyRunning = initialMessageRequestsInFlight.has(requestKey);
+
+            if (!requestAlreadyRunning) {
+              initialMessageRequestsInFlight.add(requestKey);
+            }
+
+            const initialMessageResponse = requestAlreadyRunning
+              ? null
+              : await getInitialMessage(currentChatId);
             console.log('🔍 DEBUG - Resposta inicial:', initialMessageResponse);
 
-            if (initialMessageResponse.success && initialMessageResponse.data) {
+            if (requestAlreadyRunning) {
+              console.log('⏳ Mensagem inicial já está sendo gerada, aguardando histórico...');
+            }
+
+            if (requestAlreadyRunning || (initialMessageResponse.success && initialMessageResponse.data)) {
               // ✅ CORREÇÃO: Aguardar um pouco para garantir que o backend salvou a mensagem
               console.log('⏳ Aguardando backend finalizar salvamento...');
               await new Promise(resolve => setTimeout(resolve, 1000));
@@ -290,14 +305,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
               console.log('🔍 DEBUG - Histórico atualizado:', updatedHistory);
 
               if (updatedHistory.success && updatedHistory.data.history && updatedHistory.data.history.length > 0) {
-                const historyMessages: Message[] = updatedHistory.data.history.map((msg: any) => ({
-                  id: msg.id,
-                  type: msg.type === 'user' ? 'user' : 'ai',
-                  content: msg.content,
-                  audioUrl: msg.audio_url || undefined,
-                  authorName: msg.type === 'user' ? participantName : undefined,
-                }));
-
+                const historyMessages = mapHistoryToMessages(updatedHistory.data.history);
                 setMessages(historyMessages);
                 console.log('✅ Histórico carregado com sucesso após mensagem inicial:', historyMessages.length, 'mensagens');
 
@@ -314,7 +322,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                 // ✅ FALLBACK: Se histórico ainda não foi atualizado, usar dados da resposta inicial
                 console.warn('⚠️ Histórico ainda não atualizado, usando dados da resposta inicial');
 
-                if (initialMessageResponse.data.message) {
+                if (initialMessageResponse?.data?.message) {
                   const fallbackMessage: Message = {
                     id: initialMessageResponse.data.message.id,
                     type: 'ai',
@@ -342,6 +350,8 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
           } catch (error) {
             console.error('❌ Erro ao gerar mensagem inicial:', error);
             setMessages([]);
+          } finally {
+            initialMessageRequestsInFlight.delete(currentChatId);
           }
         }
       } catch (error) {
@@ -386,6 +396,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     setInputValue('');
     setIsLoading(true);
     setSessionError(null);
+    let pendingStreamMessageId: string | null = null;
 
     try {
       // ✅ CORREÇÃO: Para session-1 (cadastro), não passar sessionObjective 
@@ -403,18 +414,49 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
 
       console.log(`🔍 Session Info: originalSessionId=${originalSessionId}, isRegistrationSession=${isRegistrationSession}, isFirstMessage=${isFirstMessage}, willSendObjective=${objectiveToSend !== null}`);
 
-      const response = await sendMessage(currentInput, currentChatId, objectiveToSend);
-      if (response.success) {
-        const { ai_response } = response.data;
-        const aiMessage: Message = {
-          id: ai_response.id,
-          type: 'ai',
-          content: ai_response.content,
-          audioUrl: ai_response.audioUrl,
-        };
-        setMessages(prev => [...prev, aiMessage]);
+      if (!isRegistrationSession) {
+        const streamMessageId = `ai-stream-${Date.now()}`;
+        pendingStreamMessageId = streamMessageId;
+        setActiveStreamingAiMessageId(streamMessageId);
+        setMessages(prev => [...prev, { id: streamMessageId, type: 'ai', content: '' }]);
 
-        // Gerar título após a 1ª mensagem do usuário (não bloqueia a conversa)
+        let streamedResponse = '';
+        let finalPayload = null;
+
+        await sendMessageTextStream(currentInput, currentChatId, objectiveToSend, {
+          onTextDelta: (data) => {
+            const delta = data?.delta || '';
+            if (!delta) return;
+            streamedResponse += delta;
+            setMessages(prev => prev.map((message) => (
+              message.id === streamMessageId
+                ? { ...message, content: `${message.content || ''}${delta}` }
+                : message
+            )));
+          },
+          onDone: (data) => {
+            finalPayload = data;
+          },
+          onError: (data) => {
+            throw new Error(data?.error || 'Falha ao processar mensagem com IA.');
+          },
+        });
+
+        const response = finalPayload || {};
+        const responseData = response.data || {};
+        const aiResponse = responseData.ai_response || {};
+
+        setMessages(prev => prev.map((message) => (
+          message.id === streamMessageId
+            ? {
+              ...message,
+              id: aiResponse.id || streamMessageId,
+              content: aiResponse.content || streamedResponse || message.content,
+              audioUrl: aiResponse.audioUrl,
+            }
+            : message
+        )));
+
         if (isFirstMessage) {
           generateChatTitle(currentChatId, 'initial').then(result => {
             if (result.success && result.title) {
@@ -424,45 +466,16 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
           }).catch(() => { });
         }
 
-        // ✅ NOVO: Verificar se o cadastro foi finalizado
-        if (response.data.registration_completed && response.data.redirect_to_home) {
-          console.log('🎉 CADASTRO FINALIZADO - Processando redirecionamento...');
-
-          // Mostrar mensagem de sucesso
-          if (response.data.completion_message) {
-            console.log('📋 Mensagem de finalização:', response.data.completion_message);
-          }
-
-          // Usar tempo de redirecionamento definido pelo backend (padrão 3 segundos)
-          const redirectDelay = response.data.auto_redirect_delay || 3000;
-          console.log(`⏳ Redirecionamento automático em ${redirectDelay}ms`);
-
-          // Redirecionar para home após tempo especificado
-          setTimeout(() => {
-            console.log('🏠 Redirecionando para home...');
-            navigate('/home', {
-              state: {
-                message: 'Cadastro finalizado com sucesso! Agora você pode acessar todas as sessões terapêuticas.',
-                fromRegistration: true,
-                finalize_success: response.data.finalize_success
-              }
-            });
-          }, redirectDelay);
-        }
-
-        // ✅ NOVO: Verificar se a conversa foi finalizada automaticamente
-        if (response.data.conversation_ended) {
+        if (responseData.conversation_ended) {
           console.log('🔚 Conversa finalizada automaticamente');
           setIsConversationEnded(true);
           setShowFinalizeButton(false);
 
-          // Aguardar um pouco antes de mostrar o resumo
           setTimeout(() => {
             finalizeSession();
           }, 2000);
         }
 
-        // Detectar fim de conversa baseado na mensagem do usuário
         if (checkConversationEnd(currentInput)) {
           console.log('🔚 Fim de conversa detectado pela mensagem do usuário');
           setTimeout(() => {
@@ -470,28 +483,105 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
           }, 3000);
         }
       } else {
-        const message = response.error || 'A IA não conseguiu gerar uma resposta agora.';
-        setSessionError(message);
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `error-${Date.now()}`,
+        const response = await sendMessage(currentInput, currentChatId, objectiveToSend);
+        if (response.success) {
+          const { ai_response } = response.data;
+          const aiMessage: Message = {
+            id: ai_response.id,
             type: 'ai',
-            content: message,
-          },
-        ]);
+            content: ai_response.content,
+            audioUrl: ai_response.audioUrl,
+          };
+          setMessages(prev => [...prev, aiMessage]);
+
+          // Gerar título após a 1ª mensagem do usuário (não bloqueia a conversa)
+          if (isFirstMessage) {
+            generateChatTitle(currentChatId, 'initial').then(result => {
+              if (result.success && result.title) {
+                setDynamicTitle(result.title);
+                if (result.subtitle) setDynamicSubtitle(result.subtitle);
+              }
+            }).catch(() => { });
+          }
+
+          // ✅ NOVO: Verificar se o cadastro foi finalizado
+          if (response.data.registration_completed && response.data.redirect_to_home) {
+            console.log('🎉 CADASTRO FINALIZADO - Processando redirecionamento...');
+
+            // Mostrar mensagem de sucesso
+            if (response.data.completion_message) {
+              console.log('📋 Mensagem de finalização:', response.data.completion_message);
+            }
+
+            // Usar tempo de redirecionamento definido pelo backend (padrão 3 segundos)
+            const redirectDelay = response.data.auto_redirect_delay || 3000;
+            console.log(`⏳ Redirecionamento automático em ${redirectDelay}ms`);
+
+            // Redirecionar para home após tempo especificado
+            setTimeout(() => {
+              console.log('🏠 Redirecionando para home...');
+              navigate('/home', {
+                state: {
+                  message: 'Cadastro finalizado com sucesso! Agora você pode acessar todas as sessões terapêuticas.',
+                  fromRegistration: true,
+                  finalize_success: response.data.finalize_success
+                }
+              });
+            }, redirectDelay);
+          }
+
+          // ✅ NOVO: Verificar se a conversa foi finalizada automaticamente
+          if (response.data.conversation_ended) {
+            console.log('🔚 Conversa finalizada automaticamente');
+            setIsConversationEnded(true);
+            setShowFinalizeButton(false);
+
+            // Aguardar um pouco antes de mostrar o resumo
+            setTimeout(() => {
+              finalizeSession();
+            }, 2000);
+          }
+
+          // Detectar fim de conversa baseado na mensagem do usuário
+          if (checkConversationEnd(currentInput)) {
+            console.log('🔚 Fim de conversa detectado pela mensagem do usuário');
+            setTimeout(() => {
+              finalizeSession();
+            }, 3000);
+          }
+        } else {
+          const message = response.error || 'A IA não conseguiu gerar uma resposta agora.';
+          setSessionError(message);
+          setMessages(prev => [
+            ...prev,
+            {
+              id: `error-${Date.now()}`,
+              type: 'ai',
+              content: message,
+            },
+          ]);
+        }
       }
     } catch (error) {
       const message = formatApiError(error, 'A IA não conseguiu gerar uma resposta agora.');
       setSessionError(message);
-      const errorMessage = {
-        id: `error-${Date.now()}`,
-        type: 'ai',
-        content: message,
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      if (pendingStreamMessageId) {
+        setMessages(prev => prev.map((currentMessage) => (
+          currentMessage.id === pendingStreamMessageId
+            ? { ...currentMessage, content: message }
+            : currentMessage
+        )));
+      } else {
+        const errorMessage = {
+          id: `error-${Date.now()}`,
+          type: 'ai',
+          content: message,
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
     } finally {
       setIsLoading(false);
+      setActiveStreamingAiMessageId(null);
 
       // Manter foco no input após enviar mensagem
       // Usar setTimeout para garantir que o DOM seja atualizado antes de focar
@@ -866,10 +956,14 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
               <EmptyConversation sessionTitle={displaySessionTitle} />
             ) : (
               messages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  isTyping={msg.id === activeStreamingAiMessageId && !msg.content}
+                />
               ))
             )}
-            {isLoading && <MessageBubble message={{ id: 'typing', type: 'ai', content: '' }} isTyping />}
+            {isLoading && !activeStreamingAiMessageId && <MessageBubble message={{ id: 'typing', type: 'ai', content: '' }} isTyping />}
             <div ref={messagesEndRef} />
           </div>
         )}

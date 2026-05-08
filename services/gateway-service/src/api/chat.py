@@ -83,7 +83,7 @@ async def send_message_stream(request: ChatRequest):
             session_id=request.session_id or "default",
             user_message=request.message,
             session_objective=request.session_objective,
-            is_voice_mode=True,
+            is_voice_mode=bool(request.is_voice_mode),
             trace_id=trace_id,
             client_metrics=request.client_metrics,
         ):

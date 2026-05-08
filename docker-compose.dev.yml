@@ -72,7 +72,7 @@ services:
     environment:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
+      - MONGODB_URL=${GATEWAY_MONGODB_URL:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
       - SQL_DEBUG=${DEBUG:-true}
       - AI_SERVICE_URL=${AI_SERVICE_URL:-http://127.0.0.1:8001}
@@ -80,7 +80,7 @@ services:
       - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://127.0.0.1:8003}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://127.0.0.1:8004}
       - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://127.0.0.1:8005}
-      - REDIS_URL=${REDIS_URL:-redis://127.0.0.1:6379}
+      - REDIS_URL=${GATEWAY_REDIS_URL:-redis://127.0.0.1:6379}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7860,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3001}
       - HOT_RELOAD=${HOT_RELOAD:-true}
     volumes:
@@ -110,7 +110,7 @@ services:
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://127.0.0.1:1234/v1}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - OPENAI_COMPLETIONS_URL=${OPENAI_COMPLETIONS_URL:-}
       - OPENAI_COMPAT_API_KEY=${OPENAI_COMPAT_API_KEY:-lm-studio}
@@ -120,9 +120,9 @@ services:
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - MAX_TOKENS=${MAX_TOKENS:-700}
       - HOT_RELOAD=${HOT_RELOAD:-true}
-      - MONGODB_URI=${MONGODB_URL:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
+      - MONGODB_URI=${AI_MONGODB_URI:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
-      - REDIS_URL=${REDIS_URL:-redis://127.0.0.1:6379}
+      - REDIS_URL=${AI_REDIS_URL:-redis://127.0.0.1:6379/0}
       - GATEWAY_SERVICE_URL=${GATEWAY_SERVICE_URL:-http://127.0.0.1:8000}
     command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--log-level", "debug" ]
     depends_on:

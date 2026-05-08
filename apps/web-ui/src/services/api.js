@@ -114,10 +114,18 @@ export const sendMessage = async (message, sessionId, sessionObjective = null, i
 };
 
 export const sendMessageStream = async (message, sessionId, sessionObjective = null, handlers = {}) => {
+  return sendMessageSSE(message, sessionId, sessionObjective, true, handlers);
+};
+
+export const sendMessageTextStream = async (message, sessionId, sessionObjective = null, handlers = {}) => {
+  return sendMessageSSE(message, sessionId, sessionObjective, false, handlers);
+};
+
+const sendMessageSSE = async (message, sessionId, sessionObjective, isVoiceMode, handlers = {}) => {
   const payload = {
     message,
     session_id: sessionId,
-    is_voice_mode: true,
+    is_voice_mode: isVoiceMode,
   };
 
   if (sessionObjective) {

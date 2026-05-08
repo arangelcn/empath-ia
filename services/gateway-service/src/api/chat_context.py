@@ -1,5 +1,6 @@
 """Chat title, context, finalization, and initial-message routes."""
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/api/chat", tags=["Chat Context"])
 chat_service = ChatService()
 user_service = UserService()
 user_therapeutic_session_service = UserTherapeuticSessionService()
+_initial_message_locks: dict[str, asyncio.Lock] = {}
 
 
 class GenerateTitleRequest(BaseModel):
@@ -150,6 +152,8 @@ async def finalize_session(session_id: str):
         if not result.get("success"):
             error = result.get("error") or "Falha ao gerar contexto da sessão"
             logger.error("❌ Finalização abortada para %s: %s", legacy_session_id, error)
+            if error == "Conversa não encontrada":
+                raise HTTPException(status_code=404, detail=error)
             raise HTTPException(status_code=502, detail=error)
 
         if "_session-" in legacy_session_id:
@@ -192,9 +196,11 @@ async def finalize_session(session_id: str):
 
         return {"success": result.get("success", False), "data": result}
 
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.error("❌ Erro ao finalizar sessão %s: %s", session_id, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.exception("❌ Erro inesperado ao finalizar sessão %s", session_id)
+        raise HTTPException(status_code=500, detail=str(exc) or repr(exc)) from exc
 
 
 @router.get("/context/{session_id}")
@@ -275,40 +281,64 @@ async def get_initial_message(session_id: str):
         if not username:
             return {"success": False, "error": "Username não encontrado no session_id"}
 
-        user_label = await _get_user_display_name(username)
-        history = await chat_service.get_conversation_history(legacy_session_id)
-        if history.get("history") and len(history["history"]) > 0:
-            return {
-                "success": False,
-                "error": "Sessão já possui mensagens, não precisa de mensagem inicial",
-            }
+        lock = _initial_message_locks.setdefault(legacy_session_id, asyncio.Lock())
+        async with lock:
+            user_label = await _get_user_display_name(username)
+            history = await chat_service.get_conversation_history(legacy_session_id)
+            existing_history = history.get("history") or []
+            if existing_history:
+                logger.info("✅ Sessão %s já tem histórico; reutilizando mensagem inicial existente", legacy_session_id)
+                existing_ai_message = next((msg for msg in existing_history if msg.get("type") == "ai"), None)
+                if existing_ai_message:
+                    return {
+                        "success": True,
+                        "data": {
+                            "message": {
+                                "id": existing_ai_message.get("id"),
+                                "type": "ai",
+                                "content": existing_ai_message.get("content", ""),
+                                "audioUrl": existing_ai_message.get("audio_url"),
+                                "timestamp": existing_ai_message.get("created_at") or datetime.utcnow().isoformat(),
+                            },
+                            "chat_id": identity.get("chat_id"),
+                            "session_id": legacy_session_id,
+                            "therapeutic_session_id": original_session_id,
+                            "is_initial_message": True,
+                            "reused_existing_message": True,
+                        },
+                    }
 
-        if original_session_id == "session-1":
-            greeting = f"Olá, {user_label}!" if user_label else "Olá!"
-            initial_message = f"""{greeting}
+                return {
+                    "success": False,
+                    "error": "Sessão já possui mensagens, não precisa de mensagem inicial",
+                }
+
+            if original_session_id == "session-1":
+                greeting = f"Olá, {user_label}!" if user_label else "Olá!"
+                initial_message = f"""{greeting}
 
 Eu sou seu assistente terapêutico. É um prazer te conhecer! Para personalizar nossa conversa, vou fazer algumas perguntas sobre você.
 
 Primeiro, me conta: qual é a sua idade?"""
-        else:
-            initial_message = await _build_followup_initial_message(
-                username=username,
-                user_label=user_label,
-                original_session_id=original_session_id or "session-1",
-                legacy_session_id=legacy_session_id,
-            )
+            else:
+                initial_message = await _build_followup_initial_message(
+                    username=username,
+                    user_label=user_label,
+                    original_session_id=original_session_id or "session-1",
+                    legacy_session_id=legacy_session_id,
+                )
 
-        await chat_service.start_or_get_conversation(legacy_session_id)
-        message_id = await chat_service._save_message(legacy_session_id, "ai", initial_message)
-        logger.info("🔍 DEBUG: Mensagem inicial salva com ID: %s", message_id)
+            await chat_service.start_or_get_conversation(legacy_session_id)
+            message_id = await chat_service._save_message(legacy_session_id, "ai", initial_message)
+            logger.info("🔍 DEBUG: Mensagem inicial salva com ID: %s", message_id)
 
-        debug_history = await chat_service.get_conversation_history(legacy_session_id)
-        logger.info("🔍 DEBUG: Histórico após salvar - %s mensagens", len(debug_history.get("history", [])))
-        if debug_history.get("history"):
-            for i, msg in enumerate(debug_history["history"]):
-                logger.info("🔍 DEBUG: Mensagem %s: type=%s, content=%s...", i + 1, msg["type"], msg["content"][:50])
+            debug_history = await chat_service.get_conversation_history(legacy_session_id)
+            logger.info("🔍 DEBUG: Histórico após salvar - %s mensagens", len(debug_history.get("history", [])))
+            if debug_history.get("history"):
+                for i, msg in enumerate(debug_history["history"]):
+                    logger.info("🔍 DEBUG: Mensagem %s: type=%s, content=%s...", i + 1, msg["type"], msg["content"][:50])
 
-        audio_url = await _try_generate_initial_audio(username, initial_message)
+            audio_url = await _try_generate_initial_audio(username, initial_message)
 
         return {
             "success": True,
