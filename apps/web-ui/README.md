@@ -1,160 +1,158 @@
 # Web UI - Empath.IA
 
-Este é o frontend da aplicação Empath.IA, responsável por fornecer a interface de chat para que os usuários possam interagir com a psicóloga virtual. A aplicação é construída com tecnologias modernas, focando em uma experiência de usuário fluida, reativa e completamente funcional.
+This is the frontend for Empath.IA. It provides the conversational interface where users interact with the virtual psychologist using a modern, reactive, and production-oriented experience.
 
-## ✨ Visão Geral
+## Overview
 
-A interface principal consiste em uma experiência de chat completa onde o usuário pode:
+The main interface is a complete chat experience where the user can:
 
-- **Conversar naturalmente** com a psicóloga virtual baseada em Carl Rogers
-- **Ouvir respostas em áudio** com síntese de voz em português brasileiro
-- **Personalizar a experiência** escolhendo nome de usuário e voz preferida
-- **Manter histórico** de conversas que persiste entre sessões
-- **Visualizar emoções** detectadas em tempo real
-- **Controlar reprodução** de áudio manualmente quando necessário
+- **Chat naturally** with a Carl Rogers-inspired virtual psychologist
+- **Listen to audio responses** with Brazilian Portuguese speech synthesis
+- **Personalize the experience** by choosing display name and preferred voice
+- **Keep persistent history** across sessions
+- **See real-time emotion detection** indicators
+- **Control audio playback** manually when needed
 
-## 🚀 Tecnologias Utilizadas
+## Tech Stack
 
--   **Framework:** [React 18](https://reactjs.org/) com Hooks
--   **Build Tool:** [Vite](https://vitejs.dev/) para desenvolvimento rápido
--   **Linguagem:** [TypeScript](https://www.typescriptlang.org/) & JavaScript
--   **Estilização:** [Tailwind CSS](https://tailwindcss.com/) para design moderno
--   **Ícones:** [Lucide React](https://lucide.dev/guide/react) para ícones consistentes
--   **Cliente HTTP:** [Axios](https://axios-http.com/) para comunicação com APIs
--   **Containerização:** Docker com hot reload para desenvolvimento
+- **Framework:** [React 18](https://reactjs.org/) with Hooks
+- **Build Tool:** [Vite](https://vitejs.dev/)
+- **Language:** [TypeScript](https://www.typescriptlang.org/) and JavaScript
+- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+- **Icons:** [Lucide React](https://lucide.dev/guide/react)
+- **HTTP Client:** [Axios](https://axios-http.com/)
+- **Containerization:** Docker with hot reload
 
-## 🎯 Funcionalidades Principais
+## Core Features
 
-### ✅ Implementado
-- ✅ **Chat em Tempo Real**: Interface de chat responsiva e intuitiva
-- ✅ **Modo Conversação por Voz**: Interface completa para conversação por voz com controle inteligente do microfone
-- ✅ **Controle Inteligente de Microfone**: Microfone automaticamente desligado durante processamento e reprodução de áudio
-- ✅ **Persistência de Histórico**: Mensagens mantidas entre sessões
-- ✅ **Síntese de Voz**: Reprodução automática das respostas da IA
-- ✅ **Reconhecimento de Voz**: Captura e transcrição automática da fala do usuário
-- ✅ **Cancelamento de Eco**: Configuração avançada do microfone para evitar feedback
-- ✅ **Seleção de Vozes**: Múltiplas opções de vozes neurais em português
-- ✅ **Tela de Boas-vindas**: Onboarding com coleta de preferências
-- ✅ **Controles de Áudio**: Play/pause manual para cada mensagem
-- ✅ **Indicadores Visuais**: Estados de carregamento e reprodução
-- ✅ **Detecção de Emoções**: Badge em tempo real com emoção detectada
-- ✅ **Design Responsivo**: Funciona em desktop, tablet e mobile
-- ✅ **Gerenciamento de Estado**: Estado local e persistência no backend
+### Implemented
+- Chat UI with real-time interaction
+- Voice conversation mode with smart microphone behavior
+- Automatic microphone muting during processing and playback
+- Conversation history persistence
+- Automatic AI response playback
+- Speech recognition for user voice input
+- Echo-cancellation settings
+- Multiple neural voice options in Portuguese
+- Onboarding and preference collection
+- Manual play/pause controls per message
+- Loading and playback visual states
+- Real-time emotion badge
+- Responsive design for desktop/tablet/mobile
+- Local state plus backend persistence
 
-### 🔄 Planejado
-- 🔄 Layout com menu lateral similar às IAs conversacionais atuais
-- 🔄 Página de Dados pessoais
-- 🔄 Coleta e persistência do nome completo no login/onboarding
-- 🔄 Modo escuro/claro
-- 🔄 Configurações avançadas de áudio
-- 🔄 Histórico de sessões anteriores
-- 🔄 Exportação de conversas
-- 🔄 Integração com avatar animado
+### Planned
+- Sidebar layout similar to modern conversational AI products
+- Personal data page
+- Full name collection/persistence in login/onboarding
+- Light/dark mode
+- Advanced audio settings
+- Previous sessions history view
+- Conversation export
+- Animated avatar integration
 
-### 🧭 Próximo ciclo de produto
+### Next product cycle
 
-1. **Menu lateral**: navegação fixa em desktop e drawer em mobile, com acesso a sessões recentes, nova sessão, jornada terapêutica, dados pessoais e sair.
-2. **Dados pessoais**: página autenticada para visualizar e editar nome completo, voz preferida e preferências de privacidade.
-3. **Nome completo no login**: após Google OAuth, pedir o nome completo quando ele não estiver salvo; persistir no perfil do usuário e usar como `display_name` nas telas e no contexto enviado à IA.
+1. **Sidebar navigation:** fixed desktop sidebar and mobile drawer with recent sessions, new session, therapeutic journey, profile, and sign-out.
+2. **Personal data page:** authenticated page to view/edit full name, preferred voice, and privacy preferences.
+3. **Full name at login:** after Google OAuth, ask for full name when missing and persist it as part of the user profile for UI and AI context.
 
-## 📂 Estrutura de Diretórios
+## Directory Structure
 
-A estrutura de arquivos do `web-ui` é organizada da seguinte forma para garantir escalabilidade e manutenibilidade:
-
-```
+```text
 apps/web-ui/
-├── public/                      # Arquivos estáticos
-│   ├── index.html              # Template HTML principal
-│   └── favicon.ico             # Ícone da aplicação
+├── public/                      # Static files
+│   ├── index.html               # Main HTML template
+│   └── favicon.ico              # App icon
 ├── src/
-│   ├── components/             # Componentes React reutilizáveis
-│   │   ├── Chat/              # Componentes específicos do chat
-│   │   │   ├── ChatScreen.tsx # Tela principal do chat
-│   │   │   └── MessageBubble.tsx # Bolhas de mensagem
-│   │   ├── Common/            # Componentes comuns
-│   │   │   ├── Button.tsx     # Botões reutilizáveis
-│   │   │   └── Loading.tsx    # Indicadores de carregamento
-│   │   ├── Avatar/            # Componentes do avatar (futuro)
-│   │   └── EmotionAnalysis/   # Componentes de análise emocional
-│   ├── hooks/                 # Hooks customizados do React
-│   │   ├── useAudioPlayer.js  # Hook para reprodução de áudio
-│   │   └── useChat.js         # Hook para gerenciamento do chat
-│   ├── services/              # Lógica de comunicação com APIs
-│   │   └── api.js            # Cliente HTTP para Gateway Service
-│   ├── utils/                 # Funções utilitárias
-│   │   └── formatters.js     # Formatação de dados
-│   ├── App.jsx               # Componente raiz da aplicação
-│   └── main.jsx              # Ponto de entrada da aplicação
-├── .env.example               # Exemplo de variáveis de ambiente
-├── package.json               # Dependências e scripts do projeto
-├── tailwind.config.js         # Configuração do Tailwind CSS
-├── vite.config.js            # Configuração do Vite
-└── Dockerfile                # Container para desenvolvimento
+│   ├── components/              # Reusable React components
+│   │   ├── Chat/                # Chat-specific components
+│   │   │   ├── ChatScreen.tsx   # Main chat screen
+│   │   │   └── MessageBubble.tsx
+│   │   ├── Common/              # Shared UI components
+│   │   │   ├── Button.tsx
+│   │   │   └── Loading.tsx
+│   │   ├── Avatar/              # Avatar components (future)
+│   │   └── EmotionAnalysis/     # Emotion analysis components
+│   ├── hooks/                   # Custom React hooks
+│   │   ├── useAudioPlayer.js
+│   │   └── useChat.js
+│   ├── services/                # API communication layer
+│   │   └── api.js
+│   ├── utils/                   # Utility functions
+│   │   └── formatters.js
+│   ├── App.jsx                  # Root component
+│   └── main.jsx                 # App entrypoint
+├── .env.example                 # Environment sample
+├── package.json                 # Dependencies and scripts
+├── tailwind.config.js           # Tailwind config
+├── vite.config.js               # Vite config
+└── Dockerfile                   # Container configuration
 ```
 
-## 🧩 Componentes Principais
+## Main Components
 
 ### `ChatScreen.tsx`
-O componente principal que orquestra toda a interface de chat:
-- **Gerenciamento de Estado**: Controla mensagens, carregamento e preferências
-- **Histórico Persistente**: Carrega automaticamente conversas anteriores
-- **Integração de Áudio**: Reproduz automaticamente respostas da IA
-- **Controles Manuais**: Permite reprodução manual de qualquer mensagem
-- **Indicadores Visuais**: Mostra estados de carregamento e reprodução
+Orchestrates the full chat experience:
+- State management for messages, loading, and preferences
+- Automatic load of previous history
+- Automatic AI audio playback
+- Manual playback controls for any message
+- Clear loading and playback states
 
 ### `WelcomeScreen.tsx`
-Tela de onboarding para novos usuários:
-- **Coleta de Dados**: Nome de usuário e preferências
-- **Próximo passo**: Coletar nome completo e salvar como dado de perfil do usuário
-- **Seleção de Voz**: Interface para escolher voz preferida
-- **Teste de Áudio**: Preview das vozes disponíveis
-- **Validação**: Garante que todos os dados necessários sejam coletados
+Onboarding for new users:
+- Preference and user data collection
+- Next step: collect full legal name and save it on user profile
+- Voice selection interface
+- Voice preview
+- Validation of required onboarding fields
 
 ### `EmotionBadge.tsx`
-Componente para exibição de emoções em tempo real:
-- **Detecção Automática**: Atualiza a cada 5 segundos
-- **Indicadores Visuais**: Emoji e cor correspondente à emoção
-- **Estados Suportados**: Feliz, Triste, Neutro, Surpreso, Com Raiva
+Real-time emotion indicator:
+- Auto updates every 5 seconds
+- Emoji and color mapping per emotion
+- Supported states: happy, sad, neutral, surprised, angry
 
 ### `VoiceConversationMode.jsx`
-Componente para conversação por voz em tempo real:
-- **Reconhecimento de Voz**: Captura automática da fala do usuário em português brasileiro
-- **Controle Inteligente de Microfone**: Automaticamente liga/desliga o microfone nos momentos apropriados
-- **Fluxo Seguro**: Garante que o sistema não "se ouça" durante processamento ou reprodução
-- **Cancelamento de Eco**: Configurações avançadas para evitar feedback de áudio
-- **Transcrição em Tempo Real**: Mostra o que está sendo capturado em tempo real
-- **Estados Visuais**: Indicadores claros de quando está ouvindo, processando ou reproduzindo
+Real-time voice interaction:
+- Automatic Brazilian Portuguese speech recognition
+- Smart microphone on/off behavior during the flow
+- Prevents self-listening during playback/processing
+- Echo-cancellation and audio safety settings
+- Live transcript display
+- Explicit visual state for listening, processing, and playing
 
-**Fluxo do Modo de Voz:**
-1. **Usuário fala** → Microfone ativo e capturando
-2. **Sistema processa** → Microfone automaticamente desligado
-3. **IA responde** → Microfone permanece desligado durante reprodução
-4. **Áudio termina** → Microfone reativado para nova fala
+**Voice mode flow:**
+1. User speaks -> microphone active
+2. System processes -> microphone muted automatically
+3. AI responds -> microphone stays muted during playback
+4. Playback ends -> microphone becomes active again
 
-## 🎣 Hooks Customizados
+## Custom Hooks
 
 ### `useAudioPlayer.js`
-Hook React para gerenciar reprodução de áudio:
+Audio playback management hook:
+
 ```javascript
 const { playAudio, isPlaying, activeAudioUrl } = useAudioPlayer();
 
-// Reproduzir áudio
 playAudio(audioUrl, onComplete);
 
-// Verificar se está reproduzindo
 if (isPlaying && activeAudioUrl === messageAudioUrl) {
-  // Mostrar indicador de reprodução
+  // show playback indicator
 }
 ```
 
-**Funcionalidades:**
-- Controle de play/pause
-- Rastreamento de áudio ativo
-- Callbacks de conclusão
-- Prevenção de reprodução simultânea
+Features:
+- Play/pause control
+- Active audio tracking
+- Completion callbacks
+- Simultaneous playback prevention
 
 ### `useVoiceMode.js`
-Hook React para gerenciar conversação por voz:
+Voice conversation management hook:
+
 ```javascript
 const {
   isVoiceModeActive,
@@ -170,82 +168,60 @@ const {
   setAudioPlaying
 } = useVoiceMode(onTranscriptComplete);
 
-// Ativar modo de voz
 activateVoiceMode();
-
-// Controlar microfone manualmente
-muteMicrophone(true); // Mutar
-muteMicrophone(false); // Desmutar
-
-// Informar estado do áudio
-setAudioPlaying(true); // Áudio iniciou
-setAudioPlaying(false); // Áudio parou
+muteMicrophone(true);
+muteMicrophone(false);
+setAudioPlaying(true);
+setAudioPlaying(false);
 ```
 
-**Funcionalidades:**
-- Reconhecimento de voz contínuo em português brasileiro
-- Controle físico do microfone (mute/unmute)
-- Cancelamento de eco e supressão de ruído
-- Sincronização com reprodução de áudio
-- Detecção automática de fim de fala
-- Prevenção de feedback entre microfone e alto-falantes
+Features:
+- Continuous Brazilian Portuguese speech recognition
+- Physical microphone mute/unmute control
+- Echo cancellation and noise suppression
+- Playback synchronization
+- Automatic end-of-speech detection
+- Feedback loop prevention between mic and speaker
 
-### `useChat.js` (Planejado)
-Hook para gerenciamento centralizado do chat:
-- Estado das mensagens
-- Histórico de conversas
-- Preferências do usuário
-- Integração com APIs
+### `useChat.js` (planned)
+Future centralized chat hook for:
+- Message state
+- Conversation history
+- User preferences
+- API integration
 
-## 🔌 Serviços
+## Services
 
 ### `api.js`
-Cliente HTTP centralizado para comunicação com o Gateway Service:
+Centralized HTTP client for the Gateway service:
 
 ```javascript
-// Enviar mensagem
 const response = await sendMessage(message, sessionId);
-
-// Buscar histórico
 const history = await getChatHistory(sessionId);
-
-// Verificar status do usuário
 const status = await getUserStatus(sessionId);
-
-// Salvar preferências
 await saveUserPreferences(sessionId, username, selectedVoice);
 ```
 
-**Endpoints Integrados:**
-- `POST /api/chat/send` - Enviar mensagens
-- `GET /api/chat/history/{session_id}` - Buscar histórico
-- `GET /api/user/status/{session_id}` - Status do usuário
-- `POST /api/user/preferences` - Salvar preferências
+Integrated endpoints:
+- `POST /api/chat/send` - send messages
+- `GET /api/chat/history/{session_id}` - fetch history
+- `GET /api/user/status/{session_id}` - user status
+- `POST /api/user/preferences` - save preferences
 
-## ⚙️ Configuração do Ambiente
+## Environment Configuration
 
-### Variáveis de Ambiente
-
-Crie um arquivo `.env` na raiz de `apps/web-ui`:
+Create a `.env` file inside `apps/web-ui`:
 
 ```bash
-# URL do Gateway Service
 VITE_API_URL=http://localhost:8000
-
-# Configurações de desenvolvimento
 VITE_NODE_ENV=development
-
-# URLs de serviços (opcional, para desenvolvimento)
 VITE_VOICE_SERVICE_URL=http://localhost:8004
 VITE_EMOTION_SERVICE_URL=http://localhost:8003
 ```
 
-### Configuração Docker
-
-O projeto inclui configuração Docker otimizada para desenvolvimento:
+## Docker Development
 
 ```dockerfile
-# Dockerfile.dev
 FROM node:18-alpine
 WORKDIR /app
 COPY package*.json ./
@@ -255,44 +231,41 @@ EXPOSE 3000
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 ```
 
-## 📜 Scripts Disponíveis
+## Available Scripts
 
-No diretório do projeto, você pode executar:
-
-### Desenvolvimento
+### Development
 ```bash
-npm install          # Instala todas as dependências
-npm run dev         # Executa em modo de desenvolvimento (http://localhost:3000)
-npm run dev:host    # Executa com acesso externo (0.0.0.0:3000)
+npm install
+npm run dev
+npm run dev:host
 ```
 
-### Build e Deploy
+### Build and Preview
 ```bash
-npm run build       # Compila o projeto para produção
-npm run preview     # Visualiza a build de produção localmente
-npm run build:analyze # Analisa o tamanho do bundle
+npm run build
+npm run preview
+npm run build:analyze
 ```
 
-### Qualidade de Código
+### Code Quality
 ```bash
-npm run lint        # Executa ESLint para identificar problemas
-npm run lint:fix    # Corrige automaticamente problemas do ESLint
-npm run format      # Formata o código usando Prettier
-npm run type-check  # Verifica tipos TypeScript
+npm run lint
+npm run lint:fix
+npm run format
+npm run type-check
 ```
 
-### Testes (Planejado)
+### Testing (planned)
 ```bash
-npm run test        # Executa testes unitários
-npm run test:watch  # Executa testes em modo watch
-npm run test:coverage # Gera relatório de cobertura
+npm run test
+npm run test:watch
+npm run test:coverage
 ```
 
-## 🎨 Design System
+## Design System
 
-### Cores Principais
+### Main colors
 ```css
-/* Tailwind CSS Classes */
 .primary-blue: bg-blue-500, text-blue-500
 .primary-gray: bg-gray-50, text-gray-800
 .success-green: bg-green-100, text-green-800
@@ -300,103 +273,109 @@ npm run test:coverage # Gera relatório de cobertura
 .error-red: bg-red-100, text-red-800
 ```
 
-### Componentes de UI
-- **Botões**: Consistentes com estados hover e disabled
-- **Cards**: Sombras suaves e bordas arredondadas
-- **Inputs**: Foco com ring azul e validação visual
-- **Badges**: Cores semânticas para diferentes estados
+### UI primitives
+- Buttons with hover and disabled states
+- Cards with soft shadows and rounded corners
+- Inputs with blue focus ring and visual validation
+- Semantic badges for status
 
-## 🔄 Fluxo de Dados
+## Data Flow
 
-### Arquitetura de Estado
-```
-User Input → ChatScreen → API Service → Gateway → Backend Services
+### State architecture
+```text
+User Input -> ChatScreen -> API Service -> Gateway -> Backend Services
      ↓                                                      ↓
-Audio Player ← Message State ← Response Processing ← AI Response
+Audio Player <- Message State <- Response Processing <- AI Response
 ```
 
-### Ciclo de Vida de uma Mensagem
-1. **Input do Usuário**: Digitação e envio da mensagem
-2. **Estado Local**: Adição imediata à lista de mensagens
-3. **API Call**: Envio para o Gateway Service
-4. **Processamento**: IA gera resposta e áudio
-5. **Resposta**: Mensagem da IA adicionada ao estado
-6. **Áudio**: Reprodução automática da resposta
-7. **Persistência**: Salvamento no MongoDB via Gateway
+### Message lifecycle
+1. User writes/sends a message
+2. Message is appended to local state immediately
+3. Frontend calls Gateway API
+4. AI generates text and audio
+5. Response is appended to chat state
+6. Audio plays automatically
+7. Conversation persists through Gateway to MongoDB
 
-## 🚀 Performance
+## Performance
 
-### Otimizações Implementadas
-- **Code Splitting**: Carregamento sob demanda de componentes
-- **Lazy Loading**: Componentes carregados quando necessário
-- **Memoização**: React.memo para componentes pesados
-- **Debounce**: Entrada de texto otimizada
-- **Asset Optimization**: Imagens e ícones otimizados
+### Implemented optimizations
+- Code splitting
+- Lazy loading for expensive components
+- Memoization for heavy renders
+- Debounced input handling
+- Optimized images/icons
 
-### Métricas de Performance
-- **First Contentful Paint**: < 1.5s
-- **Time to Interactive**: < 3s
-- **Bundle Size**: < 500KB (gzipped)
-- **Lighthouse Score**: > 90
+### Target metrics
+- First Contentful Paint: `< 1.5s`
+- Time to Interactive: `< 3s`
+- Bundle size: `< 500KB` (gzipped)
+- Lighthouse score: `> 90`
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### Problemas Comuns
+1. **Audio is not playing**
+```bash
+curl http://localhost:8004/health
+# Check browser console for audio errors
+```
 
-1. **Áudio não reproduz**
-   ```bash
-   # Verificar se o Voice Service está rodando
-   curl http://localhost:8004/health
-   
-   # Verificar logs do navegador
-   # F12 → Console → Procurar erros de áudio
-   ```
+2. **History is not loading**
+```bash
+curl http://localhost:8000/api/chat/history/session_test
+docker logs empatia-gateway-1 -f
+```
 
-2. **Histórico não carrega**
-   ```bash
-   # Verificar conexão com Gateway
-   curl http://localhost:8000/api/chat/history/session_test
-   
-   # Verificar logs do Gateway
-   docker logs empatia-gateway-1 -f
-   ```
+3. **UI is not refreshing**
+```bash
+# Hard refresh in browser: Ctrl+Shift+R
+docker logs empatia-web-ui-1 -f
+```
 
-3. **Interface não atualiza**
-   ```bash
-   # Limpar cache do navegador
-   # Ctrl+Shift+R (hard refresh)
-   
-   # Verificar hot reload
-   docker logs empatia-web-ui-1 -f
-   ```
+### Debug mode
 
-### Debug Mode
-
-Para habilitar logs detalhados:
 ```javascript
-// No console do navegador
 localStorage.setItem('debug', 'true');
 location.reload();
 ```
 
-## 🔗 Integração com Backend
+## Backend Integration
 
-### Gateway Service
-- **Base URL**: `http://localhost:8000/api`
-- **Autenticação**: Session-based (session_id)
-- **Formato**: JSON requests/responses
-- **Error Handling**: Tratamento centralizado de erros
+### Gateway service
+- **Base URL:** `http://localhost:8000/api`
+- **Auth model:** session-based (`session_id`)
+- **Payload format:** JSON
+- **Error handling:** centralized
 
-### Estrutura de Resposta Padrão
+### Standard response shape
 ```json
 {
   "success": true,
   "data": {
     "ai_response": {
       "id": "msg_123",
-      "content": "Como posso ajudá-lo?",
+      "content": "How can I help you?",
       "audioUrl": "http://localhost:8004/audio/file.mp3"
     }
   }
 }
 ```
+
+## Contributing
+
+1. Fork the project
+2. Create a feature branch
+3. Commit your changes
+4. Push your branch
+5. Open a Pull Request
+
+## License
+
+MIT - see `LICENSE`.
+
+## Support
+
+For technical support or questions:
+- Email: `support@empat-ia.io`
+- Docs: `/docs`
+- Issues: GitHub Issues

@@ -1,196 +1,196 @@
-# LM Studio + Gemma: diagnostico de latencia
+# LM Studio + Gemma: Latency Diagnosis
 
-Data: 2026-05-08
+Date: 2026-05-08
 
-## Resumo
+## Summary
 
-O gargalo principal nao esta no Docker nem no `gateway-service`.
-O `LM Studio` esta usando a GPU corretamente, mas o `gemma-4-e4b` ficou lento quando recebeu o prompt terapeutico completo do `ai-service`, com contexto de usuario, historico e instrucao longa.
+The main bottleneck is not Docker or `gateway-service`.
+`LM Studio` is using GPU correctly, but `gemma-4-e4b` became slow when it received the full therapeutic prompt from `ai-service`, including user context, message history, and long instructions.
 
-Em outras palavras:
+In short:
 
-- chamada direta e curta ao LM Studio: rapida
-- chamada real da aplicacao: lenta
-- causa principal: `prompt grande + contexto rico + resposta longa`
+- direct short request to LM Studio: fast
+- real app request: slow
+- root cause: `large prompt + rich context + long output`
 
-## O que foi verificado
+## What was validated
 
-### 1. GPU do LM Studio esta sendo usada
+### 1. LM Studio GPU usage is active
 
-Com `nvidia-smi`, o processo do LM Studio apareceu usando a GPU:
+With `nvidia-smi`, LM Studio process was visible on GPU:
 
 - GPU: `NVIDIA GeForce RTX 3050 6GB Laptop GPU`
-- VRAM em uso pelo LM Studio: cerca de `3.3 GB`
-- Utilizacao observada: cerca de `55%`
+- VRAM used by LM Studio: around `3.3 GB`
+- Observed utilization: around `55%`
 
-Conclusao: o problema nao era fallback silencioso para CPU.
+Conclusion: this was not a silent CPU fallback.
 
-### 2. Modelos expostos no LM Studio
+### 2. Models exposed by LM Studio
 
 `GET http://127.0.0.1:1234/v1/models`
 
-Modelos visiveis:
+Visible models:
 
 - `google/gemma-4-e4b`
 - `deepseek/deepseek-r1-0528-qwen3-8b`
 - `text-embedding-nomic-embed-text-v1.5`
 
-### 3. O `ai-service` estava apontando corretamente
+### 3. `ai-service` target configuration was correct
 
 `GET http://127.0.0.1:8001/openai/status`
 
-Configuracao relevante:
+Relevant configuration:
 
 - `provider`: `openai`
 - `active_provider`: `openai`
 - `model`: `gemma-4-e4b`
 - `openai_base_url`: `http://127.0.0.1:1234/v1`
 
-Observacao:
+Note:
 
-- o provider continua sendo `openai` porque o app usa a API OpenAI-compatible do LM Studio
-- isso nao significa que esta chamando a OpenAI real
+- provider is still called `openai` because the app uses LM Studio through an OpenAI-compatible API
+- this does not mean requests are going to OpenAI cloud
 
-## Medicoes feitas
+## Measurements
 
-### Chamada direta curta ao LM Studio
+### Direct short request to LM Studio
 
-Prompt simples, sem contexto terapeutico pesado:
+Simple prompt, no heavy therapeutic context:
 
-- non-stream: cerca de `1.37s`
-- primeiro chunk no stream: cerca de `0.86s`
+- non-stream: around `1.37s`
+- first stream chunk: around `0.86s`
 
-Isso mostrou que o servidor local e a GPU estavam saudaveis.
+This confirmed local server and GPU were healthy.
 
-### Chamada via `ai-service`
+### Request through `ai-service`
 
-Teste simples pelo endpoint da aplicacao:
+Simple app-level endpoint tests:
 
-- `POST /openai/chat`: cerca de `48.3s`
-- `POST /openai/chat/stream`: primeiro texto visivel em cerca de `38.3s`
+- `POST /openai/chat`: around `48.3s`
+- `POST /openai/chat/stream`: first visible text around `38.3s`
 
-### Reproducao direta com prompt grande
+### Direct reproduction with large prompt
 
-Quando enviamos um prompt parecido com o da aplicacao direto para o LM Studio:
+Sending an app-like prompt directly to LM Studio:
 
-- prompt de entrada: cerca de `1059 prompt_tokens`
-- stream com primeiro texto visivel: cerca de `38.3s`
+- input size: around `1059 prompt_tokens`
+- stream first visible text: around `38.3s`
 
-Conclusao:
+Conclusion:
 
-- o comportamento lento vem do tamanho/complexidade do payload enviado ao Gemma
-- isso reproduziu mesmo sem `gateway-service` e sem `Docker` no caminho
+- slow behavior comes from payload size/complexity sent to Gemma
+- same behavior reproduced without `gateway-service` and without Docker in path
 
-## Causa principal
+## Root cause
 
-O `ai-service` montava um prompt pesado demais para um modelo local desse porte:
+`ai-service` was building prompts that are too heavy for this local model size:
 
-- prompt de sistema longo
-- bloco grande de perfil do usuario
-- contexto anterior da sessao
-- historico recente
-- respostas permitidas com `MAX_TOKENS=700`
+- long system prompt
+- large user-profile block
+- previous-session context
+- recent conversation history
+- allowed outputs with `MAX_TOKENS=700`
 
-Nos logs, um teste simples sem historico ja chegou perto de:
+In logs, even a simple test without history reached:
 
-- `~1019 tokens` antes da resposta
+- `~1019 tokens` before output
 
-Para um modelo local pequeno/medio, isso aumentou bastante o tempo de prefill e o tempo total de geracao.
+For small/medium local models, this significantly increased prefill and total generation time.
 
-## Problemas secundarios observados
+## Secondary issues observed
 
-### 1. Geracao de contexto da sessao estourando janela
+### 1. Session context generation exceeded context window
 
-Em `generate-session-context`, houve erro:
+In `generate-session-context`, the error was:
 
 - `Context size has been exceeded`
 
-Isso indica que os prompts de analise/resumo de sessao tambem podem ultrapassar o limite do modelo local.
+This indicates analysis/session-summary prompts can also exceed local model limits.
 
-### 2. Streaming do Gemma pode ser sensivel ao payload
+### 2. Gemma streaming is payload-sensitive
 
-Com prompts pequenos, o stream respondeu bem.
-Com prompts grandes, o tempo ate o primeiro texto aumentou drasticamente.
+With small prompts, stream behaved well.
+With large prompts, time-to-first-token increased dramatically.
 
-## Otimizacoes aplicadas
+## Applied optimizations
 
-Foi implementado um perfil automatico mais compacto para runtime local OpenAI-compatible no `ai-service`.
+A compact automatic profile was implemented for local OpenAI-compatible runtime in `ai-service`.
 
-### Ajustes feitos
+### Changes made
 
-Arquivo principal:
+Main file:
 
 - `services/ai-service/src/services/llm_service.py`
 
-Novo prompt compacto:
+New compact prompt:
 
 - `services/ai-service/src/prompts/system_rogers_local.txt`
 
-Mudancas:
+Behavior changes:
 
-- quando o endpoint e local (`localhost`, `127.0.0.1`, `host.docker.internal`), o app usa um prompt de sistema mais curto
-- `MAX_TOKENS` padrao para local caiu de `700` para `220`
-- `VOICE_MAX_TOKENS` padrao para local caiu de `180` para `120`
-- `MAX_HISTORY_MESSAGES` padrao para local caiu de `6` para `4`
-- blocos de contexto passaram a ter versao compactada para runtime local
+- when endpoint is local (`localhost`, `127.0.0.1`, `host.docker.internal`), app uses a shorter system prompt
+- default local `MAX_TOKENS` reduced from `700` to `220`
+- default local `VOICE_MAX_TOKENS` reduced from `180` to `120`
+- default local `MAX_HISTORY_MESSAGES` reduced from `6` to `4`
+- context blocks now have compact versions for local runtime
 
-Objetivo:
+Goal:
 
-- reduzir o tempo ate o primeiro token
-- reduzir respostas longas demais
-- preservar a experiencia de prod, que continua configuravel via env
+- reduce time to first token
+- reduce overly long replies
+- keep production behavior intact and env-configurable
 
-## Recomendacoes para continuar
+## Recommended next steps
 
-### Prioridade alta
+### High priority
 
-1. Re-testar a latencia apos o prompt compacto local
-2. Medir novamente:
-   - tempo do `POST /openai/chat`
-   - tempo ate o primeiro `text_delta` no `POST /openai/chat/stream`
-3. Se ainda estiver lento, reduzir mais:
+1. Re-test latency after compact local prompt
+2. Measure again:
+   - `POST /openai/chat` total time
+   - first `text_delta` timing in `POST /openai/chat/stream`
+3. If still slow, reduce further:
    - `MAX_TOKENS=160`
    - `MAX_HISTORY_MESSAGES=2`
 
-### Prioridade media
+### Medium priority
 
-1. Criar um modo `fast-local` explicito via env
-2. Compactar tambem os prompts de:
+1. Add explicit `fast-local` mode via env
+2. Compact prompts for:
    - `session_context_analysis`
-   - geracao de proxima sessao
-3. Limitar o tamanho do `previous_session_context` antes de mandar ao modelo local
+   - next-session generation
+3. Limit `previous_session_context` size before sending to local model
 
-### Prioridade opcional
+### Optional
 
-1. Testar um modelo mais rapido para chat normal
-2. Deixar `Gemma` para conversa geral e outro modelo para tarefas de analise
-3. Adicionar metricas persistidas de:
+1. Test a faster model for regular chat
+2. Keep Gemma for general chat and use another model for analysis tasks
+3. Persist metrics for:
    - `prompt_tokens`
    - `completion_tokens`
    - `first_text_delta_ms`
    - `gateway_total_ms`
 
-## Configuracao recomendada no LM Studio
+## LM Studio config recommendation
 
-Para a RTX 3050 6 GB observada neste notebook:
+For this laptop (RTX 3050 6 GB):
 
 - `GPU`: `ON`
 - `Limit Model Offload to Dedicated GPU Memory`: `ON`
-- `Offload KV Cache to GPU Memory`: `ON` inicialmente
+- `Offload KV Cache to GPU Memory`: `ON` initially
 
-Se houver erro de memoria ou degradacao com contexto grande:
+If memory errors or degraded behavior appear with large context:
 
-- primeiro teste: desligar apenas `Offload KV Cache to GPU Memory`
+- first test: turn off only `Offload KV Cache to GPU Memory`
 
-## Conclusao final
+## Final conclusion
 
-O diagnostico mais importante desta investigacao foi:
+Most important finding from this investigation:
 
-> o Gemma local nao estava lento "sozinho"; ele ficou lento com o prompt terapeutico grande que a aplicacao montava.
+> local Gemma was not slow by itself; it became slow with the large therapeutic prompt assembled by the application.
 
-Isso nos da um caminho claro:
+This gives a clear path:
 
-- manter LM Studio + GPU
-- simplificar prompt/contexto para ambiente local
-- deixar respostas mais curtas
-- reservar prompts mais ricos para endpoints/modelos com mais folga
+- keep LM Studio + GPU
+- simplify prompt/context for local runtime
+- keep responses shorter
+- reserve richer prompts for endpoints/models with more headroom

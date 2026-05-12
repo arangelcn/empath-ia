@@ -1,124 +1,124 @@
-# Painel Administrativo - Empath IA
+# Administrative Panel - Empath.IA
 
-Este é o painel administrativo do sistema Empath IA, uma ferramenta desenvolvida para psicólogos e administradores configurarem e monitorarem o sistema de análise emocional em tempo real.
+This is the administrative panel for the Empath.IA system, built for psychologists and administrators to configure and monitor the real-time emotional analysis platform.
 
-## 🎯 Funcionalidades
+## Features
 
-- **Dashboard Principal**: Visão geral com métricas e estatísticas do sistema
-- **Gerenciamento de Usuários**: Visualizar e gerenciar usuários, perfis e progressos
-- **Gerenciamento de Sessões**: Criar e editar templates de sessões terapêuticas
-- **Análise de Conversas**: Visualizar histórico e analisar interações dos usuários
-- **Gerenciamento de Prompts** ⭐ **NOVO**: Interface completa para editar prompts do sistema de IA
-- **Analytics Avançado**: Métricas, relatórios e análise de tendências
-- **Status do Sistema**: Monitoramento de serviços e health checks em tempo real
-- **Configurações**: Parâmetros gerais do sistema e preferências administrativas
-- **Autenticação**: Sistema de login seguro para acesso restrito
+- **Main Dashboard**: High-level metrics and system statistics
+- **User Management**: View and manage users, profiles, and progress
+- **Session Management**: Create and edit therapeutic session templates
+- **Conversation Analysis**: Inspect chat history and user interactions
+- **Prompt Management**: Full interface to edit AI system prompts
+- **Advanced Analytics**: Metrics, reports, and trend analysis
+- **System Status**: Real-time service monitoring and health checks
+- **Settings**: Global system parameters and administrative preferences
+- **Authentication**: Secure restricted-access login
 
-## 🚀 Como Executar
+## Run Locally
 
-### Pré-requisitos
+### Prerequisites
 - Node.js 16+
-- npm ou yarn
+- npm or yarn
 
-### Instalação
+### Installation
 
-1. Navegue até o diretório do admin panel:
+1. Go to the admin panel directory:
 ```bash
 cd apps/admin-panel
 ```
 
-2. Instale as dependências:
+2. Install dependencies:
 ```bash
 npm install
 ```
 
-3. Inicie o servidor de desenvolvimento:
+3. Start the development server:
 ```bash
 npm start
 ```
 
-4. Abra o navegador em `http://localhost:3001`
+4. Open `http://localhost:3001`
 
-### Credenciais de Acesso (Demo)
+### Demo credentials
 - **Email**: admin@empat-ia.io
-- **Senha**: admin123
+- **Password**: admin123
 
-## 📱 Interface
+## Interface
 
-### Páginas Principais
+### Main pages
 
 1. **Login** (`/login`)
-   - Autenticação de administradores
-   - Validação de credenciais
+   - Admin authentication
+   - Credential validation
 
 2. **Dashboard** (`/`)
-   - Resumo de métricas gerais
-   - Gráficos de uso e performance
-   - Estatísticas de emoções detectadas
+   - Overall metrics summary
+   - Usage and performance charts
+   - Detected emotion statistics
 
-3. **Usuários** (`/users`)
-   - Gerenciar usuários do sistema
-   - Visualizar perfis e estatísticas
-   - Acompanhar progresso terapêutico
+3. **Users** (`/users`)
+   - Manage system users
+   - View profiles and stats
+   - Track therapeutic progress
 
-4. **Sessões** (`/sessions`)
-   - Gerenciar sessões terapêuticas
-   - Criar e editar templates de sessão
-   - Acompanhar sessões dos usuários
+4. **Sessions** (`/sessions`)
+   - Manage therapeutic sessions
+   - Create and edit session templates
+   - Track user sessions
 
-5. **Conversas** (`/conversations`)
-   - Visualizar histórico de conversas
-   - Analisar interações dos usuários
-   - Exportar dados de sessões
+5. **Conversations** (`/conversations`)
+   - View conversation history
+   - Analyze user interactions
+   - Export session data
 
-6. **Prompts** (`/prompts`) ⭐ **NOVO**
-   - Gerenciar prompts do sistema de IA
-   - Criar, editar e organizar prompts por tipo
-   - Ativar/desativar prompts dinamicamente
-   - Estatísticas de uso e distribuição
-   - Sistema de variáveis e tags
+6. **Prompts** (`/prompts`)
+   - Manage AI system prompts
+   - Create, edit, and organize prompts by type
+   - Enable/disable prompts dynamically
+   - Usage and distribution stats
+   - Variable and tags system
 
 7. **Analytics** (`/analytics`)
-   - Métricas avançadas do sistema
-   - Relatórios de performance
-   - Análise de tendências
+   - Advanced system metrics
+   - Performance reports
+   - Trend analysis
 
-8. **Status do Sistema** (`/system-status`)
-   - Monitoramento de serviços
-   - Health checks em tempo real
-   - Métricas de performance
+8. **System Status** (`/system-status`)
+   - Service monitoring
+   - Real-time health checks
+   - Performance indicators
 
-9. **Configurações** (`/settings`)
-   - Configurações gerais do sistema
-   - Parâmetros de funcionamento
-   - Preferências administrativas
+9. **Settings** (`/settings`)
+   - General system settings
+   - Runtime parameters
+   - Admin preferences
 
-## 🎨 Design System
+## Design System
 
-### Cores Principais
-- **Primary**: Azul (#3B82F6)
-- **Success**: Verde (#10B981)
-- **Warning**: Amarelo (#F59E0B)
-- **Danger**: Vermelho (#EF4444)
+### Core colors
+- **Primary**: Blue (`#3B82F6`)
+- **Success**: Green (`#10B981`)
+- **Warning**: Amber (`#F59E0B`)
+- **Danger**: Red (`#EF4444`)
 
-### Componentes
-- Layout responsivo com Tailwind CSS
-- Componentes reutilizáveis
-- Gráficos interativos com Recharts
-- Ícones do Heroicons
+### Components
+- Responsive layout with Tailwind CSS
+- Reusable components
+- Interactive charts with Recharts
+- Heroicons icon set
 
-## 🔧 Tecnologias
+## Tech Stack
 
-- **React** 18.2.0 - Framework principal
-- **Tailwind CSS** 3.4.0 - Estilização
-- **Recharts** 2.8.0 - Gráficos e visualizações
-- **Heroicons** 2.0.18 - Ícones
-- **Axios** 1.6.0 - Requisições HTTP
-- **Date-fns** 2.30.0 - Manipulação de datas
+- **React** 18.2.0 - Main framework
+- **Tailwind CSS** 3.4.0 - Styling
+- **Recharts** 2.8.0 - Charts and visualizations
+- **Heroicons** 2.0.18 - Icons
+- **Axios** 1.6.0 - HTTP client
+- **date-fns** 2.30.0 - Date utilities
 
-## 📊 Estrutura de Dados
+## Data Structures
 
-### Métricas do Sistema
+### System metrics
 ```javascript
 {
   totalUsers: number,
@@ -136,7 +136,7 @@ npm start
 }
 ```
 
-### Configurações de Emoção
+### Emotion settings
 ```javascript
 {
   sensitivity: {
@@ -154,7 +154,7 @@ npm start
 }
 ```
 
-### Configurações de Áudio
+### Audio settings
 ```javascript
 {
   tts: {
@@ -171,21 +171,21 @@ npm start
 }
 ```
 
-## 🔐 Segurança
+## Security
 
-- Autenticação baseada em tokens
-- Validação de entrada de dados
-- Sanitização de parâmetros
-- Controle de acesso por função
+- Token-based authentication
+- Input validation
+- Parameter sanitization
+- Role-based access control
 
-## 🚀 Deploy
+## Deployment
 
-### Build para Produção
+### Production build
 ```bash
 npm run build
 ```
 
-### Variáveis de Ambiente
+### Environment variables
 ```env
 REACT_APP_API_URL=http://localhost:8001
 REACT_APP_EMOTION_SERVICE_URL=http://localhost:8003
@@ -193,32 +193,32 @@ REACT_APP_VOICE_SERVICE_URL=http://localhost:8004
 REACT_APP_AI_SERVICE_URL=http://localhost:8005
 ```
 
-## 📝 Próximas Funcionalidades
+## Next features
 
-- [ ] Relatórios exportáveis (PDF/Excel)
-- [ ] Notificações em tempo real
-- [ ] Configurações avançadas de IA
-- [ ] Histórico de configurações
-- [ ] Backup/Restore de dados
-- [ ] Multi-idioma
+- [ ] Exportable reports (PDF/Excel)
+- [ ] Real-time notifications
+- [ ] Advanced AI settings
+- [ ] Settings history
+- [ ] Data backup/restore
+- [ ] Multi-language support
 - [ ] Dark mode
-- [ ] Logs de auditoria
+- [ ] Audit logs
 
-## 🤝 Contribuição
+## Contributing
 
-1. Fork o projeto
-2. Crie uma branch para sua funcionalidade
-3. Commit suas alterações
-4. Push para a branch
-5. Abra um Pull Request
+1. Fork the project
+2. Create a feature branch
+3. Commit your changes
+4. Push the branch
+5. Open a Pull Request
 
-## 📄 Licença
+## License
 
-Este projeto está sob a licença MIT. Veja o arquivo LICENSE para mais detalhes.
+This project is licensed under MIT. See `LICENSE` for details.
 
-## 📞 Suporte
+## Support
 
-Para suporte técnico ou dúvidas:
-- Email: support@empat-ia.io
-- Documentação: `/docs`
-- Issues: GitHub Issues 
+For technical support or questions:
+- Email: `support@empat-ia.io`
+- Docs: `/docs`
+- Issues: GitHub Issues

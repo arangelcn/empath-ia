@@ -1,55 +1,55 @@
-# BUGS - triagem web-ui, gateway e AI Service
+# BUGS - Web UI, Gateway, and AI Service Triage
 
-Data da analise: 2026-05-05
+Analysis date: 2026-05-05
 
-## Resumo executivo
+## Executive Summary
 
-Os logs mostram uma cadeia de falhas conectadas entre front, gateway, AI Service e Voice Service. O problema mais critico hoje e a finalizacao da sessao: o Gateway chama o AI Service para gerar contexto, o AI Service retorna 500, a finalizacao aborta e a proxima sessao fica sem contexto anterior confiavel.
+Logs show a chain of connected failures across frontend, gateway, AI Service, and Voice Service. The most critical issue was session finalization: Gateway calls AI Service to generate session context, AI Service returns 500, finalization aborts, and the next session starts without reliable previous context.
 
-Em paralelo, o modo de voz esta degradado: o streaming TTS falha, o fallback batch tambem nao gera audio, e isso repete por trecho, adicionando latencia e deixando a experiencia sem voz. Ha ainda divergencias menores de contrato: prompt `voice_short_response` ausente no banco de prompts, chamadas antigas para `/api/sessions/session-4`, e parser de titulo que nao entende JSON dentro de `text.content`.
+In parallel, voice mode was degraded: streaming TTS failed, batch fallback also failed to produce audio, and this repeated per chunk, adding latency and leaving a text-only experience. There were also smaller contract mismatches: missing `voice_short_response` prompt in prompt DB, legacy calls to `/api/sessions/session-4`, and title parsing that did not support JSON inside `text.content`.
 
-## Status Atual
+## Current Status
 
-- P0 contexto de sessao: mitigado no codigo, com parse robusto de JSON no AI Service e recuperacao de contexto no Gateway.
-- P1 prompt `voice_short_response`: corrigido no bootstrap do Gateway.
-- P2 parser de titulo: corrigido para aceitar `text.content`.
-- P2 rota global de sessao no web-ui: mitigada com fallback para `/api/user/{username}/sessions/{sessionId}`.
-- P1 TTS/streaming: continua como proximo foco principal.
+- P0 session context: mitigated in code, with robust JSON parsing in AI Service and context recovery in Gateway.
+- P1 `voice_short_response` prompt: fixed in Gateway bootstrap.
+- P2 title parser: fixed to support `text.content`.
+- P2 global session route in web-ui: mitigated with fallback to `/api/user/{username}/sessions/{sessionId}`.
+- P1 TTS/streaming: still the primary open focus.
 
-## Fluxo observado
+## Observed Flow
 
-1. Sessao 3 finaliza e tenta gerar contexto.
-2. O Gateway salva ou encontra contexto, mas registra `Erro ao calcular duracao: unsupported operand type(s) for -: 'str' and 'str'`.
-3. A sessao 4 e criada automaticamente.
-4. Ao iniciar a sessao 4, o Gateway busca o contexto da sessao 3, encontra um documento, mas rejeita por `generation_method=fallback`.
-5. A web-ui abre a sessao 4, busca historico, gera mensagem inicial e envia mensagens.
-6. O Gateway envia `previous_session_context: null` para o AI Service.
-7. O modo de voz chama `/openai/chat/stream`, mas o TTS falha repetidamente.
-8. Ao finalizar sessao 4, o AI Service retorna 500 em `/openai/generate-session-context`, e o Gateway devolve 500 para `/api/chat/finalize/{chat_id}`.
+1. Session 3 finishes and tries to generate context.
+2. Gateway saves or finds context but logs `Error estimating duration: unsupported operand type(s) for -: 'str' and 'str'`.
+3. Session 4 is created automatically.
+4. When session 4 starts, Gateway reads session 3 context, finds a document, but rejects it due to `generation_method=fallback`.
+5. Web UI opens session 4, loads history, generates initial message, and sends user messages.
+6. Gateway sends `previous_session_context: null` to AI Service.
+7. Voice mode calls `/openai/chat/stream`, but TTS fails repeatedly.
+8. When finalizing session 4, AI Service returns 500 at `/openai/generate-session-context`, and Gateway returns 500 to `/api/chat/finalize/{chat_id}`.
 
-## P0 - Finalizacao da sessao falha com 500
+## P0 - Session finalization fails with 500
 
-Status: mitigado.
+Status: mitigated.
 
-Evidencia nos logs:
+Log evidence:
 
 ```text
 POST http://127.0.0.1:8001/openai/generate-session-context "HTTP/1.1 500 Internal Server Error"
-SessionContextService retornou erro 500: {"detail":"Falha ao gerar contexto da sessão"}
-Finalização abortada ... Falha ao gerar contexto
+SessionContextService returned 500: {"detail":"Failed to generate session context"}
+Finalization aborted ... Failed to generate context
 POST /api/chat/finalize/chat_... HTTP/1.1" 500 Internal Server Error
 ```
 
-Pontos de codigo:
+Code references:
 
-- `services/gateway-service/src/services/session_context_service.py:516` chama `POST {ai_service_url}/openai/generate-session-context`.
-- `services/ai-service/src/api/chat_routes.py:341` expõe `/generate-session-context`.
-- `services/ai-service/src/services/token_economy_service.py:120` chama `LLMService.generate_session_context`.
-- `services/ai-service/src/services/llm_service.py:1427` faz `json.loads(result)` diretamente.
+- `services/gateway-service/src/services/session_context_service.py:516` calls `POST {ai_service_url}/openai/generate-session-context`
+- `services/ai-service/src/api/chat_routes.py:341` exposes `/generate-session-context`
+- `services/ai-service/src/services/token_economy_service.py:120` calls `LLMService.generate_session_context`
+- `services/ai-service/src/services/llm_service.py:1427` performs direct `json.loads(result)`
 
-Causa provavel:
+Likely cause:
 
-O AI Service exige JSON puro. Ja existe outro sintoma no log mostrando o modelo local retornando JSON envolvido em markdown:
+AI Service required strict JSON. Another symptom already existed in logs where local model returned markdown-wrapped JSON:
 
 ````text
 ```json
@@ -59,204 +59,204 @@ O AI Service exige JSON puro. Ja existe outro sintoma no log mostrando o modelo 
 ```
 ````
 
-Se o mesmo acontecer no contexto de sessao, `json.loads(result)` falha e a rota retorna 500. Diferente de outros pontos do sistema, esse caminho nao tenta extrair o primeiro `{...}` nem remover fences de markdown.
+If that same shape appears in session context generation, `json.loads(result)` fails and route returns 500. Unlike other paths, this route did not attempt to extract the first `{...}` block or strip markdown fences.
 
-Impacto:
+Impact:
 
-- A sessao nao finaliza.
-- A proxima sessao nao recebe contexto confiavel.
-- O bot perde continuidade terapeutica.
-- O front recebe erro generico e a experiencia parece quebrada no encerramento.
+- Session cannot finalize.
+- Next session has no reliable context.
+- Therapeutic continuity is lost.
+- Frontend gets generic finalization failure.
 
-Correcao recomendada:
+Recommended fix:
 
-1. No AI Service, trocar o parse estrito por um parser tolerante para JSON puro, JSON em `content`, markdown fenced e texto com JSON embutido.
-2. Manter a validacao estrutural apos o parse.
-3. Logar o trecho inicial da resposta bruta do LLM quando o parse falhar, sem expor dados sensiveis demais.
-4. Adicionar teste no AI Service cobrindo resposta ` ```json ... ``` ` para `generate_session_context`.
+1. In AI Service, replace strict parse with tolerant parse handling raw JSON, `content` payloads, fenced markdown JSON, and embedded JSON.
+2. Keep structural validation after parsing.
+3. Log the beginning of raw LLM output when parsing fails, without exposing sensitive content.
+4. Add AI Service test covering `generate_session_context` with ` ```json ... ``` ` output.
 
-## P0 - Contexto anterior rejeitado e nao enviado ao AI Service
+## P0 - Previous context rejected and not sent to AI Service
 
-Status: mitigado.
+Status: mitigated.
 
-Evidencia nos logs:
+Log evidence:
 
 ```text
-Contexto encontrado na coleção session_contexts: toni.rc.neto@gmail.com_session-3
-Contexto salvo rejeitado ... Contexto rejeitado por generation_method=fallback
+Context found in session_contexts collection: toni.rc.neto@gmail.com_session-3
+Saved context rejected ... Rejected due to generation_method=fallback
 previous_session_context: ❌
-DEBUG - previous_session_context está VAZIO/NULO sendo enviado para AI Service!
+DEBUG - previous_session_context is EMPTY/NULL being sent to AI Service!
 ```
 
-Pontos de codigo:
+Code references:
 
-- `services/gateway-service/src/services/session_context_service.py:16` define `INVALID_CONTEXT_GENERATION_METHODS`.
-- `services/gateway-service/src/services/session_context_service.py:371` valida o contexto salvo.
-- `services/gateway-service/src/services/chat_service.py:757` busca contexto anterior.
-- `services/gateway-service/src/services/chat_service.py:770` envia `previous_session_context` ao AI Service.
+- `services/gateway-service/src/services/session_context_service.py:16` defines `INVALID_CONTEXT_GENERATION_METHODS`
+- `services/gateway-service/src/services/session_context_service.py:371` validates saved context
+- `services/gateway-service/src/services/chat_service.py:757` fetches previous context
+- `services/gateway-service/src/services/chat_service.py:770` sends `previous_session_context` to AI Service
 
-Causa provavel:
+Likely cause:
 
-O sistema endureceu a validacao para rejeitar contextos genericos ou de fallback. Isso e correto para qualidade, mas revela que a sessao 3 ficou com contexto fallback salvo. Como o contexto fallback e rejeitado na leitura, a sessao 4 segue sem contexto anterior.
+Validation was tightened to reject generic/fallback contexts, which is correct for quality. But this exposed that session 3 had fallback context saved. Since fallback context is now rejected, session 4 proceeds without previous context.
 
-Ha tambem um bug secundario no calculo de duracao:
+There was also a secondary bug in duration calculation:
 
 ```text
 unsupported operand type(s) for -: 'str' and 'str'
 ```
 
-Em `services/gateway-service/src/services/session_context_service.py:654`, `created_at` pode chegar como string; o codigo subtrai como se fossem `datetime`.
+In `services/gateway-service/src/services/session_context_service.py:654`, `created_at` may be a string; code subtracts as if it were `datetime`.
 
-Impacto:
+Impact:
 
-- A cadeia de sessoes perde memoria da sessao anterior.
-- Mensagem inicial e respostas da sessao 4 ficam menos personalizadas.
-- Logs marcam erro em fluxo esperado, aumentando ruido operacional.
+- Session chain loses previous-session memory.
+- Session 4 initial message and responses become less personalized.
+- Logs include noisy errors during expected flow.
 
-Correcao recomendada:
+Recommended fix:
 
-1. Corrigir `_estimate_conversation_duration` para aceitar `datetime`, ISO string e ausencia de timestamp.
-2. Criar uma estrategia explicita para contexto fallback antigo:
-   - ou migrar/deletar contextos `generation_method=fallback`;
-   - ou manter rejeicao, mas gerar novamente o contexto quando encontrar fallback;
-   - ou permitir fallback apenas para UI historica, nunca para prompt do AI Service.
-3. Na finalizacao, nao salvar contexto fallback como se fosse contexto terapeutico valido.
-4. Adicionar teste para contexto salvo com `generation_method=fallback` e para timestamps string.
+1. Fix `_estimate_conversation_duration` to accept `datetime`, ISO strings, and missing timestamps.
+2. Define explicit strategy for legacy fallback context:
+   - migrate/delete `generation_method=fallback` contexts, or
+   - keep rejection but regenerate context when fallback is found, or
+   - allow fallback only for historical UI and never for AI prompts.
+3. During finalization, avoid saving fallback context as valid therapeutic context.
+4. Add tests for `generation_method=fallback` and string timestamps.
 
-## P1 - TTS falha no streaming e no fallback batch
+## P1 - TTS fails in streaming and batch fallback
 
-Status: em aberto.
+Status: open.
 
-Evidencia nos logs:
+Log evidence:
 
 ```text
-Falha no streaming TTS:
-Gerando áudio para VoiceMode - Timeout otimizado: 15.0s
-Falha ao gerar áudio(VoiceMode):
-Streaming TTS falhou e fallback batch por trecho não gerou áudio
+Streaming TTS failure:
+Generating audio for VoiceMode - Optimized timeout: 15.0s
+Audio generation failed (VoiceMode):
+Streaming TTS failed and per-chunk batch fallback produced no audio
 ```
 
-Pontos de codigo:
+Code references:
 
-- `services/gateway-service/src/services/voice_synthesis_service.py:80` chama `/api/v1/synthesize-stream`.
-- `services/gateway-service/src/services/voice_synthesis_service.py:25` chama `/api/v1/synthesize`.
-- `services/gateway-service/src/services/chat_service.py:665` faz fallback por trecho.
-- `apps/web-ui/src/components/Chat/VoiceConversationMode.jsx:178` usa `sendMessageStream`.
+- `services/gateway-service/src/services/voice_synthesis_service.py:80` calls `/api/v1/synthesize-stream`
+- `services/gateway-service/src/services/voice_synthesis_service.py:25` calls `/api/v1/synthesize`
+- `services/gateway-service/src/services/chat_service.py:665` does per-chunk fallback
+- `apps/web-ui/src/components/Chat/VoiceConversationMode.jsx:178` uses `sendMessageStream`
 
-Causa provavel:
+Likely cause:
 
-O Gateway nao esta recebendo audio valido do Voice Service. O log de excecao esta vazio, entao pode ser timeout, conexao abortada, resposta sem `audio_url`, erro silencioso no serviço de voz ou cancelamento causado por reload. Como o fallback batch roda por trecho, a falha se repete muitas vezes e consome tempo.
+Gateway was not receiving valid audio from Voice Service. Exception log was empty, so the issue may be timeout, aborted connection, missing `audio_url`, silent voice-service failure, or reload interruption. Because fallback was per chunk, the same failure repeated and consumed time.
 
-Impacto:
+Impact:
 
-- Modo voz recebe texto mas nao toca audio.
-- A conversa por voz fica travada ou com pausas longas.
-- O sistema tenta muitos fallbacks consecutivos.
+- Voice mode receives text but no playable audio.
+- Voice conversations stall or contain long pauses.
+- System performs many consecutive fallback attempts.
 
-Correcao recomendada:
+Recommended fix:
 
-1. Melhorar logs em `VoiceSynthesisService`: incluir `type(exc).__name__`, URL chamada, status HTTP e corpo curto da resposta quando houver.
-2. Validar health/config do Voice Service e a rota real esperada: `/api/v1/synthesize-stream` e `/api/v1/synthesize`.
-3. Se streaming TTS falhar uma vez na resposta, desabilitar streaming para os proximos trechos daquela resposta e tentar um unico batch no texto final.
-4. Considerar `voice_enabled=False` fora de VoiceMode, ou gerar audio normal apenas quando a UI pedir explicitamente.
-5. Adicionar metricas: `tts_stream_failed`, `tts_batch_failed`, `voice_service_status`, `audio_chunks`.
+1. Improve `VoiceSynthesisService` logs with `type(exc).__name__`, request URL, HTTP status, and a short response body snippet.
+2. Validate Voice Service health/config and expected routes: `/api/v1/synthesize-stream` and `/api/v1/synthesize`.
+3. If streaming TTS fails once in a response, disable streaming for remaining chunks of that response and try one final batch synthesis for full text.
+4. Consider `voice_enabled=False` outside VoiceMode, or generate audio only when UI explicitly requests it.
+5. Add metrics: `tts_stream_failed`, `tts_batch_failed`, `voice_service_status`, `audio_chunks`.
 
-## P1 - Prompt `voice_short_response` ausente no Gateway
+## P1 - Missing `voice_short_response` prompt in Gateway
 
-Status: corrigido.
+Status: fixed.
 
-Evidencia nos logs:
+Log evidence:
 
 ```text
-Prompt ativo não encontrado: voice_short_response
+Active prompt not found: voice_short_response
 GET /api/prompts/active/voice_short_response HTTP/1.1" 404 Not Found
 ```
 
-Pontos de codigo:
+Code references:
 
-- `services/ai-service/src/services/llm_service.py:736` busca o prompt no Gateway.
-- `services/ai-service/src/prompts/voice_short_response.txt` existe como fallback local.
-- `services/gateway-service/src/main.py:93` so inicializa prompts default se `system_rogers` nao existir.
-- `services/gateway-service/src/services/prompt_service.py:352` cria defaults, mas a lista atual nao inclui `voice_short_response`.
+- `services/ai-service/src/services/llm_service.py:736` requests prompt from Gateway
+- `services/ai-service/src/prompts/voice_short_response.txt` exists as local fallback
+- `services/gateway-service/src/main.py:93` only initializes defaults when `system_rogers` is missing
+- `services/gateway-service/src/services/prompt_service.py:352` creates defaults, but previous list did not include `voice_short_response`
 
-Causa provavel:
+Likely cause:
 
-O arquivo existe no AI Service, mas o banco de prompts do Gateway nao tem uma versao ativa. Como `auto_initialize_prompts` para quando `system_rogers` existe, novos prompts adicionados depois nao sao inseridos automaticamente.
+File existed in AI Service, but prompt DB in Gateway had no active version. Since `auto_initialize_prompts` stops when `system_rogers` exists, newly introduced prompts were not inserted automatically.
 
-Impacto:
+Impact:
 
-- Nao quebra a resposta, porque ha fallback local.
-- Gera 404 e warning em toda resposta de voz.
-- Dificulta ajuste do prompt de voz via admin/banco.
+- Does not break responses due to local fallback.
+- Produces 404 and warnings for every voice response.
+- Prevents voice prompt tuning via admin/DB.
 
-Correcao recomendada:
+Recommended fix:
 
-1. Adicionar `voice_short_response` aos prompts padrao do Gateway.
-2. Mudar `auto_initialize_prompts` para upsert por prompt faltante, nao "tudo ou nada" baseado em `system_rogers`.
-3. Criar script/migracao para inserir prompts novos em bancos ja existentes.
+1. Add `voice_short_response` to Gateway default prompts.
+2. Change `auto_initialize_prompts` to upsert missing prompts, not all-or-nothing based on `system_rogers`.
+3. Create script/migration to insert new prompts in existing databases.
 
-## P2 - web-ui chama rota global de sessao dinamica e recebe 404
+## P2 - web-ui calls global route for dynamic session and gets 404
 
-Status: mitigado.
+Status: mitigated.
 
-Evidencia nos logs:
+Log evidence:
 
 ```text
 GET /api/sessions/session-4 HTTP/1.1" 404 Not Found
 GET /api/user/toni.rc.neto%40gmail.com/sessions/session-4 HTTP/1.1" 200 OK
 ```
 
-Pontos de codigo:
+Code references:
 
-- `apps/web-ui/src/services/api.js:419` ainda expõe `getTherapeuticSession(sessionId)` via `/sessions/{sessionId}`.
-- `apps/web-ui/src/services/api.js:465` expõe a rota correta de sessao do usuario.
-- `apps/web-ui/src/components/Chat/ChatScreen.tsx:221` ja comenta que sessoes dinamicas nao ficam no catalogo global.
-- `services/gateway-service/src/api/sessions.py:33` busca apenas o catalogo terapeutico global.
+- `apps/web-ui/src/services/api.js:419` still exposes `getTherapeuticSession(sessionId)` via `/sessions/{sessionId}`
+- `apps/web-ui/src/services/api.js:465` exposes correct user-session route
+- `apps/web-ui/src/components/Chat/ChatScreen.tsx:221` already notes dynamic sessions are not in global catalog
+- `services/gateway-service/src/api/sessions.py:33` only serves global therapeutic catalog
 
-Causa provavel:
+Likely cause:
 
-Existe bundle antigo, fluxo paralelo ou chamada remanescente usando `/api/sessions/{sessionId}` para `session-4`. Essa rota so serve para catalogo global; sessoes dinamicas criadas para usuario estao em `/api/user/{username}/sessions/{sessionId}`.
+An old bundle, parallel flow, or leftover call path still used `/api/sessions/{sessionId}` for `session-4`. That route only serves global session catalog. Dynamic user sessions are in `/api/user/{username}/sessions/{sessionId}`.
 
-Impacto:
+Impact:
 
-- 404 benigno, mas ruidoso.
-- Pode acionar estado visual falso de "sessao nao disponivel" se a chamada antiga vencer a corrida.
-- Confunde diagnostico porque logo depois a rota correta retorna 200.
+- Benign but noisy 404.
+- Can trigger false "session unavailable" UI state if old call wins race.
+- Makes diagnosis harder because correct route returns 200 right after.
 
-Correcao recomendada:
+Recommended fix:
 
-1. Remover uso de `getTherapeuticSession` para sessoes `session-N` do usuario.
-2. Auditar bundle/deploy para garantir que a web-ui servida contem a versao que usa `getUserSession`.
-3. Se a rota global continuar necessaria, renomear no front para `getCatalogTherapeuticSession` e deixar claro que nao serve para sessoes dinamicas.
+1. Remove `getTherapeuticSession` usage for user `session-N` flows.
+2. Audit bundle/deploy to ensure served web-ui uses `getUserSession` path.
+3. If global route stays needed, rename in frontend to `getCatalogTherapeuticSession` to avoid misuse.
 
-## P2 - Parser de titulo nao entende `text.content`
+## P2 - Title parser did not support `text.content`
 
-Status: corrigido.
+Status: fixed.
 
-Evidencia nos logs:
+Log evidence:
 
 ```text
-Não foi possível extrair JSON do título gerado ... {'success': True, 'text': {'content': '```json ... ```', 'provider': 'local', 'model': 'gemma4:e4b'}}
+Could not extract JSON from generated title ... {'success': True, 'text': {'content': '```json ... ```', 'provider': 'local', 'model': 'gemma4:e4b'}}
 ```
 
-Pontos de codigo:
+Code references:
 
-- `services/gateway-service/src/services/chat_title_service.py:82` tenta parsear `text`, `data`, `result`.
-- `services/gateway-service/src/services/chat_title_service.py:94` percorre chaves aninhadas, mas nao inclui `content`.
+- `services/gateway-service/src/services/chat_title_service.py:82` parsed `text`, `data`, `result`
+- `services/gateway-service/src/services/chat_title_service.py:94` traversed nested keys but did not include `content`
 
-Causa provavel:
+Likely cause:
 
-O AI Service retornou `text` como objeto contendo `content`. O parser trata dicts com `title/subtitle` ou chaves `text/data/result/response`, mas ignora `content`, onde estava o JSON em markdown.
+AI Service returned `text` as object containing `content`. Parser accepted dicts with `title/subtitle` or keys `text/data/result/response`, but ignored `content`, where markdown JSON lived.
 
-Impacto:
+Impact:
 
-- Titulo/subtitulo dinamico nao e persistido.
-- A conversa segue, mas com metadados pobres.
+- Dynamic title/subtitle was not persisted.
+- Conversation continued, but metadata quality dropped.
 
-Correcao recomendada:
+Recommended fix:
 
-1. Incluir `content` nas chaves aninhadas aceitas pelo parser.
-2. Adicionar teste com payload no formato:
+1. Include `content` in accepted nested parse keys.
+2. Add test with payload format:
 
 ````json
 {
@@ -267,45 +267,45 @@ Correcao recomendada:
 }
 ````
 
-## P2 - Reloads de desenvolvimento interrompem fluxos longos
+## P2 - Dev reload interrupts long-running flows
 
-Evidencia nos logs:
+Log evidence:
 
 ```text
 StatReload detected changes ... Reloading
 Waiting for connections to close
-Falha ao gerar áudio:
+Audio generation failed:
 ```
 
-Causa provavel:
+Likely cause:
 
-Durante a investigacao houve varias alteracoes em arquivos observados pelo Uvicorn. Isso reinicia o Gateway enquanto requests longos de TTS/contexto ainda estao em andamento.
+During investigation, multiple file saves triggered Uvicorn reload while long TTS/context requests were still running.
 
-Impacto:
+Impact:
 
-- Pode amplificar falhas de audio e finalizacao.
-- Pode gerar sintomas falsos em ambiente local.
+- Can amplify audio/finalization failures.
+- Can create false symptoms in local dev.
 
-Correcao recomendada:
+Recommended fix:
 
-1. Para reproduzir bugs de voz/finalizacao, rodar sem `--reload` ou evitar salvar arquivos durante o teste.
-2. Excluir `tests/` e docs do watcher no ambiente dev, se possivel.
+1. For voice/finalization bug reproduction, run without `--reload` or avoid saving files during test.
+2. Exclude `tests/` and docs from watcher in dev where possible.
 
-## Ordem sugerida de ataque
+## Suggested Execution Order
 
-1. Corrigir parse robusto de contexto no AI Service.
-2. Corrigir estrategia de contexto fallback antigo no Gateway.
-3. Corrigir `_estimate_conversation_duration` para timestamps string.
-4. Instrumentar Voice Service/Gateway TTS para descobrir se e timeout, rota errada ou resposta invalida.
-5. Inserir/upsert `voice_short_response` no Gateway.
-6. Limpar chamada front antiga para `/api/sessions/{sessionId}`.
-7. Ajustar parser de titulo para `text.content`.
+1. Fix robust context parsing in AI Service.
+2. Fix fallback-context strategy in Gateway.
+3. Fix `_estimate_conversation_duration` for string timestamps.
+4. Add TTS instrumentation in Voice Service/Gateway to identify timeout, route, or invalid-response root cause.
+5. Insert/upsert `voice_short_response` in Gateway.
+6. Remove old frontend `/api/sessions/{sessionId}` usage.
+7. Update title parser for `text.content`.
 
-## Testes recomendados
+## Recommended Tests
 
-- AI Service: `generate_session_context` aceita JSON puro e fenced JSON.
-- Gateway: `_estimate_conversation_duration` aceita `datetime`, ISO string e timestamp ausente.
-- Gateway: contexto salvo com `generation_method=fallback` dispara regeneracao ou retorno controlado, sem enviar `previous_session_context=None` como erro ruidoso.
-- Gateway: `ChatTitleService` extrai titulo de `text.content`.
-- Web-ui: abrir `session-4` dinamica chama apenas `/api/user/{username}/sessions/session-4`.
-- Voz: quando `/synthesize-stream` falha, o Gateway tenta apenas um fallback final por resposta, nao um fallback por trecho.
+- AI Service: `generate_session_context` accepts raw JSON and fenced JSON.
+- Gateway: `_estimate_conversation_duration` accepts `datetime`, ISO string, and missing timestamp.
+- Gateway: saved context with `generation_method=fallback` triggers regeneration or controlled return, without noisy `previous_session_context=None` failure path.
+- Gateway: `ChatTitleService` extracts title from `text.content`.
+- Web UI: opening dynamic `session-4` calls only `/api/user/{username}/sessions/session-4`.
+- Voice: when `/synthesize-stream` fails, Gateway attempts one final batch fallback per response, not per chunk.

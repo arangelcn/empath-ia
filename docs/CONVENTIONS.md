@@ -1,376 +1,380 @@
-# Convenções e Padrões — Empat.IA
+# Conventions and Standards — Empat.IA
 
-> Como o código é organizado, quais padrões seguir, e como adicionar novas funcionalidades sem quebrar o que já existe.
+> How code is organized, which standards to follow, and how to add features safely.
 
 ---
 
-## Índice
+## Index
 
-1. [Padrões Python (FastAPI)](#1-padrões-python-fastapi)
-2. [Padrões React (Frontend)](#2-padrões-react-frontend)
-3. [Como adicionar um endpoint no Gateway](#3-como-adicionar-um-endpoint-no-gateway)
-4. [Como adicionar um novo serviço de domínio](#4-como-adicionar-um-novo-serviço-de-domínio)
-5. [Como adicionar uma nova página no Admin Panel](#5-como-adicionar-uma-nova-página-no-admin-panel)
-6. [Como adicionar um novo componente no Web UI](#6-como-adicionar-um-novo-componente-no-web-ui)
-7. [Padrões de banco de dados (MongoDB + Motor)](#7-padrões-de-banco-de-dados-mongodb--motor)
-8. [Tratamento de erros](#8-tratamento-de-erros)
+1. [Python Standards (FastAPI)](#1-python-standards-fastapi)
+2. [React Standards (Frontend)](#2-react-standards-frontend)
+3. [How to Add an Endpoint in Gateway](#3-how-to-add-an-endpoint-in-gateway)
+4. [How to Add a New Domain Service](#4-how-to-add-a-new-domain-service)
+5. [How to Add a New Admin Panel Page](#5-how-to-add-a-new-admin-panel-page)
+6. [How to Add a New Web UI Component](#6-how-to-add-a-new-web-ui-component)
+7. [Database Standards (MongoDB + Motor)](#7-database-standards-mongodb--motor)
+8. [Error Handling](#8-error-handling)
 9. [Logging](#9-logging)
-10. [Git e commits](#10-git-e-commits)
+10. [Git and Commits](#10-git-and-commits)
 
 ---
 
-## 1. Padrões Python (FastAPI)
+## 1. Python Standards (FastAPI)
 
-### Formatação
-- **PEP 8** + **Black** para formatação automática
-- Type hints em todas as funções de serviço
-- Docstrings em funções públicas (uma linha é suficiente)
+### Formatting
 
-### Modelos Pydantic para requests
+- Follow **PEP 8** and format with **Black**
+- Use type hints in all service functions
+- Add short docstrings for public functions
 
-Definir modelos Pydantic no topo do `main.py` ou em `models/` para requests:
+### Use Pydantic Models for Requests
+
+Define Pydantic models in `main.py` (or `models/`) for typed request payloads:
 
 ```python
-class MinhaRequest(BaseModel):
-    campo_obrigatorio: str
-    campo_opcional: Optional[str] = None
-    campo_com_default: bool = False
+class MyRequest(BaseModel):
+    required_field: str
+    optional_field: Optional[str] = None
+    with_default: bool = False
 ```
 
-Nunca usar `request: Request` + `await request.json()` para dados tipados — usar Pydantic.  
-Usar `request: Request` + `await request.json()` apenas quando o schema é genuinamente dinâmico.
+Do not use `request: Request` + `await request.json()` for typed payloads. Use that pattern only for truly dynamic schemas.
 
-### Estrutura de um endpoint
+### Endpoint Structure
 
 ```python
-@app.post("/api/meu-endpoint")
-async def meu_endpoint(request: MinhaRequest):
-    """Descrição em uma linha do que faz."""
+@app.post("/api/my-endpoint")
+async def my_endpoint(request: MyRequest):
+    """One-line description of what this route does."""
     try:
-        resultado = await meu_service.fazer_algo(request.campo)
-        
-        if not resultado:
-            raise HTTPException(status_code=404, detail="Recurso não encontrado")
-        
+        result = await my_service.do_something(request.required_field)
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Resource not found")
+
         return {
             "success": True,
-            "data": resultado
+            "data": result,
         }
-        
+
     except HTTPException:
-        raise  # Re-raise HTTPException sem logar como erro
-    except Exception as e:
-        logger.error(f"Erro ao processar meu endpoint: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+        raise  # Re-raise expected HTTP errors
+    except Exception as exc:
+        logger.error(f"Error processing my endpoint: {exc}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 ```
 
-**Padrão de resposta:**
-- Sucesso: `{ "success": True, "data": ... }`
-- Erro HTTP semântico: `HTTPException` com código e `detail`
-- Erros inesperados: 500 com mensagem genérica
+### Response Pattern
 
-### Imports no gateway
+- Success: `{ "success": True, "data": ... }`
+- Semantic HTTP error: raise `HTTPException` with proper status + `detail`
+- Unexpected error: return 500 with generic message
 
-Novos routers devem ser adicionados em `src/api/` e incluídos em `main.py`:
+### Gateway Imports
+
+Add new routers under `src/api/` and include them in `main.py`:
 
 ```python
-from .api.meu_router import router as meu_router
-app.include_router(meu_router)
+from .api.my_router import router as my_router
+app.include_router(my_router)
 ```
 
-Novos services devem ser instanciados junto com os demais no topo de `main.py`.
+Instantiate new services together with existing ones near the top of `main.py`.
 
 ---
 
-## 2. Padrões React (Frontend)
+## 2. React Standards (Frontend)
 
-### Linguagem e extensões
-- Novos componentes podem usar `.jsx` ou `.tsx` (TypeScript parcial)
-- Preferir `.tsx` para componentes com props complexas — type safety ajuda
-- `App.jsx` e utilitários usam `.jsx` / `.js`
+### Language and Extensions
 
-### Estrutura de componente
+- New components can use `.jsx` or `.tsx`
+- Prefer `.tsx` for complex props and type safety
+- `App.jsx` and lightweight utilities may stay in `.jsx` / `.js`
 
-```jsx
-import React, { useState, useEffect } from 'react';
-import { algumServico } from '../../services/api.js';
+### Component Structure
 
-// Props tipadas quando TypeScript
+```tsx
+import React, { useEffect, useState } from "react";
+import { someService } from "../../services/api.js";
+
 interface Props {
   username: string;
   onLogout: () => void;
 }
 
-export default function MeuComponente({ username, onLogout }: Props) {
-  const [dados, setDados] = useState(null);
-  const [carregando, setCarregando] = useState(true);
+export default function MyComponent({ username, onLogout }: Props) {
+  const [data, setData] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    carregarDados();
+    loadData();
   }, []);
 
-  const carregarDados = async () => {
+  const loadData = async () => {
     try {
-      const resp = await algumServico(username);
-      setDados(resp.data);
+      const response = await someService(username);
+      setData(response.data);
     } catch (err) {
-      console.error('Erro ao carregar dados:', err);
+      console.error("Failed to load data:", err);
     } finally {
-      setCarregando(false);
+      setIsLoading(false);
     }
   };
 
-  if (carregando) return <div>Carregando...</div>;
+  if (isLoading) return <div>Loading...</div>;
 
-  return (
-    <div className="...">
-      {/* conteúdo */}
-    </div>
-  );
+  return <div className="...">{/* content */}</div>;
 }
 ```
 
-### Estilização
-- **Tailwind CSS** — classes utilitárias inline são o padrão
-- **MUI** (`@mui/material`) para componentes complexos: Dialog, Drawer, TextField, etc.
-- **Framer Motion** (web-ui) para animações de entrada/saída
-- Evitar CSS Modules ou styled-components — manter consistência com Tailwind
+### Styling
 
-### Estado
-- Estado local com `useState` e `useReducer`
-- Sem Redux — o projeto não usa gerenciamento de estado global complexo
-- `AuthContext` no admin-panel é o único Context API em uso
-- Dados de sessão persistidos em `localStorage` (ver [`FRONTEND.md#5-localstorage`](FRONTEND.md#5-localstorage--chaves-utilizadas))
+- **Tailwind CSS** utility classes are the default
+- Use **MUI** (`@mui/material`) for complex controls like Dialog, Drawer, TextField
+- Use **Framer Motion** (web-ui) for entry/exit animations
+- Avoid CSS Modules or styled-components to keep consistency with Tailwind
 
-### Chamadas de API
-- Todas as chamadas passam pelos services em `src/services/api.js`
-- Nunca chamar `fetch` ou `axios` diretamente nos componentes
-- Adicionar nova função no `api.js` para cada endpoint novo
+### State
+
+- Use local state via `useState` and `useReducer`
+- No Redux (project does not use complex global state)
+- `AuthContext` in admin-panel is the only active Context API usage
+- Session data is persisted in `localStorage` (see [`FRONTEND.md#5-localstorage`](FRONTEND.md#5-localstorage--chaves-utilizadas))
+
+### API Calls
+
+- All HTTP calls must go through `src/services/api.js`
+- Do not call `fetch` or `axios` directly inside components
+- Add one `api.js` function per new backend endpoint
 
 ---
 
-## 3. Como adicionar um endpoint no Gateway
+## 3. How to Add an Endpoint in Gateway
 
-### Passo a passo
+### Step by Step
 
-**1. Definir o modelo Pydantic** (se necessário) no topo de `main.py`:
+**1. Define the Pydantic model** (if needed) in `main.py`:
 
 ```python
-class MinhaNovaRequest(BaseModel):
+class MyNewRequest(BaseModel):
     session_id: str
-    dados: Optional[Dict[str, Any]] = None
+    payload: Optional[Dict[str, Any]] = None
 ```
 
-**2. Adicionar o endpoint** em `main.py` (para rotas inline) ou em um arquivo de router em `src/api/`:
+**2. Add the endpoint** in `main.py` (inline routes) or in a router under `src/api/`:
 
 ```python
-@app.post("/api/minha-feature/{param}")
-async def minha_nova_rota(param: str, request: MinhaNovaRequest):
-    """Descrição da nova rota."""
+@app.post("/api/my-feature/{param}")
+async def my_new_route(param: str, request: MyNewRequest):
+    """Description of this route."""
     try:
-        resultado = await meu_service.processar(param, request.dados)
-        return {"success": True, "data": resultado}
+        result = await my_service.process(param, request.payload)
+        return {"success": True, "data": result}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Erro em minha_nova_rota: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error(f"Error in my_new_route: {exc}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 ```
 
-**3. Adicionar função correspondente no `api.js` do frontend:**
+**3. Add matching frontend `api.js` function:**
 
 ```js
-export const minhaNovaFuncao = async (param, dados) => {
-  const response = await api.post(`/api/minha-feature/${param}`, { dados });
+export const myNewFunction = async (param, payload) => {
+  const response = await api.post(`/api/my-feature/${param}`, { payload });
   return response.data;
 };
 ```
 
-**4. Atualizar `TECHNICAL.md`** com o novo endpoint na seção de API Reference.
+**4. Update `TECHNICAL.md`** with the new endpoint in API reference.
 
 ---
 
-## 4. Como adicionar um novo serviço de domínio
+## 4. How to Add a New Domain Service
 
-Um "service de domínio" é uma classe Python em `services/gateway-service/src/services/`.
+A domain service is a Python class under `services/gateway-service/src/services/`.
 
-**1. Criar o arquivo** `src/services/meu_servico.py`:
+**1. Create file** `src/services/my_service.py`:
 
 ```python
-from ..models.database import get_collection
 from datetime import datetime
 import logging
 
+from ..models.database import get_collection
+
 logger = logging.getLogger(__name__)
 
-class MeuServico:
-    
-    async def criar(self, dados: dict) -> dict:
-        """Cria um novo recurso."""
-        colecao = get_collection("minha_colecao")
-        
-        documento = {
-            **dados,
+
+class MyService:
+    async def create(self, data: dict) -> dict:
+        """Create a new resource."""
+        collection = get_collection("my_collection")
+
+        document = {
+            **data,
             "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow()
+            "updated_at": datetime.utcnow(),
         }
-        
-        resultado = await colecao.insert_one(documento)
-        documento["_id"] = str(resultado.inserted_id)
-        return documento
-    
-    async def buscar(self, id: str) -> dict | None:
-        """Busca recurso por ID."""
-        colecao = get_collection("minha_colecao")
-        return await colecao.find_one({"_id": id})
+
+        result = await collection.insert_one(document)
+        document["_id"] = str(result.inserted_id)
+        return document
+
+    async def get_by_id(self, item_id: str) -> dict | None:
+        """Get resource by id."""
+        collection = get_collection("my_collection")
+        return await collection.find_one({"_id": item_id})
 ```
 
-**2. Instanciar em `main.py`:**
+**2. Instantiate in `main.py`:**
 
 ```python
-from .services.meu_servico import MeuServico
-meu_servico = MeuServico()
+from .services.my_service import MyService
+
+my_service = MyService()
 ```
 
-**3. Usar nos endpoints:**
+**3. Use in endpoints:**
 
 ```python
-@app.post("/api/meu-recurso")
-async def criar_recurso(dados: dict):
-    return await meu_servico.criar(dados)
+@app.post("/api/my-resource")
+async def create_resource(data: dict):
+    return await my_service.create(data)
 ```
 
 ---
 
-## 5. Como adicionar uma nova página no Admin Panel
+## 5. How to Add a New Admin Panel Page
 
-**1. Criar o arquivo** `apps/admin-panel/src/pages/MinhaPagina.js`:
+**1. Create file** `apps/admin-panel/src/pages/MyPage.js`:
 
 ```jsx
-import React, { useState, useEffect } from 'react';
-import { api } from '../services/api';
+import React, { useEffect, useState } from "react";
+import { api } from "../services/api";
 
-export default function MinhaPagina() {
-  const [dados, setDados] = useState([]);
+export default function MyPage() {
+  const [data, setData] = useState([]);
 
   useEffect(() => {
-    api.get('/api/admin/meu-recurso').then(r => setDados(r.data));
+    api.get("/api/admin/my-resource").then((response) => setData(response.data));
   }, []);
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Título da Página</h1>
-      {/* conteúdo */}
+      <h1 className="text-2xl font-bold mb-4">Page Title</h1>
+      {/* content */}
     </div>
   );
 }
 ```
 
-**2. Adicionar a rota em `App.js`:**
+**2. Add route in `App.js`:**
 
 ```jsx
-import MinhaPagina from './pages/MinhaPagina';
+import MyPage from "./pages/MyPage";
 
-// Dentro do componente de rotas:
-<Route path="/minha-pagina" element={<MinhaPagina />} />
+// Inside route config:
+<Route path="/my-page" element={<MyPage />} />
 ```
 
-**3. Adicionar link no menu lateral** (componente de navegação do admin).
+**3. Add sidebar navigation link** in admin navigation component.
 
 ---
 
-## 6. Como adicionar um novo componente no Web UI
+## 6. How to Add a New Web UI Component
 
-**1. Criar o arquivo** em `apps/web-ui/src/components/`:
+**1. Create file** under `apps/web-ui/src/components/`.
 
-Organizar em subpastas por área: `Chat/`, `Home/`, etc.
+Organize by area (`Chat/`, `Home/`, etc.):
 
 ```tsx
-// apps/web-ui/src/components/MeuComponente.tsx
+// apps/web-ui/src/components/MyComponent.tsx
 interface Props {
-  titulo: string;
-  aoClicar: () => void;
+  title: string;
+  onClick: () => void;
 }
 
-export default function MeuComponente({ titulo, aoClicar }: Props) {
+export default function MyComponent({ title, onClick }: Props) {
   return (
     <button
-      onClick={aoClicar}
+      onClick={onClick}
       className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
     >
-      {titulo}
+      {title}
     </button>
   );
 }
 ```
 
-**2. Importar onde necessário:**
+**2. Import where needed:**
 
 ```jsx
-import MeuComponente from '../MeuComponente';
+import MyComponent from "../MyComponent";
 ```
 
 ---
 
-## 7. Padrões de banco de dados (MongoDB + Motor)
+## 7. Database Standards (MongoDB + Motor)
 
-### Acessar coleções
+### Access collections
 
 ```python
 from .models.database import get_collection
 
-colecao = get_collection("nome_da_colecao")
+collection = get_collection("collection_name")
 ```
 
-### Queries básicas
+### Basic queries
 
 ```python
-# Buscar um documento
-doc = await colecao.find_one({"campo": valor})
+# Find one
+doc = await collection.find_one({"field": value})
 
-# Buscar vários
-cursor = colecao.find({"campo": valor}).sort("created_at", -1).limit(50)
+# Find many
+cursor = collection.find({"field": value}).sort("created_at", -1).limit(50)
 docs = [doc async for doc in cursor]
 
-# Inserir
-resultado = await colecao.insert_one({"campo": "valor", "created_at": datetime.utcnow()})
+# Insert
+result = await collection.insert_one({"field": "value", "created_at": datetime.utcnow()})
 
-# Atualizar
-await colecao.update_one(
-    {"_id": id},
-    {"$set": {"campo": novo_valor, "updated_at": datetime.utcnow()}}
+# Update
+await collection.update_one(
+    {"_id": item_id},
+    {"$set": {"field": new_value, "updated_at": datetime.utcnow()}},
 )
 
-# Deletar (preferir soft delete com is_active=False)
-await colecao.update_one({"_id": id}, {"$set": {"is_active": False}})
+# Delete (prefer soft-delete with is_active=False)
+await collection.update_one({"_id": item_id}, {"$set": {"is_active": False}})
 ```
 
-### Regras críticas de segurança
+### Critical security rules
 
-**Sempre incluir `username` no filtro de queries em `messages` e `conversations`:**
+**Always include `username` in `messages` and `conversations` filters:**
 
 ```python
-# CERTO — isolamento por usuário
-doc = await colecao.find_one({
-    "session_id": session_id,
-    "username": username  # OBRIGATÓRIO
-})
+# CORRECT — per-user isolation
+doc = await collection.find_one(
+    {
+        "session_id": session_id,
+        "username": username,  # REQUIRED
+    }
+)
 
-# ERRADO — pode retornar dados de outro usuário
-doc = await colecao.find_one({"session_id": session_id})
+# WRONG — may return another user's data
+doc = await collection.find_one({"session_id": session_id})
 ```
 
-Veja também a seção de sessões terapêuticas em [`TECHNICAL.md`](TECHNICAL.md) para o formato atual de `chat_id`, `session_id` e isolamento por usuário.
+See therapeutic sessions section in [`TECHNICAL.md`](TECHNICAL.md) for current `chat_id`, `session_id`, and user-isolation patterns.
 
-### Serialização de ObjectId
+### ObjectId serialization
 
-MongoDB retorna `ObjectId` que não é serializável em JSON. Converter para string:
+MongoDB returns `ObjectId`, which is not JSON-serializable. Convert to string:
 
 ```python
-documento["_id"] = str(documento["_id"])
+document["_id"] = str(document["_id"])
 ```
 
-Ou usar uma função helper:
+Or use a helper:
 
 ```python
 def serialize_doc(doc: dict) -> dict:
@@ -381,57 +385,57 @@ def serialize_doc(doc: dict) -> dict:
 
 ### Timestamps
 
-Sempre usar `datetime.utcnow()` para timestamps (não `datetime.now()`):
+Always use `datetime.utcnow()` for timestamps (not `datetime.now()`):
 
 ```python
 from datetime import datetime
 
-documento = {
+document = {
     "created_at": datetime.utcnow(),
-    "updated_at": datetime.utcnow()
+    "updated_at": datetime.utcnow(),
 }
 ```
 
 ---
 
-## 8. Tratamento de erros
+## 8. Error Handling
 
 ### Backend (Python)
 
 ```python
 try:
-    resultado = await service.operacao()
-    
-    if not resultado:
-        raise HTTPException(status_code=404, detail="Não encontrado")
-    
-    return {"success": True, "data": resultado}
-    
+    result = await service.operation()
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    return {"success": True, "data": result}
+
 except HTTPException:
-    raise  # Re-raise sem logar — HTTPException é esperado
-except ValueError as e:
-    raise HTTPException(status_code=400, detail=str(e))
-except Exception as e:
-    logger.error(f"Erro inesperado em [nome_da_função]: {e}")
-    raise HTTPException(status_code=500, detail="Erro interno do servidor")
+    raise  # Re-raise expected HTTPException
+except ValueError as exc:
+    raise HTTPException(status_code=400, detail=str(exc))
+except Exception as exc:
+    logger.error(f"Unexpected error in [function_name]: {exc}")
+    raise HTTPException(status_code=500, detail="Internal server error")
 ```
 
-**Nunca expor detalhes de exceções internas em produção** — usar mensagem genérica no `detail` quando for 500.
+Never expose internal exception details in production for 500 responses.
 
 ### Frontend (React)
 
 ```js
-const carregarDados = async () => {
+const loadData = async () => {
   try {
-    setCarregando(true);
-    const resp = await algumServico();
-    setDados(resp.data);
+    setIsLoading(true);
+    const response = await someService();
+    setData(response.data);
   } catch (err) {
-    console.error('Erro ao carregar:', err);
-    // Mostrar feedback visual ao usuário (toast, mensagem de erro)
-    setErro('Não foi possível carregar os dados. Tente novamente.');
+    console.error("Load error:", err);
+    // Show visible feedback to user (toast/error message)
+    setError("Could not load data. Please try again.");
   } finally {
-    setCarregando(false);
+    setIsLoading(false);
   }
 };
 ```
@@ -444,56 +448,57 @@ const carregarDados = async () => {
 
 ```python
 import logging
+
 logger = logging.getLogger(__name__)
 
-# Prefixos de emoji por severidade (padrão do projeto):
-logger.info("✅ Operação concluída com sucesso")
-logger.warning("⚠️ Situação inesperada mas não crítica")
-logger.error("❌ Erro que precisa de atenção")
+# Severity prefixes used by this project:
+logger.info("✅ Operation completed successfully")
+logger.warning("⚠️ Unexpected but non-critical condition")
+logger.error("❌ Error requiring attention")
 
-# Incluir contexto relevante:
-logger.info(f"🌐 Processando mensagem: session_id={session_id}, username={username}")
+# Include relevant context:
+logger.info(f"🌐 Processing message: session_id={session_id}, username={username}")
 ```
 
-**Nível de log:** controlado por `LOG_LEVEL` no `.env` (padrão `INFO`).
+Log level is controlled by `LOG_LEVEL` in `.env` (default: `INFO`).
 
 ### Frontend
 
 ```js
-console.error('Erro ao processar:', err);  // para erros
-// console.log em desenvolvimento apenas — remover antes de PR
+console.error("Processing error:", err); // for errors
+// Use console.log only during development and remove before PR
 ```
 
 ---
 
-## 10. Git e commits
+## 10. Git and Commits
 
 ### Conventional Commits
 
-```
-feat: adiciona endpoint de análise de sentimento
-fix: corrige rewrite de audio_url no proxy do voice service
-docs: atualiza API reference com novos endpoints de emoção
-refactor: extrai lógica de session_id para helper separado
-chore: atualiza dependências do gateway service
-test: adiciona testes para UserTherapeuticSessionService
-```
-
-### Branches
-
-```
-feature/nome-da-feature
-fix/descricao-do-bug
-docs/o-que-esta-documentando
-refactor/o-que-esta-refatorando
+```text
+feat: add sentiment analysis endpoint
+fix: correct audio_url rewrite in voice proxy
+docs: update API reference with new emotion endpoints
+refactor: extract session_id logic into helper
+chore: update gateway service dependencies
+test: add tests for UserTherapeuticSessionService
 ```
 
-### Pull Requests
+### Branch naming
 
-- PRs para `main` acionam o pipeline de CI/CD completo
-- Build das imagens + deploy automático no GKE Autopilot
-- Verificar `GET /health/all` em produção após deploy
+```text
+feature/feature-name
+fix/bug-description
+docs/what-you-are-documenting
+refactor/what-you-are-refactoring
+```
+
+### Pull requests
+
+- PRs to `main` trigger full CI/CD pipeline
+- Images are built and deployed automatically to GKE Autopilot
+- Verify `GET /health/all` in production after deploy
 
 ---
 
-*Última atualização: Abril 2026*
+*Last updated: April 2026*
