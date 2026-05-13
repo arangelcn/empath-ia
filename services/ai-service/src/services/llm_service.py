@@ -144,7 +144,7 @@ class LLMService:
         self.local_openai_compatible = self._is_local_openai_compatible_base(self.openai_base_url)
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.effective_api_key = self._resolve_openai_api_key(self.api_key, self.openai_base_url)
-        self.openai_model = os.getenv("MODEL_NAME", "gpt-4o")
+        self.openai_model = self._resolve_openai_model()
         self.model = self.openai_model
         self.max_tokens = int(os.getenv("MAX_TOKENS", "220" if self.local_openai_compatible else "700"))
         self.voice_max_tokens = int(os.getenv("VOICE_MAX_TOKENS", "120" if self.local_openai_compatible else "180"))
@@ -275,8 +275,16 @@ class LLMService:
 
     def _resolve_openai_base_url(self) -> str:
         return self._normalize_openai_base_url(
-            os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
+            os.getenv("OPENAI_ENDPOINT") or os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL"),
             os.getenv("OPENAI_COMPLETIONS_URL"),
+        )
+
+    @staticmethod
+    def _resolve_openai_model() -> str:
+        return (
+            os.getenv("OPENAI_MODEL")
+            or os.getenv("MODEL_NAME")
+            or "gpt-4o"
         )
 
     def _resolve_openai_api_key(self, configured_api_key: Optional[str], base_url: str) -> Optional[str]:

@@ -76,7 +76,6 @@ validate_structure() {
     
     local required_dirs=(
         "services/ai-service"
-        "services/avatar-service"
         "services/emotion-service"
         "services/gateway-service"
         "apps/web-ui"

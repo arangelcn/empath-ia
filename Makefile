@@ -17,10 +17,10 @@ COMPOSE := docker compose $(COMPOSE_FILES)
 HOST_COMPOSE := docker compose $(HOST_FILES)
 BRIDGE_COMPOSE := docker compose $(BRIDGE_FILES)
 
-HOST_RUNTIME_ENV := MONGODB_URL=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin REDIS_URL=redis://127.0.0.1:6379/0 QDRANT_URL=http://127.0.0.1:6333 AI_SERVICE_URL=http://127.0.0.1:8001 AVATAR_SERVICE_URL=http://127.0.0.1:8002 EMOTION_SERVICE_URL=http://127.0.0.1:8003 VOICE_SERVICE_URL=http://127.0.0.1:8004 KNOWLEDGE_SERVICE_URL=http://127.0.0.1:8005 BACKEND_URL=http://127.0.0.1:8000 VITE_API_URL=http://127.0.0.1:8000 ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3001
-BRIDGE_RUNTIME_ENV := MONGODB_URL=mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin REDIS_URL=redis://redis:6379/0 QDRANT_URL=http://qdrant:6333 AI_SERVICE_URL=http://ai-service:8001 AVATAR_SERVICE_URL=http://avatar-service:8002 EMOTION_SERVICE_URL=http://emotion-service:8003 VOICE_SERVICE_URL=http://voice-service:8004 KNOWLEDGE_SERVICE_URL=http://knowledge-service:8005 BACKEND_URL=http://gateway-service:8000 VITE_API_URL=http://localhost:8000 ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3000,http://localhost:3001
+HOST_RUNTIME_ENV := MONGODB_URL=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin REDIS_URL=redis://127.0.0.1:6379/0 QDRANT_URL=http://127.0.0.1:6333 AI_SERVICE_URL=http://127.0.0.1:8001 EMOTION_SERVICE_URL=http://127.0.0.1:8003 VOICE_SERVICE_URL=http://127.0.0.1:8004 KNOWLEDGE_SERVICE_URL=http://127.0.0.1:8005 BACKEND_URL=http://127.0.0.1:8000 VITE_API_URL=http://127.0.0.1:8000 ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3001
+BRIDGE_RUNTIME_ENV := MONGODB_URL=mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin REDIS_URL=redis://redis:6379/0 QDRANT_URL=http://qdrant:6333 AI_SERVICE_URL=http://ai-service:8001 EMOTION_SERVICE_URL=http://emotion-service:8003 VOICE_SERVICE_URL=http://voice-service:8004 KNOWLEDGE_SERVICE_URL=http://knowledge-service:8005 BACKEND_URL=http://gateway-service:8000 VITE_API_URL=http://localhost:8000 ALLOWED_ORIGINS=http://localhost:7860,http://localhost:3000,http://localhost:3001
 
-BACKEND_SERVICES := gateway ai-service avatar-service emotion-service voice-service knowledge-service
+BACKEND_SERVICES := gateway ai-service emotion-service voice-service knowledge-service
 FRONTEND_SERVICES := web-ui admin-panel
 CORE_SERVICES := mongodb redis qdrant $(BACKEND_SERVICES)
 
@@ -118,7 +118,7 @@ format: ## Roda black nos backends
 	done; exit $$status
 
 health: ## Verifica endpoints /health locais
-	@for port in 8000 8001 8002 8003 8004 8005; do \
+	@for port in 8000 8001 8003 8004 8005; do \
 		printf ":%s " "$$port"; \
 		curl -fsS "http://localhost:$$port/health" | jq . || true; \
 	done
@@ -128,7 +128,6 @@ urls: ## Mostra URLs locais úteis
 	@echo "Admin Panel:    http://localhost:3001"
 	@echo "Gateway API:    http://localhost:8000/docs"
 	@echo "AI Service:     http://localhost:8001/docs"
-	@echo "Avatar Service: http://localhost:8002/docs"
 	@echo "Emotion API:    http://localhost:8003/docs"
 	@echo "Voice API:      http://localhost:8004/docs"
 	@echo "Knowledge API:  http://localhost:8005/docs"

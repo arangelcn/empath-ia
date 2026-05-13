@@ -12,16 +12,6 @@ variable "openai_api_key" {
   sensitive = true
 }
 
-variable "did_api_username" {
-  type      = string
-  sensitive = true
-}
-
-variable "did_api_password" {
-  type      = string
-  sensitive = true
-}
-
 variable "mongo_root_password" {
   type      = string
   sensitive = true
