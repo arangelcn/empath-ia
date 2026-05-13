@@ -14,6 +14,7 @@ This directory keeps operational project documentation only. The main README rem
 | [CONVENTIONS.md](CONVENTIONS.md) | Code, endpoint, component, database, error, and commit standards. |
 | [AGENTS.md](AGENTS.md) | Quick guide for development agents in this repository. |
 | [architecture/KNOWLEDGE_SERVICE.md](architecture/KNOWLEDGE_SERVICE.md) | Architectural decision for the new `knowledge-service` and Admin-controlled RAG. |
+| [architecture/GATEWAY_AI_FUSION_MONOLITH.md](architecture/GATEWAY_AI_FUSION_MONOLITH.md) | Refactor plan to fuse Gateway + AI into a modular monolith with safe migration and final rename. |
 
 ## Simple rule
 

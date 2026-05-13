@@ -45,7 +45,173 @@ A próxima versão deve priorizar quatro linhas de evolução:
 - **Evals-first:** validar tom Rogeriano, empatia percebida, grounding e segurança com métricas e golden sets.
 - **Industrialização local-first:** servir modelos locais com baixa latência, governança, privacidade e red teaming contínuo.
 
-## Track 0: Fundação Arquitetural do Sistema RAG
+## Ordem de Execução Revisada
+
+- **Fase 1: simplificação arquitetural primeiro.** Antes de expandir RAG, evals e capacidades agênticas, reduzir o acoplamento entre `gateway-service` e `ai-service`.
+- **Fase 2: bibliotecas depois da simplificação.** LangChain, LangGraph e LlamaIndex entram quando ownership, contratos e caminhos críticos estiverem mais limpos.
+- **Fase 3: retomada do backlog já consolidado.** As tracks originais continuam válidas e ficam preservadas abaixo como backlog estruturado da próxima etapa.
+
+## Track 0: Simplificação Arquitetural e Fusão Progressiva
+
+Objetivo: simplificar o sistema antes de expandi-lo. O primeiro foco passa a ser reduzir duplicação entre `gateway-service` e `ai-service`, remover dependências circulares e preparar uma fronteira de execução mais limpa para chat, contexto de sessão, prompts e fallback.
+
+### Tarefa 0.1: Decisão de Fusão e Arquitetura Alvo
+
+- [ ] Mapear responsabilidades hoje divididas entre `gateway-service` e `ai-service`: chat, streaming, contexto de sessão, próxima sessão, prompts, fallback, cache e telemetria.
+- [ ] Definir a arquitetura alvo: serviço único, monólito modular ou boundary unificada com deploy separado temporário.
+- [ ] Escolher source of truth para prompts, contexto de sessão, política RAG, histórico e fallback.
+- [ ] Documentar dependências que devem deixar de existir no caminho crítico, especialmente HTTP interno entre Gateway e AI.
+- [ ] Definir estratégia de rollout e rollback para a fusão sem quebrar contratos externos já usados pelo frontend e Admin.
+
+Arquivos prováveis:
+
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/session_context_service.py`
+- `services/ai-service/src/main.py`
+- `services/ai-service/src/api/chat_routes.py`
+- `services/ai-service/src/services/prompt_client_service.py`
+- `services/ai-service/src/services/llm_service.py`
+- `docs/CODEBASE_MAP.md`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Existe arquitetura alvo documentada para a fusão.
+- Cada capacidade crítica tem ownership único e explícito.
+- O roadmap de migração identifica o que sai do caminho HTTP interno e em que ordem.
+
+### Tarefa 0.2: Fusão Progressiva por Ownership
+
+- [ ] Remover a dependência cíclica em que o `ai-service` busca prompts do `gateway-service`.
+- [ ] Consolidar chat síncrono, streaming, geração de contexto e fallback sob uma única camada de aplicação.
+- [ ] Eliminar chamadas HTTP internas em fluxos críticos sempre que o código puder rodar no mesmo boundary.
+- [ ] Unificar persistência e cache de contexto/sessão para evitar duplicação entre services.
+- [ ] Manter as rotas públicas estáveis durante a migração, com fachada compatível para web e Admin.
+
+Arquivos prováveis:
+
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/prompt_service.py`
+- `services/gateway-service/src/services/session_context_service.py`
+- `services/ai-service/src/main.py`
+- `services/ai-service/src/api/chat_routes.py`
+- `services/ai-service/src/services/prompt_client_service.py`
+- `services/ai-service/src/services/token_economy_service.py`
+- `docker-compose.yml`
+
+Critérios de aceite:
+
+- O fluxo principal de chat deixa de depender de HTTP interno entre Gateway e AI.
+- Prompt loading/render e geração terapêutica passam a obedecer um único boundary de execução.
+- Contexto de sessão e telemetria deixam de ter ownership ambíguo.
+
+### Tarefa 0.3: Cleanup Pós-Fusão e Contratos Estáveis
+
+- [ ] Remover endpoints, adapters e caminhos duplicados que só existiam para sustentar a separação antiga.
+- [ ] Separar transporte HTTP, domínio e integração de providers em camadas mais claras.
+- [ ] Padronizar `trace_id`, motivo de fallback, métricas e logs de auditoria em um único fluxo.
+- [ ] Atualizar documentação técnica, mapa do código e diagramas de runtime.
+- [ ] Registrar explicitamente quais partes ainda permanecem desacopladas por motivo operacional real.
+
+Arquivos prováveis:
+
+- `services/gateway-service/src/api/`
+- `services/gateway-service/src/services/`
+- `services/ai-service/src/`
+- `docs/CODEBASE_MAP.md`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Há um caminho canônico para chat, contexto de sessão e próxima sessão.
+- Não restam duplicações importantes de endpoint ou orquestração.
+- A documentação reflete a topologia nova de forma consistente.
+
+## Track 1: Implantação Orientada de Bibliotecas
+
+Objetivo: adotar bibliotecas prontas depois da simplificação arquitetural, usando-as para reduzir código manual sem perder performance ou rastreabilidade.
+
+### Tarefa 1.1: LangChain para Pipelines Determinísticos
+
+- [ ] Substituir montagem manual de prompts por `PromptTemplate`/`ChatPromptTemplate`.
+- [ ] Padronizar structured output com schemas/Pydantic para chat, contexto de sessão e próximas sessões.
+- [ ] Encapsular retrieval e políticas RAG em chains explícitas, sem concatenação manual espalhada.
+- [ ] Remover parsing frágil de JSON e heurísticas repetidas do caminho principal do LLM.
+- [ ] Criar uma camada de chains reutilizáveis para chat, contexto, títulos e utilitários internos.
+
+Arquivos prováveis:
+
+- `services/ai-service/src/services/llm_service.py`
+- `services/ai-service/src/services/rag_client_service.py`
+- `services/gateway-service/src/services/chat_title_service.py`
+- `services/gateway-service/src/services/session_context_service.py`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Os fluxos principais deixam de depender de montagem textual ad hoc.
+- Respostas estruturadas não exigem extração manual de JSON no caminho principal.
+- A camada de integração LLM fica menor, mais previsível e mais testável.
+
+### Tarefa 1.2: LangGraph para Orquestração Incremental
+
+Objetivo: iniciar um refactor incremental para migrar a orquestração de chat para grafo de estados, sem quebrar o fluxo atual de texto, voz e persistência.
+
+- [ ] Criar `GraphState` canônico com `chat_id`, `session_id`, `username`, `trace_id`, histórico, política de prompt, contexto RAG, sinal emocional e flags de segurança.
+- [ ] Extrair o fluxo principal para nós LangGraph: entrada, contexto, retrieval, geração, segurança, persistência e saída.
+- [ ] Criar `agent_service.py` como camada de execução do grafo, mantendo `chat_service.py` como fachada.
+- [ ] Encapsular chamada ao runtime LLM em nó dedicado com contrato explícito de sucesso/fallback.
+- [ ] Encapsular retrieval via `knowledge-service` em nó separado, com degradação segura quando indisponível.
+- [ ] Encapsular sinais do `emotion-service` em nó auxiliar de risco, usado apenas como contexto de segurança.
+- [ ] Encapsular síntese do `voice-service` em nó de saída para preservar streaming e latência.
+- [ ] Adicionar feature flag `LANGGRAPH_ENABLED` para rollout gradual e rollback rápido.
+- [ ] Adicionar checkpointing inicial por `chat_id` + `trace_id` para retomada e auditoria do grafo.
+
+Arquivos prováveis:
+
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/agent_service.py`
+- `services/gateway-service/src/services/graph_state.py`
+- `services/gateway-service/src/services/session_context_service.py`
+- `services/ai-service/src/services/llm_service.py`
+- `services/knowledge-service/src/api/knowledge_routes.py`
+- `services/emotion-service/src/`
+- `services/voice-service/src/`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Fluxo LangGraph roda por feature flag sem regressão funcional no fluxo atual.
+- Cada resposta possui trilha de estados com `trace_id`, nós percorridos e motivo de fallback.
+- Crise, baixa confiança, falha de retrieval e falha de TTS têm transições explícitas.
+
+### Tarefa 1.3: LlamaIndex no Knowledge Service
+
+- [ ] Avaliar LlamaIndex como motor de ingestão, índice, retrieval e citações dentro do `knowledge-service`.
+- [ ] Comparar o ganho real frente à implementação atual de chunking + contratos customizados.
+- [ ] Priorizar uso de LlamaIndex no `knowledge-service`, não no `gateway-service`, para preservar boundaries.
+- [ ] Integrar metadados, filtros por escopo, proveniência e citações com a política administrativa já definida.
+- [ ] Manter o contrato interno de retrieval estável mesmo que o engine por trás mude.
+
+Arquivos prováveis:
+
+- `services/knowledge-service/src/services/`
+- `services/knowledge-service/src/models/knowledge.py`
+- `services/knowledge-service/src/api/knowledge_routes.py`
+- `docs/architecture/KNOWLEDGE_SERVICE.md`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Há decisão explícita sobre adotar ou não LlamaIndex no pipeline de conhecimento.
+- O contrato consumido pelo chat continua estável e auditável.
+- A adoção reduz código de infraestrutura sem esconder metadados críticos de auditoria.
+
+## Backlog Estruturado Preservado
+
+As tracks abaixo continuam válidas e passam a ser executadas depois das Tracks 0 e 1 acima. Onde houver menção a LangGraph ou orquestração agêntica, leia como expansão sobre a fundação introduzida na Track 1.2.
+
+### Track 0: Fundação Arquitetural do Sistema RAG
 
 Objetivo: definir a arquitetura do novo sistema de conhecimento antes de implementar chunking, embeddings e recuperação. O RAG deve ser controlável pelo Admin, auditável por documento/chunk/versão e desacoplado o suficiente para evoluir sem tornar o AI Service um monólito de ingestão, busca e geração.
 
@@ -124,51 +290,7 @@ Critérios de aceite:
 - Falhas de retrieval degradam com segurança e não inventam fonte.
 - Respostas com RAG incluem rastreabilidade suficiente para auditoria administrativa.
 
-### Tarefa 0.4: Próximo passo - Refactor de Orquestração com LangGraph
-
-Objetivo: iniciar um refactor incremental para migrar a orquestração de chat para grafo de estados, sem quebrar o fluxo atual de texto, voz e persistência.
-
-- [ ] Criar `GraphState` canônico com `chat_id`, `session_id`, `username`, `trace_id`, histórico, política de prompt, contexto RAG, sinal emocional e flags de segurança.
-- [ ] Extrair o fluxo principal do `gateway-service` para nós LangGraph: entrada, contexto, retrieval, geração, segurança, persistência e saída.
-- [ ] Criar `agent_service.py` no `gateway-service` como camada de execução do grafo (mantendo `chat_service.py` como fachada).
-- [ ] Encapsular chamada ao `ai-service` em nó dedicado com contrato explícito de sucesso/fallback.
-- [ ] Encapsular retrieval via `knowledge-service` (`/api/v1/retrieve`) em nó separado, com degradação segura quando indisponível.
-- [ ] Encapsular sinais do `emotion-service` em nó auxiliar de risco (sem diagnóstico), usado apenas como contexto de segurança.
-- [ ] Encapsular síntese do `voice-service` em nó de saída para preservar streaming e latência.
-- [ ] Adicionar feature flag `LANGGRAPH_ENABLED` para rollout gradual e rollback rápido.
-- [ ] Adicionar checkpointing inicial (Redis/Mongo) por `chat_id` + `trace_id` para retomada e auditoria do grafo.
-
-Serviços que mais se beneficiam:
-
-- `services/gateway-service`: ganha orquestração explícita, testável e com transições auditáveis.
-- `services/ai-service`: recebe contrato de entrada mais estável, com contexto pronto e políticas explícitas.
-- `services/knowledge-service`: passa a ser chamado por um nó de retrieval dedicado, com telemetria e fallback padronizados.
-- `services/emotion-service`: integração de sinal emocional fica isolada e governável em nó próprio.
-- `services/voice-service`: streaming/TTS entra como etapa declarada de saída, reduzindo acoplamento.
-
-Arquivos prováveis:
-
-- `services/gateway-service/src/services/chat_service.py`
-- `services/gateway-service/src/services/agent_service.py`
-- `services/gateway-service/src/services/graph_state.py`
-- `services/gateway-service/src/services/prompt_service.py`
-- `services/gateway-service/src/services/session_context_service.py`
-- `services/ai-service/src/services/llm_service.py`
-- `services/ai-service/src/services/rag_client_service.py`
-- `services/knowledge-service/src/api/knowledge_routes.py`
-- `services/emotion-service/src/`
-- `services/voice-service/src/`
-- `docs/TECHNICAL.md`
-
-Critérios de aceite:
-
-- Fluxo LangGraph roda por feature flag sem regressão funcional no fluxo atual.
-- Cada resposta possui trilha de estados com `trace_id`, nós percorridos e motivo de fallback.
-- Crise, baixa confiança, falha de retrieval e falha de TTS têm transições explícitas.
-- Streaming de texto e voz mantém qualidade percebida e latência dentro dos limites atuais.
-- O fluxo legado permanece disponível até a validação completa dos evals.
-
-## Track 1: Engenharia de Contexto e Backbone de Dados
+### Track 1: Engenharia de Contexto e Backbone de Dados
 
 Objetivo: transformar o RAG em um sistema de memória externa que respeite a densidade teórica da psicologia humanista e preserve rastreabilidade.
 
@@ -239,12 +361,13 @@ Critérios de aceite:
 - Respostas com RAG incluem fonte, versão e motivo de recuperação.
 - Prompt Control define quando RAG está habilitado e qual escopo pode ser consultado.
 
-## Track 2: Arquitetura Cognitiva e Orquestração Agêntica
+### Track 2: Arquitetura Cognitiva e Orquestração Agêntica
 
 Objetivo: migrar o sistema de um fluxo linear para um grafo de estados capaz de decisão, reflexão, segurança e continuidade entre sessões.
 
-### Tarefa 2.1: Migração para LangGraph
+### Tarefa 2.1: Expansão da Orquestração com LangGraph
 
+- [ ] Evoluir a fundação da Track 1.2 para suportar estados terapêuticos e cognitivos mais ricos.
 - [ ] Modelar a conversa como grafo de estados no `gateway-service`.
 - [ ] Definir `GraphState` com histórico, `chat_id`, sessão terapêutica, último estado emocional, risco detectado e metadados de prompt.
 - [ ] Criar nós para triagem, suporte Rogeriano, crise, recuperação de memória, resposta de voz e encerramento.
@@ -309,7 +432,7 @@ Critérios de aceite:
 - Revisão administrativa respeita permissões.
 - Dados persistentes têm retenção e exclusão documentadas.
 
-## Track 3: Framework de Avaliação e Rigor Científico
+### Track 3: Framework de Avaliação e Rigor Científico
 
 Objetivo: substituir validação manual por métricas quantitativas, testes de regressão e avaliação alinhada com segurança clínica.
 
@@ -382,7 +505,7 @@ Critérios de aceite:
 - A métrica aparece em relatórios internos sem rotular o usuário.
 - O sistema documenta limitações e uso não clínico da métrica.
 
-## Track 4: Operações, Governança e Escala
+### Track 4: Operações, Governança e Escala
 
 Objetivo: preparar o Empat.IA para uso confiável, seguro, eficiente e auditável em produção.
 
@@ -458,23 +581,23 @@ Ordem recomendada para execução:
 
 ### Foco Primário (próximos 2 sprints)
 
-1. **LangGraph (próximo passo):** executar a Tarefa 0.4 com refactor incremental no `gateway-service` e feature flag.
-2. **Prompt Control + RAG runtime:** fechar contrato de política RAG por prompt e trilha de auditoria fim-a-fim.
-3. **Evals mínimos obrigatórios:** ativar gate de segurança/empatia para prompts críticos antes de novos rollouts.
+1. **Fusão progressiva Gateway + AI:** executar a Track 0 para reduzir acoplamento, remover HTTP interno e definir ownership único.
+2. **Implantação orientada de bibliotecas:** iniciar LangChain e LangGraph sobre a arquitetura simplificada, com avaliação objetiva de LlamaIndex no `knowledge-service`.
+3. **Retomada do backlog preservado:** seguir para Prompt Control + RAG runtime e evals mínimos obrigatórios depois da base simplificada.
 
 Entregáveis mínimos do foco primário:
 
+- [ ] Arquitetura alvo documentada para fusão progressiva de `gateway-service` e `ai-service`.
+- [ ] Dependência cíclica de prompts e chamadas HTTP internas críticas removida ou isolada por plano de migração explícito.
+- [ ] Camada LangChain definida para prompts, contexto e structured output dos fluxos principais.
 - [ ] `gateway-service` com fluxo legado + fluxo LangGraph com `LANGGRAPH_ENABLED`.
-- [ ] `GraphState` versionado com `trace_id`, estado, fallback_reason e nós percorridos.
 - [ ] Política de prompt (`enabled`, `allowed_scopes`, `top_k`, `min_confidence`, `require_citations`) aplicada em runtime.
-- [ ] Auditoria de retrieval e uso de fontes conectada ao ciclo de resposta.
-- [ ] Suite mínima de evals executando no CI para prompts críticos (bloqueando regressão de segurança).
 
 ### Backlog Secundário (após foco primário)
 
-1. **RAG/Admin:** consolidar ingestão aprovada, chunking coeso, embeddings e rastreabilidade de fontes.
-2. **Privacidade e PII:** proteger fallback externo antes de aumentar uso de modelos remotos ou ferramentas.
-3. **Model serving local:** avaliar vLLM e concorrência depois que evals e segurança estiverem mensuráveis.
+1. **RAG/Admin:** consolidar ingestão aprovada, chunking coeso, embeddings, LlamaIndex se fizer sentido, e rastreabilidade de fontes.
+2. **Evals e segurança:** ativar gates mínimos de segurança/empatia antes de acelerar novas capacidades.
+3. **Privacidade e serving local:** proteger fallback externo e só então ampliar concorrência e operação local.
 
 ## Métricas de Sucesso
 

@@ -45,7 +45,173 @@ The next version should prioritize four evolution lines:
 - **Evals-first:** validate Rogerian tone, perceived empathy, grounding, and safety with metrics and golden sets.
 - **Local-first industrialization:** serve local models with low latency, governance, privacy, and continuous red teaming.
 
-## Track 0: Architectural Foundation of the RAG System
+## Revised Execution Order
+
+- **Phase 1: simplify architecture first.** Before expanding RAG, evals, and agentic capabilities, reduce coupling between `gateway-service` and `ai-service`.
+- **Phase 2: adopt libraries after simplification.** LangChain, LangGraph, and LlamaIndex should come in when ownership, contracts, and critical paths are cleaner.
+- **Phase 3: resume the existing roadmap backlog.** The original tracks remain valid and are preserved below as the structured next-step backlog.
+
+## Track 0: Architectural Simplification and Progressive Fusion
+
+Goal: simplify the system before expanding it. The first priority becomes reducing duplication between `gateway-service` and `ai-service`, removing circular dependencies, and preparing a cleaner execution boundary for chat, session context, prompts, and fallback.
+
+### Task 0.1: Fusion Decision and Target Architecture
+
+- [ ] Map responsibilities currently split between `gateway-service` and `ai-service`: chat, streaming, session context, next session, prompts, fallback, cache, and telemetry.
+- [ ] Define the target architecture: single service, modular monolith, or unified boundary with temporary separate deployment.
+- [ ] Choose the source of truth for prompts, session context, RAG policy, conversation history, and fallback.
+- [ ] Document which dependencies should leave the critical path, especially internal HTTP between Gateway and AI.
+- [ ] Define rollout and rollback strategy for the fusion without breaking external contracts already used by frontend and Admin.
+
+Likely files:
+
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/session_context_service.py`
+- `services/ai-service/src/main.py`
+- `services/ai-service/src/api/chat_routes.py`
+- `services/ai-service/src/services/prompt_client_service.py`
+- `services/ai-service/src/services/llm_service.py`
+- `docs/CODEBASE_MAP.md`
+- `docs/TECHNICAL.md`
+
+Acceptance criteria:
+
+- A target fusion architecture is documented.
+- Every critical capability has a single explicit owner.
+- The migration roadmap identifies what leaves the internal HTTP path and in what order.
+
+### Task 0.2: Progressive Fusion by Ownership
+
+- [ ] Remove the cyclic dependency where `ai-service` fetches prompts from `gateway-service`.
+- [ ] Consolidate synchronous chat, streaming, session-context generation, and fallback under a single application layer.
+- [ ] Eliminate internal HTTP calls in critical flows whenever code can run inside the same boundary.
+- [ ] Unify context/session persistence and caching to avoid duplication across services.
+- [ ] Keep public routes stable during migration, with a compatible facade for web and Admin.
+
+Likely files:
+
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/prompt_service.py`
+- `services/gateway-service/src/services/session_context_service.py`
+- `services/ai-service/src/main.py`
+- `services/ai-service/src/api/chat_routes.py`
+- `services/ai-service/src/services/prompt_client_service.py`
+- `services/ai-service/src/services/token_economy_service.py`
+- `docker-compose.yml`
+
+Acceptance criteria:
+
+- The main chat path no longer depends on internal HTTP between Gateway and AI.
+- Prompt loading/rendering and therapeutic generation obey a single execution boundary.
+- Session context and telemetry no longer have ambiguous ownership.
+
+### Task 0.3: Post-Fusion Cleanup and Stable Contracts
+
+- [ ] Remove endpoints, adapters, and duplicated paths that only existed to support the old separation.
+- [ ] Separate HTTP transport, domain logic, and provider integrations into clearer layers.
+- [ ] Standardize `trace_id`, fallback reason, metrics, and audit logs in a single flow.
+- [ ] Update technical docs, codebase map, and runtime diagrams.
+- [ ] Explicitly document which parts remain decoupled for real operational reasons.
+
+Likely files:
+
+- `services/gateway-service/src/api/`
+- `services/gateway-service/src/services/`
+- `services/ai-service/src/`
+- `docs/CODEBASE_MAP.md`
+- `docs/TECHNICAL.md`
+
+Acceptance criteria:
+
+- There is one canonical path for chat, session context, and next session.
+- No important duplicated endpoint or orchestration path remains.
+- Documentation consistently reflects the new topology.
+
+## Track 1: Library Adoption by Design
+
+Goal: adopt ready-made libraries after architectural simplification, using them to reduce manual code without losing performance or traceability.
+
+### Task 1.1: LangChain for Deterministic Pipelines
+
+- [ ] Replace manual prompt assembly with `PromptTemplate`/`ChatPromptTemplate`.
+- [ ] Standardize structured output with schemas/Pydantic for chat, session context, and next-session generation.
+- [ ] Encapsulate retrieval and RAG policies in explicit chains instead of scattered manual concatenation.
+- [ ] Remove fragile JSON parsing and repeated heuristics from the main LLM path.
+- [ ] Create a reusable chain layer for chat, context, titles, and internal utilities.
+
+Likely files:
+
+- `services/ai-service/src/services/llm_service.py`
+- `services/ai-service/src/services/rag_client_service.py`
+- `services/gateway-service/src/services/chat_title_service.py`
+- `services/gateway-service/src/services/session_context_service.py`
+- `docs/TECHNICAL.md`
+
+Acceptance criteria:
+
+- Main flows stop depending on ad hoc text assembly.
+- Structured responses do not require manual JSON extraction in the core path.
+- The LLM integration layer becomes smaller, more predictable, and easier to test.
+
+### Task 1.2: LangGraph for Incremental Orchestration
+
+Goal: start an incremental refactor that migrates chat orchestration to a state graph without breaking current text, voice, and persistence behavior.
+
+- [ ] Create a canonical `GraphState` with `chat_id`, `session_id`, `username`, `trace_id`, history, prompt policy, RAG context, emotional signal, and safety flags.
+- [ ] Extract the main flow into LangGraph nodes: input, context, retrieval, generation, safety, persistence, and output.
+- [ ] Create `agent_service.py` as the graph execution layer while keeping `chat_service.py` as facade.
+- [ ] Encapsulate runtime LLM calls in a dedicated node with explicit success/fallback contract.
+- [ ] Encapsulate `knowledge-service` retrieval in a separate node with safe degradation.
+- [ ] Encapsulate `emotion-service` signals in an auxiliary risk node used only as safety context.
+- [ ] Encapsulate `voice-service` synthesis in an output node to preserve streaming and latency.
+- [ ] Add `LANGGRAPH_ENABLED` feature flag for gradual rollout and fast rollback.
+- [ ] Add initial checkpointing by `chat_id` + `trace_id` for graph resume and audit.
+
+Likely files:
+
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/agent_service.py`
+- `services/gateway-service/src/services/graph_state.py`
+- `services/gateway-service/src/services/session_context_service.py`
+- `services/ai-service/src/services/llm_service.py`
+- `services/knowledge-service/src/api/knowledge_routes.py`
+- `services/emotion-service/src/`
+- `services/voice-service/src/`
+- `docs/TECHNICAL.md`
+
+Acceptance criteria:
+
+- LangGraph flow runs behind a feature flag with no functional regression in the current path.
+- Every response has a state trail with `trace_id`, traversed nodes, and fallback reason.
+- Crisis, low confidence, retrieval failure, and TTS failure become explicit transitions.
+
+### Task 1.3: LlamaIndex in the Knowledge Service
+
+- [ ] Evaluate LlamaIndex as the ingestion, index, retrieval, and citation engine inside `knowledge-service`.
+- [ ] Compare the real gain against the current chunking + custom contract implementation.
+- [ ] Prioritize LlamaIndex inside `knowledge-service`, not inside `gateway-service`, to preserve boundaries.
+- [ ] Integrate metadata, scope filters, provenance, and citations with the existing admin policy model.
+- [ ] Keep the internal retrieval contract stable even if the underlying engine changes.
+
+Likely files:
+
+- `services/knowledge-service/src/services/`
+- `services/knowledge-service/src/models/knowledge.py`
+- `services/knowledge-service/src/api/knowledge_routes.py`
+- `docs/architecture/KNOWLEDGE_SERVICE.md`
+- `docs/TECHNICAL.md`
+
+Acceptance criteria:
+
+- There is an explicit decision on whether to adopt LlamaIndex in the knowledge pipeline.
+- The contract consumed by chat remains stable and auditable.
+- Adoption reduces infrastructure code without hiding critical audit metadata.
+
+## Preserved Structured Backlog
+
+The tracks below remain valid and should be executed after Tracks 0 and 1 above. Wherever LangGraph or agentic orchestration is mentioned, read it as an expansion on top of the foundation introduced in Track 1.2.
+
+### Track 0: Architectural Foundation of the RAG System
 
 Goal: define the architecture of the new knowledge system before implementing chunking, embeddings, and retrieval. RAG must be Admin-controlled, auditable by document/chunk/version, and decoupled enough to evolve without turning AI Service into an ingestion/search/generation monolith.
 
@@ -124,51 +290,7 @@ Acceptance criteria:
 - Retrieval failures degrade safely and do not invent sources.
 - RAG responses include enough traceability for admin audit.
 
-### Task 0.4: Next Step - LangGraph Orchestration Refactor
-
-Goal: start an incremental refactor that migrates chat orchestration to a state graph without breaking current text, voice, and persistence behavior.
-
-- [ ] Create a canonical `GraphState` with `chat_id`, `session_id`, `username`, `trace_id`, history, prompt policy, RAG context, emotional signal, and safety flags.
-- [ ] Extract the core `gateway-service` flow into LangGraph nodes: input, context, retrieval, generation, safety, persistence, and output.
-- [ ] Create `agent_service.py` in `gateway-service` as the graph execution layer (while keeping `chat_service.py` as facade).
-- [ ] Encapsulate `ai-service` calls in a dedicated node with explicit success/fallback contract.
-- [ ] Encapsulate `knowledge-service` retrieval (`/api/v1/retrieve`) in its own node with safe degradation.
-- [ ] Encapsulate `emotion-service` signals in an auxiliary risk node (non-diagnostic), used only as safety context.
-- [ ] Encapsulate `voice-service` synthesis in an output node to preserve streaming and latency.
-- [ ] Add `LANGGRAPH_ENABLED` feature flag for gradual rollout and fast rollback.
-- [ ] Add initial checkpointing (Redis/Mongo) by `chat_id` + `trace_id` for graph resume and auditing.
-
-Services that benefit the most:
-
-- `services/gateway-service`: explicit orchestration, testable transitions, and auditable state flow.
-- `services/ai-service`: more stable input contract with pre-assembled context and explicit policies.
-- `services/knowledge-service`: dedicated retrieval node with standardized telemetry and fallback behavior.
-- `services/emotion-service`: emotional-signal integration becomes isolated and governable.
-- `services/voice-service`: streaming/TTS becomes a declared output stage with lower coupling.
-
-Likely files:
-
-- `services/gateway-service/src/services/chat_service.py`
-- `services/gateway-service/src/services/agent_service.py`
-- `services/gateway-service/src/services/graph_state.py`
-- `services/gateway-service/src/services/prompt_service.py`
-- `services/gateway-service/src/services/session_context_service.py`
-- `services/ai-service/src/services/llm_service.py`
-- `services/ai-service/src/services/rag_client_service.py`
-- `services/knowledge-service/src/api/knowledge_routes.py`
-- `services/emotion-service/src/`
-- `services/voice-service/src/`
-- `docs/TECHNICAL.md`
-
-Acceptance criteria:
-
-- LangGraph flow runs behind a feature flag with no functional regression in the current path.
-- Every response has a state trail with `trace_id`, traversed nodes, and fallback reason.
-- Crisis, low confidence, retrieval failure, and TTS failure are explicit transitions.
-- Text and voice streaming preserve perceived quality and current latency budget.
-- Legacy flow remains available until eval validation is complete.
-
-## Track 1: Context Engineering and Data Backbone
+### Track 1: Context Engineering and Data Backbone
 
 Goal: turn RAG into an external memory system that respects the theoretical density of humanistic psychology while preserving traceability.
 
@@ -239,12 +361,13 @@ Acceptance criteria:
 - RAG responses include source, version, and retrieval reason.
 - Prompt Control defines when RAG is enabled and which scope can be queried.
 
-## Track 2: Cognitive Architecture and Agentic Orchestration
+### Track 2: Cognitive Architecture and Agentic Orchestration
 
 Goal: migrate from a linear flow to a state graph capable of decision-making, reflection, safety, and continuity across sessions.
 
-### Task 2.1: Migration to LangGraph
+### Task 2.1: LangGraph Orchestration Expansion
 
+- [ ] Evolve the Track 1.2 foundation to support richer therapeutic and cognitive states.
 - [ ] Model the conversation as a state graph in `gateway-service`.
 - [ ] Define `GraphState` with history, `chat_id`, therapeutic session, latest emotional state, detected risk, and prompt metadata.
 - [ ] Create nodes for triage, Rogerian support, crisis, memory retrieval, voice response, and closing.
@@ -309,7 +432,7 @@ Acceptance criteria:
 - Admin review respects permissions.
 - Persistent data has documented retention and deletion.
 
-## Track 3: Evaluation Framework and Scientific Rigor
+### Track 3: Evaluation Framework and Scientific Rigor
 
 Goal: replace manual validation with quantitative metrics, regression tests, and safety-aligned evaluation.
 
@@ -382,7 +505,7 @@ Acceptance criteria:
 - Metric appears in internal reports without labeling the user.
 - The system documents limitations and non-clinical usage.
 
-## Track 4: Operations, Governance, and Scale
+### Track 4: Operations, Governance, and Scale
 
 Goal: prepare Empat.IA for reliable, safe, efficient, and auditable production usage.
 
@@ -458,23 +581,23 @@ Recommended execution order:
 
 ### Primary Focus (next 2 sprints)
 
-1. **LangGraph (next step):** execute Task 0.4 with incremental `gateway-service` refactor behind a feature flag.
-2. **Prompt Control + runtime RAG:** finalize prompt-scoped RAG policy contract and end-to-end audit trail.
-3. **Mandatory minimum evals:** enable safety/empathy gate for critical prompts before new rollouts.
+1. **Progressive Gateway + AI fusion:** execute Track 0 to reduce coupling, remove internal HTTP, and establish single ownership.
+2. **Library adoption by design:** start LangChain and LangGraph on top of the simplified architecture, with an objective LlamaIndex evaluation inside `knowledge-service`.
+3. **Resume the preserved backlog:** move on to Prompt Control + runtime RAG and mandatory minimum evals after the simplified foundation is in place.
 
 Minimum deliverables for the primary focus:
 
+- [ ] Documented target architecture for progressive fusion of `gateway-service` and `ai-service`.
+- [ ] Cyclic prompt dependency and critical internal HTTP calls removed or isolated by an explicit migration plan.
+- [ ] LangChain layer defined for prompts, context, and structured output in core flows.
 - [ ] `gateway-service` running both legacy flow and LangGraph flow with `LANGGRAPH_ENABLED`.
-- [ ] Versioned `GraphState` with `trace_id`, state, fallback_reason, and traversed nodes.
 - [ ] Prompt policy (`enabled`, `allowed_scopes`, `top_k`, `min_confidence`, `require_citations`) enforced at runtime.
-- [ ] Retrieval audit and source-usage records connected to response lifecycle.
-- [ ] Minimum eval suite running in CI for critical prompts (blocking safety regressions).
 
 ### Secondary Backlog (after primary focus)
 
-1. **RAG/Admin:** consolidate approved ingestion, cohesive chunking, embeddings, and source traceability.
-2. **Privacy and PII:** protect external fallback before increasing remote model/tool usage.
-3. **Local model serving:** evaluate vLLM and concurrency after evals and safety are measurable.
+1. **RAG/Admin:** consolidate approved ingestion, cohesive chunking, embeddings, LlamaIndex if it proves valuable, and source traceability.
+2. **Evals and safety:** enable minimum safety/empathy gates before accelerating new capabilities.
+3. **Privacy and local serving:** protect external fallback first and only then scale concurrency and local operation.
 
 ## Success Metrics
 
