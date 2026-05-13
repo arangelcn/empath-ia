@@ -74,6 +74,8 @@ class LangChainOpenAIProvider:
                     "user_message": state.user_message,
                     "previous_session_context": state.previous_session_context or {},
                     "user_profile": state.user_profile or {},
+                    "retrieval_context": self._extract_retrieval_context(prompt_payload, state),
+                    "citations_summary": self._extract_citations_summary(prompt_payload, state),
                 }
             )
             if hasattr(prompt_value, "to_messages"):
@@ -82,7 +84,45 @@ class LangChainOpenAIProvider:
         system_content = ""
         if isinstance(prompt_payload, dict):
             system_content = str(prompt_payload.get("system", ""))
+            retrieval_context = str(prompt_payload.get("retrieval_context", ""))
+            citations_summary = str(prompt_payload.get("citations_summary", ""))
+            human_content = (
+                f"Mensagem do usuário:\n{state.user_message}\n\n"
+                f"Contexto anterior: {state.previous_session_context or {}}\n"
+                f"Perfil do usuário: {state.user_profile or {}}\n\n"
+                f"Contexto recuperado:\n{retrieval_context}\n\n"
+                f"Orientação de citação: {citations_summary}"
+            )
+            return [
+                SystemMessage(content=system_content or "Você é um assistente terapêutico seguro."),
+                HumanMessage(content=human_content),
+            ]
         return [
             SystemMessage(content=system_content or "Você é um assistente terapêutico seguro."),
             HumanMessage(content=state.user_message),
         ]
+
+    def _extract_retrieval_context(self, prompt_payload: Any, state: Any) -> str:
+        if isinstance(prompt_payload, dict):
+            return str(prompt_payload.get("retrieval_context", ""))
+        retrieval_result = getattr(state, "retrieval_result", None) or {}
+        results = retrieval_result.get("results") or []
+        if not results:
+            return "Nenhum contexto recuperado confiável."
+        lines = []
+        for index, item in enumerate(results, start=1):
+            citation = item.get("citation") or {}
+            title = citation.get("title") or "Documento sem titulo"
+            section = citation.get("section") or "secao nao informada"
+            snippet = " ".join(str(item.get("content") or "").split())
+            lines.append(f"[{index}] {title} | {section}\n{snippet}")
+        return "\n".join(lines)
+
+    def _extract_citations_summary(self, prompt_payload: Any, state: Any) -> str:
+        if isinstance(prompt_payload, dict):
+            return str(prompt_payload.get("citations_summary", ""))
+        citations = getattr(state, "citations", None) or []
+        if not citations:
+            return "Sem citacoes disponiveis."
+        indexes = ", ".join(f"[{citation['index']}]" for citation in citations)
+        return f"Se usar o contexto recuperado, cite explicitamente {indexes}."

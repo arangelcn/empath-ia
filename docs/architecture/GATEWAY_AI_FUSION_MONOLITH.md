@@ -258,8 +258,10 @@ A direção agora é:
 
 - o runtime novo já possui cadeia de providers, mas ainda precisa de validação operacional com dependências instaladas e credenciais reais;
 - o `PersistenceNode` já executa persistência real no caminho não-streaming, mas o streaming arquitetural ainda precisa convergir para o mesmo modelo final;
-- retrieval e safety já têm nós dedicados, porém ainda com implementação inicial;
-- `LangGraph` e `LangChain` já governam o desenho principal, mas ainda não representam o caminho produtivo completo ponta a ponta.
+- retrieval agora já chama o `knowledge-service` de forma real, aplica política normalizada, filtra resultados por confiança e produz citações no próprio grafo;
+- o prompt novo já sabe incorporar contexto recuperado e instruções explícitas de grounding/citação;
+- safety já tem heurística inicial própria e já consegue bloquear a resposta final quando detectar conteúdo gerado de alto risco;
+- `LangGraph` e `LangChain` já governam o desenho principal, mas o streaming arquitetural e a validação operacional completa ainda não estão fechados.
 
 ### Practical consequence
 
@@ -400,7 +402,9 @@ Status atual:
 - `GraphState`, `AgentService`, `nodes/` e `PromptPipeline` já existem;
 - a cadeia de providers já existe;
 - prompt ownership inicial já existe localmente no `ai-service-v2`;
-- falta transformar esse runtime em caminho produtivo completo com persistência final, retrieval real e validação operacional.
+- retrieval real, grounding e citações já existem no caminho novo;
+- safety inicial independente do legado já existe no caminho novo;
+- falta convergir o streaming arquitetural para persistência/saída final e fazer validação operacional com providers reais.
 
 ### Phase 5: compatibility and shadow validation
 
