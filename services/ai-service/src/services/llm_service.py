@@ -206,10 +206,10 @@ class LLMService:
 
     def _active_mode_label(self) -> str:
         active_provider = self._active_provider()
-        if active_provider == "local":
-            return "OPENAI_COMPAT_LOCAL_ALIAS"
-        if active_provider == "openai":
-            return "OPENAI_COMPAT"
+        if active_provider in {"openai", "local"}:
+            if self.local_openai_compatible:
+                return "LOCAL_OPENAI_COMPAT"
+            return "OPENAI_CLOUD"
         return "TEMPLATE_FALLBACK"
 
     def _log_startup_llm_mode(self) -> None:

@@ -32,7 +32,9 @@ async def get_dashboard_stats():
         messages_collection = get_collection("messages")
 
         # Estatísticas básicas
-        total_users = await users_collection.count_documents({})
+        total_users_registered = await users_collection.count_documents({})
+        inferred_usernames = await conversations_collection.distinct("username", {"username": {"$exists": True, "$nin": [None, ""]}})
+        total_users = max(total_users_registered, len(inferred_usernames))
         total_messages = await messages_collection.count_documents({})
 
         # Conversas ativas (últimas 24h)
@@ -297,8 +299,19 @@ async def get_system_status():
     messages_collection = get_collection("messages")
     users_collection = get_collection("users")
     total_requests = await messages_collection.count_documents({})
-    active_users = await users_collection.count_documents({"last_login": {"$gte": checked_at - timedelta(hours=24)}})
-    active_sessions = await conversations_collection.count_documents({"updated_at": {"$gte": checked_at - timedelta(hours=24)}})
+    activity_window = checked_at - timedelta(hours=24)
+    active_users_from_logins = await users_collection.count_documents({"last_login": {"$gte": activity_window}})
+    active_users_from_conversations = len(
+        await conversations_collection.distinct(
+            "username",
+            {
+                "updated_at": {"$gte": activity_window},
+                "username": {"$exists": True, "$nin": [None, ""]},
+            },
+        )
+    )
+    active_users = max(active_users_from_logins, active_users_from_conversations)
+    active_sessions = await conversations_collection.count_documents({"updated_at": {"$gte": activity_window}})
     error_count = len([service for service in services if service["status"] in {"error", "unreachable"}])
 
     return {
