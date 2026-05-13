@@ -44,5 +44,12 @@ class OrchestrationOutput(BaseModel):
     provider: str
     model: str
     execution_mode: str
+    session_id: str | None = None
+    username: str | None = None
+    chat_id: str | None = None
+    user_message_id: str | None = None
+    ai_message_id: str | None = None
+    audio_url: str | None = None
+    conversation_ended: bool = False
     node_trace: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

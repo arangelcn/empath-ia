@@ -37,6 +37,10 @@ class AgentService:
         rag_gateway: RAGGateway,
         runtime_service: RuntimeService,
         fallback_service: FallbackService,
+        conversation_repository,
+        user_profile_service,
+        session_context_service,
+        voice_synthesis_service,
     ) -> None:
         self.prompt_pipeline = prompt_pipeline
         self.retrieval_policy = retrieval_policy
@@ -45,11 +49,19 @@ class AgentService:
         self.fallback_service = fallback_service
         self.execution_policy = ExecutionPolicy()
         self.input_node = InputNode()
-        self.context_node = ContextNode()
+        self.context_node = ContextNode(
+            conversation_repository=conversation_repository,
+            user_profile_service=user_profile_service,
+            session_context_service=session_context_service,
+        )
         self.retrieval_node = RetrievalNode(retrieval_policy, rag_gateway)
         self.generation_node = GenerationNode(prompt_pipeline, runtime_service)
         self.safety_node = SafetyNode()
-        self.persistence_node = PersistenceNode()
+        self.persistence_node = PersistenceNode(
+            conversation_repository=conversation_repository,
+            voice_synthesis_service=voice_synthesis_service,
+            session_context_service=session_context_service,
+        )
         self.response_node = ResponseNode()
         self._compiled_graph = self._build_graph()
 
@@ -65,6 +77,7 @@ class AgentService:
             user_profile=payload.get("user_profile") or {},
             previous_session_context=payload.get("previous_session_context"),
             session_objective=payload.get("session_objective"),
+            initial_prompt=payload.get("initial_prompt"),
             prompt_key=payload.get("prompt_key"),
             rag_policy=payload.get("rag_policy") or {},
             is_voice_mode=bool(payload.get("is_voice_mode", False)),
@@ -99,19 +112,15 @@ class AgentService:
         )
         final_state = await self.run(state)
         if final_state.final_response:
-            return {
-                "response": final_state.final_response["response"],
-                "provider": final_state.final_response["provider"],
-                "model": final_state.final_response["model"],
-                "trace_id": final_state.trace_id,
-                "node_trace": final_state.node_trace,
-                "warnings": final_state.warnings,
-            }
+            return final_state.final_response
         return {
             "response": "",
             "provider": "unconfigured",
             "model": "unconfigured",
             "trace_id": final_state.trace_id,
+            "session_id": final_state.session_id,
+            "username": final_state.username,
+            "chat_id": final_state.chat_id,
             "node_trace": final_state.node_trace,
             "warnings": final_state.warnings,
         }
@@ -135,6 +144,9 @@ class AgentService:
                 "model": (final_state.final_response or {}).get("model", "unconfigured"),
                 "node_trace": final_state.node_trace,
                 "warnings": final_state.warnings,
+                "session_id": final_state.session_id,
+                "chat_id": final_state.chat_id,
+                "ai_message_id": final_state.ai_message_id,
             },
         }
 

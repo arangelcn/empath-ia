@@ -233,10 +233,13 @@ O novo boundary já existe em `services/ai-service-v2` e não está mais só em 
 - `GraphState` canônico para a nova orquestração;
 - `AgentService` orientado a grafo com nós explícitos;
 - `PromptPipeline` preparado para `LangChain`;
+- prompt catalog mínimo já internalizado no próprio `ai-service-v2`;
 - `RuntimeService` reposicionado como shell de runtime para `LangChain`, com cadeia explícita de providers;
 - provider `LangChain/OpenAI-compatible` já modelado como backend primário;
 - adapter legado já modelado como provider de fallback, não mais como caminho central;
 - repositório Mongo próprio do `ai-service-v2`;
+- `ContextNode` já enriquece o `GraphState` com identidade, histórico, perfil, contexto anterior, voz e prompt inicial;
+- `PersistenceNode` já executa persistência real para o caminho novo não-streaming;
 - `ChatFacade` com dois caminhos distintos:
   - caminho novo: `/api/chat` e `/api/chat/stream` usam a orquestração nova;
   - caminho compatível: `/api/chat/send*` preserva a borda atual.
@@ -254,7 +257,7 @@ A direção agora é:
 ### What is still provisional
 
 - o runtime novo já possui cadeia de providers, mas ainda precisa de validação operacional com dependências instaladas e credenciais reais;
-- o `PersistenceNode` ainda descreve side effects, mas não executa o fluxo final do monólito;
+- o `PersistenceNode` já executa persistência real no caminho não-streaming, mas o streaming arquitetural ainda precisa convergir para o mesmo modelo final;
 - retrieval e safety já têm nós dedicados, porém ainda com implementação inicial;
 - `LangGraph` e `LangChain` já governam o desenho principal, mas ainda não representam o caminho produtivo completo ponta a ponta.
 
@@ -382,7 +385,8 @@ Status atual:
 
 - iniciado para `chat` e `session context`;
 - `ChatFacade` já existe como entrypoint novo;
-- contratos públicos de chat já têm divisão entre caminho novo e caminho compatível.
+- contratos públicos de chat já têm divisão entre caminho novo e caminho compatível;
+- parte da persistência de chat já foi movida da fachada para o grafo.
 
 ### Phase 4: activate LangChain and LangGraph
 
@@ -395,6 +399,7 @@ Status atual:
 - iniciado;
 - `GraphState`, `AgentService`, `nodes/` e `PromptPipeline` já existem;
 - a cadeia de providers já existe;
+- prompt ownership inicial já existe localmente no `ai-service-v2`;
 - falta transformar esse runtime em caminho produtivo completo com persistência final, retrieval real e validação operacional.
 
 ### Phase 5: compatibility and shadow validation
@@ -480,8 +485,8 @@ Primeiro preservar compatibilidade. Depois limpar naming.
 
 ## Recommended Execution Sequence
 
-1. implementar persistência real por nós, em vez de side effects espalhados;
-2. consolidar prompt ownership dentro do próprio `ai-service-v2`;
+1. concluir a convergência do streaming arquitetural para o mesmo modelo de persistência do caminho novo;
+2. consolidar prompt ownership além do catálogo file-backed inicial;
 3. plugar retrieval real e safety real ao fluxo principal;
 4. expandir compatibilidade pública só onde o frontend/Admin realmente exigirem;
 5. validar frontend/Admin;

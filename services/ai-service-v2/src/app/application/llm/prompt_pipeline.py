@@ -14,12 +14,13 @@ except ImportError:  # pragma: no cover - optional dependency in scaffold phase
 class PromptPipeline:
     """Owner for prompt assembly and structured prompt policies."""
 
-    def __init__(self, default_language: str) -> None:
+    def __init__(self, default_language: str, prompt_repository) -> None:
         self.default_language = default_language
+        self.prompt_repository = prompt_repository
 
-    def build_chat_prompt(self, state) -> Any:
+    async def build_chat_prompt(self, state) -> Any:
         """Create the canonical chat prompt using LangChain when available."""
-        system_prompt = self._system_prompt()
+        system_prompt = await self._resolve_system_prompt(state)
         if ChatPromptTemplate is None or MessagesPlaceholder is None:
             return {
                 "system": system_prompt,
@@ -52,7 +53,25 @@ class PromptPipeline:
             "uses_langchain": ChatPromptTemplate is not None,
         }
 
-    def _system_prompt(self) -> str:
+    async def _resolve_system_prompt(self, state) -> str:
+        prompt_key = state.prompt_key or "system_rogers"
+        prompt = await self.prompt_repository.get_active(prompt_key)
+        system_prompt = prompt.content if prompt else self._fallback_system_prompt()
+
+        if state.initial_prompt:
+            system_prompt = (
+                f"{system_prompt}\n\n"
+                f"OBJETIVO INICIAL DA SESSAO:\n{state.initial_prompt.strip()}"
+            )
+
+        if state.is_voice_mode:
+            voice_prompt = await self.prompt_repository.get_active("voice_short_response")
+            if voice_prompt and voice_prompt.content:
+                system_prompt = f"{system_prompt}\n\n{voice_prompt.content}"
+
+        return system_prompt
+
+    def _fallback_system_prompt(self) -> str:
         return (
             "Você é o orquestrador clínico do Empat.IA. "
             "Responda em português brasileiro, preserve segurança, grounding e rastreabilidade. "
