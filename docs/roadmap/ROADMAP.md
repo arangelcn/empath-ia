@@ -83,8 +83,8 @@ Critérios de aceite:
 - [x] Permitir ingestão inicial de TXT, Markdown e conteúdo estruturado já extraído sem ativação automática.
 - [x] Expor ações administrativas de lifecycle: aprovar, ativar, desativar, arquivar e revisar chunks.
 - [x] Registrar auditoria de quem alterou documento, status, escopo e política de uso.
-- [ ] Adicionar upload binário e extração nativa para PDF, Markdown e TXT.
-- [ ] Adicionar comparação visual de versões e reprocessamento assíncrono com fila.
+- [x] Adicionar upload binário e extração nativa para PDF, Markdown e TXT.
+- [x] Adicionar comparação visual de versões e reprocessamento assíncrono com fila.
 
 Arquivos prováveis:
 
@@ -108,7 +108,7 @@ Critérios de aceite:
 - [x] Definir resposta interna de retrieval com chunks, scores, metadados, trechos citáveis e motivos de recuperação.
 - [x] Registrar tentativa de retrieval para auditoria administrativa.
 - [x] Definir comportamento seguro quando o RAG falhar, retornar baixa confiança ou não encontrar fonte adequada.
-- [ ] Conectar o AI Service ao endpoint `/api/v1/retrieve` em runtime.
+- [x] Conectar o AI Service ao endpoint `/api/v1/retrieve` em runtime.
 
 Arquivos prováveis:
 
@@ -123,6 +123,50 @@ Critérios de aceite:
 - O uso de RAG não é global nem invisível; ele depende de prompt, escopo e contexto.
 - Falhas de retrieval degradam com segurança e não inventam fonte.
 - Respostas com RAG incluem rastreabilidade suficiente para auditoria administrativa.
+
+### Tarefa 0.4: Próximo passo - Refactor de Orquestração com LangGraph
+
+Objetivo: iniciar um refactor incremental para migrar a orquestração de chat para grafo de estados, sem quebrar o fluxo atual de texto, voz e persistência.
+
+- [ ] Criar `GraphState` canônico com `chat_id`, `session_id`, `username`, `trace_id`, histórico, política de prompt, contexto RAG, sinal emocional e flags de segurança.
+- [ ] Extrair o fluxo principal do `gateway-service` para nós LangGraph: entrada, contexto, retrieval, geração, segurança, persistência e saída.
+- [ ] Criar `agent_service.py` no `gateway-service` como camada de execução do grafo (mantendo `chat_service.py` como fachada).
+- [ ] Encapsular chamada ao `ai-service` em nó dedicado com contrato explícito de sucesso/fallback.
+- [ ] Encapsular retrieval via `knowledge-service` (`/api/v1/retrieve`) em nó separado, com degradação segura quando indisponível.
+- [ ] Encapsular sinais do `emotion-service` em nó auxiliar de risco (sem diagnóstico), usado apenas como contexto de segurança.
+- [ ] Encapsular síntese do `voice-service` em nó de saída para preservar streaming e latência.
+- [ ] Adicionar feature flag `LANGGRAPH_ENABLED` para rollout gradual e rollback rápido.
+- [ ] Adicionar checkpointing inicial (Redis/Mongo) por `chat_id` + `trace_id` para retomada e auditoria do grafo.
+
+Serviços que mais se beneficiam:
+
+- `services/gateway-service`: ganha orquestração explícita, testável e com transições auditáveis.
+- `services/ai-service`: recebe contrato de entrada mais estável, com contexto pronto e políticas explícitas.
+- `services/knowledge-service`: passa a ser chamado por um nó de retrieval dedicado, com telemetria e fallback padronizados.
+- `services/emotion-service`: integração de sinal emocional fica isolada e governável em nó próprio.
+- `services/voice-service`: streaming/TTS entra como etapa declarada de saída, reduzindo acoplamento.
+
+Arquivos prováveis:
+
+- `services/gateway-service/src/services/chat_service.py`
+- `services/gateway-service/src/services/agent_service.py`
+- `services/gateway-service/src/services/graph_state.py`
+- `services/gateway-service/src/services/prompt_service.py`
+- `services/gateway-service/src/services/session_context_service.py`
+- `services/ai-service/src/services/llm_service.py`
+- `services/ai-service/src/services/rag_client_service.py`
+- `services/knowledge-service/src/api/knowledge_routes.py`
+- `services/emotion-service/src/`
+- `services/voice-service/src/`
+- `docs/TECHNICAL.md`
+
+Critérios de aceite:
+
+- Fluxo LangGraph roda por feature flag sem regressão funcional no fluxo atual.
+- Cada resposta possui trilha de estados com `trace_id`, nós percorridos e motivo de fallback.
+- Crise, baixa confiança, falha de retrieval e falha de TTS têm transições explícitas.
+- Streaming de texto e voz mantém qualidade percebida e latência dentro dos limites atuais.
+- O fluxo legado permanece disponível até a validação completa dos evals.
 
 ## Track 1: Engenharia de Contexto e Backbone de Dados
 
@@ -412,13 +456,25 @@ Critérios de aceite:
 
 Ordem recomendada para execução:
 
-1. **Fundação arquitetural do RAG:** decidir `knowledge-service`/`rag-service`, contratos internos, vector store, auditoria e controle pelo Admin.
-2. **Prompt Control e LLMOps:** concluir versionamento, auditoria, rollback e testes mínimos para prompts críticos.
-3. **RAG/Admin:** implementar ingestão aprovada, chunking coeso, embeddings e rastreabilidade de fontes.
-4. **Evals-first:** criar golden set inicial e rubricas de segurança/empatia antes de expandir agentes.
-5. **LangGraph:** introduzir grafo de estados preservando compatibilidade com streaming e voz.
-6. **Privacidade e PII:** proteger fallback externo antes de aumentar uso de modelos remotos ou ferramentas.
-7. **Model serving local:** avaliar vLLM e concorrência depois que evals e segurança estiverem mensuráveis.
+### Foco Primário (próximos 2 sprints)
+
+1. **LangGraph (próximo passo):** executar a Tarefa 0.4 com refactor incremental no `gateway-service` e feature flag.
+2. **Prompt Control + RAG runtime:** fechar contrato de política RAG por prompt e trilha de auditoria fim-a-fim.
+3. **Evals mínimos obrigatórios:** ativar gate de segurança/empatia para prompts críticos antes de novos rollouts.
+
+Entregáveis mínimos do foco primário:
+
+- [ ] `gateway-service` com fluxo legado + fluxo LangGraph com `LANGGRAPH_ENABLED`.
+- [ ] `GraphState` versionado com `trace_id`, estado, fallback_reason e nós percorridos.
+- [ ] Política de prompt (`enabled`, `allowed_scopes`, `top_k`, `min_confidence`, `require_citations`) aplicada em runtime.
+- [ ] Auditoria de retrieval e uso de fontes conectada ao ciclo de resposta.
+- [ ] Suite mínima de evals executando no CI para prompts críticos (bloqueando regressão de segurança).
+
+### Backlog Secundário (após foco primário)
+
+1. **RAG/Admin:** consolidar ingestão aprovada, chunking coeso, embeddings e rastreabilidade de fontes.
+2. **Privacidade e PII:** proteger fallback externo antes de aumentar uso de modelos remotos ou ferramentas.
+3. **Model serving local:** avaliar vLLM e concorrência depois que evals e segurança estiverem mensuráveis.
 
 ## Métricas de Sucesso
 

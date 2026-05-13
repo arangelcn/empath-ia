@@ -25,6 +25,7 @@ except ImportError:
     OpenAI = None
 
 from .prompt_client_service import PromptClientService
+from .rag_client_service import RAGClientService
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,7 @@ class LLMService:
 
         # Serviço de prompts (injetado ou criado localmente)
         self.prompt_client = prompt_client or PromptClientService()
+        self.rag_client = RAGClientService()
         self.client = None
 
         # Verificar configuração OpenAI de forma independente para fallback
@@ -666,7 +668,171 @@ class LLMService:
             truncated = compact[:max_chars].rstrip()
         return f"{truncated}\n[contexto resumido]"
     
-    async def _create_conversation_context(self, session_id: str, username: str, user_message: str, conversation_history: Optional[List[Dict]] = None, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None, previous_session_context: Optional[Dict[str, Any]] = None, is_voice_mode: bool = False) -> List[Dict]:
+    def _resolve_rag_policy(
+        self,
+        session_objective: Optional[Dict[str, Any]],
+        rag_policy: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Normalize prompt-scoped RAG policy from request/session objective."""
+        policy_source: Dict[str, Any] = {}
+
+        if isinstance(session_objective, dict):
+            for policy_key in ("rag_policy", "prompt_rag_policy", "retrieval_policy"):
+                candidate = session_objective.get(policy_key)
+                if isinstance(candidate, dict):
+                    policy_source.update(candidate)
+                    break
+
+        if isinstance(rag_policy, dict):
+            policy_source.update(rag_policy)
+
+        raw_scopes = policy_source.get("allowed_scopes", policy_source.get("scopes", []))
+        scopes: List[str] = []
+        if isinstance(raw_scopes, list):
+            scopes = [str(scope).strip() for scope in raw_scopes if str(scope).strip()]
+
+        enabled_raw = policy_source.get("enabled")
+        enabled = bool(enabled_raw) if enabled_raw is not None else bool(scopes)
+
+        try:
+            top_k = int(policy_source.get("top_k", 6))
+        except (TypeError, ValueError):
+            top_k = 6
+        top_k = max(1, min(top_k, 20))
+
+        try:
+            min_confidence = float(policy_source.get("min_confidence", 0.0))
+        except (TypeError, ValueError):
+            min_confidence = 0.0
+        min_confidence = max(0.0, min(min_confidence, 1.0))
+
+        require_citations = bool(policy_source.get("require_citations", True))
+        fallback_behavior = str(policy_source.get("fallback_behavior", "answer_without_sources")).strip()
+
+        if not enabled:
+            return None
+
+        return {
+            "enabled": enabled,
+            "allowed_scopes": scopes,
+            "top_k": top_k,
+            "min_confidence": min_confidence,
+            "require_citations": require_citations,
+            "fallback_behavior": fallback_behavior or "answer_without_sources",
+        }
+
+    async def _build_rag_context(
+        self,
+        user_message: str,
+        session_id: str,
+        session_objective: Optional[Dict[str, Any]] = None,
+        rag_policy: Optional[Dict[str, Any]] = None,
+        prompt_key: Optional[str] = None,
+        prompt_version: Optional[int] = None,
+        chat_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        rag_language: Optional[str] = None,
+    ) -> str:
+        """Fetch retrieval context from Knowledge Service and format a grounded block."""
+        policy = self._resolve_rag_policy(session_objective, rag_policy)
+        if not policy:
+            return ""
+
+        if not policy["allowed_scopes"]:
+            logger.warning("⚠️ RAG habilitado sem allowed_scopes; ignorando retrieval por segurança")
+            return ""
+
+        payload = {
+            "query": user_message,
+            "chat_id": chat_id or session_id,
+            "prompt_key": prompt_key,
+            "prompt_version": prompt_version,
+            "allowed_scopes": policy["allowed_scopes"],
+            "language": rag_language,
+            "top_k": policy["top_k"],
+            "trace_id": trace_id,
+        }
+
+        retrieval = await self.rag_client.retrieve(payload)
+        if not retrieval.get("success"):
+            logger.warning(
+                "⚠️ Retrieval falhou; seguindo sem RAG (warnings=%s)",
+                retrieval.get("warnings", []),
+            )
+            return ""
+
+        min_confidence = policy["min_confidence"]
+        selected_results: List[Dict[str, Any]] = []
+        for result in retrieval.get("results", []):
+            score_data = result.get("scores") or {}
+            final_score_raw = score_data.get("final")
+            try:
+                final_score = float(final_score_raw) if final_score_raw is not None else 0.0
+            except (TypeError, ValueError):
+                final_score = 0.0
+            if final_score < min_confidence:
+                continue
+            selected_results.append(result)
+
+        if not selected_results:
+            logger.info(
+                "ℹ️ Retrieval sem resultados acima da confiança mínima (%.2f); resposta seguirá sem fontes",
+                min_confidence,
+            )
+            return ""
+
+        context_lines = [
+            "CONTEXTO RAG APROVADO (fontes administrativas):",
+            "Use apenas estas fontes para afirmações factuais. Se faltar base nas fontes, diga que não encontrou referência suficiente.",
+        ]
+        if policy["require_citations"]:
+            context_lines.append("Ao citar fontes, use marcadores [1], [2], ... com base no índice abaixo.")
+
+        for idx, result in enumerate(selected_results, start=1):
+            content = str(result.get("content", "")).strip()
+            content = re.sub(r"\s+", " ", content)
+            citation = result.get("citation") or {}
+            scores = result.get("scores") or {}
+            score_value = scores.get("final")
+            try:
+                final_score = float(score_value) if score_value is not None else 0.0
+            except (TypeError, ValueError):
+                final_score = 0.0
+
+            source_title = str(citation.get("title", "Untitled source")).strip()
+            source_doc = str(citation.get("document_id", "unknown")).strip()
+            source_version = citation.get("document_version")
+            source_section = str(citation.get("section", "")).strip()
+
+            meta = f"Fonte: {source_title} | doc={source_doc}"
+            if source_version is not None:
+                meta += f" v{source_version}"
+            if source_section:
+                meta += f" | seção={source_section}"
+            meta += f" | score={final_score:.2f}"
+
+            context_lines.append(f"[{idx}] {content}")
+            context_lines.append(meta)
+
+        return "\n".join(context_lines)
+
+    async def _create_conversation_context(
+        self,
+        session_id: str,
+        username: str,
+        user_message: str,
+        conversation_history: Optional[List[Dict]] = None,
+        session_objective: Optional[Dict[str, Any]] = None,
+        initial_prompt: Optional[str] = None,
+        previous_session_context: Optional[Dict[str, Any]] = None,
+        is_voice_mode: bool = False,
+        rag_policy: Optional[Dict[str, Any]] = None,
+        prompt_key: Optional[str] = None,
+        prompt_version: Optional[int] = None,
+        chat_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        rag_language: Optional[str] = None,
+    ) -> List[Dict]:
         """
         Criar contexto da conversa para o OpenAI com otimização de tokens e isolamento por usuário
         """
@@ -745,6 +911,20 @@ Mantenha a conversa personalizada e contextualizada para este usuário.
 Use as informações do perfil e das sessões anteriores para personalizar sua abordagem terapêutica.
 PRIORIZE sempre as informações mais recentes e relevantes do contexto cumulativo.
 """
+
+        rag_context = await self._build_rag_context(
+            user_message=user_message,
+            session_id=session_id,
+            session_objective=session_objective,
+            rag_policy=rag_policy,
+            prompt_key=prompt_key,
+            prompt_version=prompt_version,
+            chat_id=chat_id,
+            trace_id=trace_id,
+            rag_language=rag_language,
+        )
+        if rag_context:
+            user_context = f"{user_context}\n\n{rag_context}"
         
         # Se há initial_prompt fornecido diretamente, usá-lo (tem prioridade)
         if initial_prompt:
@@ -939,7 +1119,13 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         conversation_history: Optional[List[Dict]] = None,
         session_objective: Optional[Dict[str, Any]] = None,
         initial_prompt: Optional[str] = None,
-        previous_session_context: Optional[Dict[str, Any]] = None  # ✅ NOVO: Contexto da sessão anterior
+        previous_session_context: Optional[Dict[str, Any]] = None,  # ✅ NOVO: Contexto da sessão anterior
+        rag_policy: Optional[Dict[str, Any]] = None,
+        prompt_key: Optional[str] = None,
+        prompt_version: Optional[int] = None,
+        chat_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+        rag_language: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Gerar resposta terapêutica usando OpenAI com contexto isolado por usuário
@@ -981,13 +1167,20 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
             
             # Criar contexto da conversa com isolamento por usuário
             messages = await self._create_conversation_context(
-                session_id, 
-                username,  # ✅ NOVO: Passar username
-                user_message, 
-                conversation_history, 
-                session_objective, 
-                initial_prompt,
-                previous_session_context  # ✅ NOVO: Passar contexto da sessão anterior
+                session_id=session_id,
+                username=username,
+                user_message=user_message,
+                conversation_history=conversation_history,
+                session_objective=session_objective,
+                initial_prompt=initial_prompt,
+                previous_session_context=previous_session_context,
+                is_voice_mode=False,
+                rag_policy=rag_policy,
+                prompt_key=prompt_key,
+                prompt_version=prompt_version,
+                chat_id=chat_id,
+                trace_id=trace_id,
+                rag_language=rag_language,
             )
             
             # Fazer chamada para o provedor LLM configurado
@@ -1069,7 +1262,12 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
         session_objective: Optional[Dict[str, Any]] = None,
         initial_prompt: Optional[str] = None,
         previous_session_context: Optional[Dict[str, Any]] = None,
+        rag_policy: Optional[Dict[str, Any]] = None,
+        prompt_key: Optional[str] = None,
+        prompt_version: Optional[int] = None,
+        chat_id: Optional[str] = None,
         trace_id: Optional[str] = None,
+        rag_language: Optional[str] = None,
         is_voice_mode: bool = True,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream therapeutic response deltas while preserving provider fallbacks."""
@@ -1093,6 +1291,12 @@ INSTRUÇÕES ESPECÍFICAS PARA ESTA SESSÃO:
                 initial_prompt,
                 previous_session_context,
                 is_voice_mode=is_voice_mode,
+                rag_policy=rag_policy,
+                prompt_key=prompt_key,
+                prompt_version=prompt_version,
+                chat_id=chat_id,
+                trace_id=trace_id,
+                rag_language=rag_language,
             )
 
             max_tokens = self.voice_max_tokens if is_voice_mode else self.max_tokens
