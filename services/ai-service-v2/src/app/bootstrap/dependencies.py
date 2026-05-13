@@ -9,6 +9,7 @@ from ..application.chat.next_session_service import NextSessionService
 from ..application.chat.registration_service import RegistrationService
 from ..application.chat.session_context_service import SessionContextService
 from ..application.chat.stream_facade import StreamFacade
+from ..application.chat.user_profile_service import UserProfileService
 from ..application.llm.fallback_service import FallbackService
 from ..application.llm.prompt_pipeline import PromptPipeline
 from ..application.llm.runtime_service import RuntimeService
@@ -16,6 +17,10 @@ from ..application.orchestration.agent_service import AgentService
 from ..application.retrieval.citations import CitationService
 from ..application.retrieval.rag_gateway import RAGGateway
 from ..application.retrieval.retrieval_policy import RetrievalPolicy
+from ..infrastructure.db.mongo import MongoManager
+from ..infrastructure.http.legacy_ai_client import LegacyAIClient, LegacyGatewayClient
+from ..infrastructure.http.voice_synthesis_service import VoiceSynthesisService
+from ..repositories.conversations import MongoConversationRepository
 from .settings import Settings
 
 
@@ -24,6 +29,11 @@ class AppContainer:
     """Simple container for long-lived app dependencies."""
 
     settings: Settings
+    mongo: MongoManager
+    conversation_repository: MongoConversationRepository
+    user_profile_service: UserProfileService
+    legacy_gateway_client: LegacyGatewayClient
+    voice_synthesis_service: VoiceSynthesisService
     prompt_pipeline: PromptPipeline
     fallback_service: FallbackService
     runtime_service: RuntimeService
@@ -40,13 +50,19 @@ class AppContainer:
 
 def build_container(settings: Settings) -> AppContainer:
     """Instantiate the dependency graph for the scaffold."""
+    mongo = MongoManager(settings.mongodb_url, settings.mongodb_database)
+    conversation_repository = MongoConversationRepository(mongo)
+    user_profile_service = UserProfileService(conversation_repository)
+    legacy_gateway_client = LegacyGatewayClient(settings.legacy_gateway_url)
+    legacy_ai_client = LegacyAIClient(settings.legacy_ai_service_url)
+    voice_synthesis_service = VoiceSynthesisService(settings.voice_service_url)
     prompt_pipeline = PromptPipeline(default_language=settings.default_language)
     fallback_service = FallbackService()
-    runtime_service = RuntimeService()
+    runtime_service = RuntimeService(legacy_ai_client=legacy_ai_client)
     retrieval_policy = RetrievalPolicy()
     rag_gateway = RAGGateway(settings.knowledge_service_url)
     citation_service = CitationService()
-    session_context_service = SessionContextService()
+    session_context_service = SessionContextService(conversation_repository=conversation_repository)
     next_session_service = NextSessionService()
     registration_service = RegistrationService()
     agent_service = AgentService(
@@ -57,6 +73,11 @@ def build_container(settings: Settings) -> AppContainer:
         fallback_service=fallback_service,
     )
     chat_facade = ChatFacade(
+        settings=settings,
+        conversation_repository=conversation_repository,
+        user_profile_service=user_profile_service,
+        legacy_gateway_client=legacy_gateway_client,
+        voice_synthesis_service=voice_synthesis_service,
         agent_service=agent_service,
         session_context_service=session_context_service,
         next_session_service=next_session_service,
@@ -66,6 +87,11 @@ def build_container(settings: Settings) -> AppContainer:
 
     return AppContainer(
         settings=settings,
+        mongo=mongo,
+        conversation_repository=conversation_repository,
+        user_profile_service=user_profile_service,
+        legacy_gateway_client=legacy_gateway_client,
+        voice_synthesis_service=voice_synthesis_service,
         prompt_pipeline=prompt_pipeline,
         fallback_service=fallback_service,
         runtime_service=runtime_service,

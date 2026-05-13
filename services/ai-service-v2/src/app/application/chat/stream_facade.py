@@ -7,24 +7,27 @@ from .chat_facade import ChatFacade
 
 
 class StreamFacade:
-    """Emit SSE scaffold events using the unified chat facade."""
+    """Emit SSE events using the unified chat facade."""
 
     def __init__(self, chat_facade: ChatFacade) -> None:
         self.chat_facade = chat_facade
 
     async def stream_reply(self, payload: dict[str, Any]) -> AsyncIterator[str]:
-        """Yield a minimal SSE sequence compatible with the future unified stream."""
-        yield self._event("status", {"phase": "scaffold", "service": "ai-service-v2"})
-        response = await self.chat_facade.generate_reply(payload)
-        yield self._event(
-            "done",
-            {
-                "response": response["response"],
-                "trace_id": response["trace_id"],
-                "success": response["success"],
-                "migration": response["migration"],
-            },
-        )
+        """Yield the compatibility streaming sequence for gateway-style endpoints."""
+        async for event in self.chat_facade.process_user_message_stream(
+            session_id=payload.get("session_id", "default"),
+            user_message=payload.get("message", ""),
+            session_objective=payload.get("session_objective"),
+            is_voice_mode=bool(payload.get("is_voice_mode", False)),
+            trace_id=payload.get("trace_id"),
+            client_metrics=payload.get("client_metrics"),
+        ):
+            yield self._event(event["event"], event["data"])
+
+    async def stream_graph_reply(self, payload: dict[str, Any]) -> AsyncIterator[str]:
+        """Yield the architecture-first LangGraph streaming sequence."""
+        async for event in self.chat_facade.agent_service.stream(payload):
+            yield self._event(event["event"], event["data"])
 
     @staticmethod
     def _event(event: str, data: dict[str, Any]) -> str:

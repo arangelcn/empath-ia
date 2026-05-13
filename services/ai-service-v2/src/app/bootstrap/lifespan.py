@@ -20,11 +20,14 @@ def build_lifespan():
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings = get_settings()
         app.state.container = build_container(settings)
+        await app.state.container.mongo.connect()
+        await app.state.container.mongo.create_indexes()
         logger.info(
             "ai-service-v2 inicializado em modo scaffold (env=%s)",
             settings.environment,
         )
         yield
+        await app.state.container.mongo.close()
         logger.info("ai-service-v2 finalizado")
 
     return lifespan

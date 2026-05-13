@@ -1,12 +1,17 @@
-"""User repository contract."""
+"""User-related repository helpers."""
 
-from typing import Protocol
+from __future__ import annotations
 
-from ..domain.users.models import UserIdentity
+from ..infrastructure.db.mongo import MongoManager
 
 
-class UserRepository(Protocol):
-    """Persistence contract for user identity data."""
+class MongoUserRepository:
+    """Small repository focused on user documents."""
 
-    async def get_by_username(self, username: str) -> UserIdentity | None:
-        """Fetch a user identity by username."""
+    def __init__(self, mongo: MongoManager) -> None:
+        self.mongo = mongo
+
+    async def get_by_username(self, username: str) -> dict | None:
+        """Fetch a user document by username."""
+        users = self.mongo.get_collection("users")
+        return await users.find_one({"username": username})
