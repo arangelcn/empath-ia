@@ -127,6 +127,8 @@ services:
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
       - REDIS_URL=${AI_REDIS_URL:-redis://127.0.0.1:6379/0}
       - GATEWAY_SERVICE_URL=${GATEWAY_SERVICE_URL:-http://127.0.0.1:8000}
+      - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://127.0.0.1:8005}
+      - KNOWLEDGE_RETRIEVE_TIMEOUT_SECONDS=${KNOWLEDGE_RETRIEVE_TIMEOUT_SECONDS:-8}
     command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--log-level", "debug" ]
     depends_on:
       - mongodb

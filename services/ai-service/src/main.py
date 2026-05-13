@@ -121,6 +121,12 @@ async def chat(message: dict):
     session_objective = message.get("session_objective", None)
     initial_prompt = message.get("initial_prompt", None)
     previous_session_context = message.get("previous_session_context", None)  # ✅ EXTRAIR: Contexto da sessão anterior
+    rag_policy = message.get("rag_policy", None)
+    prompt_key = message.get("prompt_key", None)
+    prompt_version = message.get("prompt_version", None)
+    chat_id = message.get("chat_id", None)
+    trace_id = message.get("trace_id", None)
+    rag_language = message.get("rag_language", None)
     
     # ✅ DEBUG: Log detalhado do que foi recebido
     logger.info(f"🔍 DEBUG ENDPOINT /chat - Campos recebidos:")
@@ -183,7 +189,13 @@ async def chat(message: dict):
             conversation_history=conversation_history,
             session_objective=session_objective,
             initial_prompt=initial_prompt,
-            previous_session_context=previous_session_context  # ✅ CORRIGIDO: Usar variável extraída
+            previous_session_context=previous_session_context,  # ✅ CORRIGIDO: Usar variável extraída
+            rag_policy=rag_policy,
+            prompt_key=prompt_key,
+            prompt_version=prompt_version,
+            chat_id=chat_id,
+            trace_id=trace_id,
+            rag_language=rag_language,
         )
         
         # Verificar se response é uma coroutine

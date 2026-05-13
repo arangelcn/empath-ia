@@ -32,8 +32,13 @@ class ChatRequest(BaseModel):
     session_objective: Optional[Dict[str, Any]] = None
     initial_prompt: Optional[str] = None
     previous_session_context: Optional[Dict[str, Any]] = None  # ✅ NOVO: Contexto da sessão anterior
+    rag_policy: Optional[Dict[str, Any]] = None
+    prompt_key: Optional[str] = None
+    prompt_version: Optional[int] = None
+    chat_id: Optional[str] = None
     is_voice_mode: Optional[bool] = False
     trace_id: Optional[str] = None
+    rag_language: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str
@@ -74,7 +79,13 @@ async def chat_with_openai(request: ChatRequest):
             conversation_history=request.conversation_history,
             session_objective=request.session_objective,
             initial_prompt=request.initial_prompt,
-            previous_session_context=request.previous_session_context  # ✅ NOVO: Contexto da sessão anterior
+            previous_session_context=request.previous_session_context,  # ✅ NOVO: Contexto da sessão anterior
+            rag_policy=request.rag_policy,
+            prompt_key=request.prompt_key,
+            prompt_version=request.prompt_version,
+            chat_id=request.chat_id,
+            trace_id=request.trace_id,
+            rag_language=request.rag_language,
         )
         
         return ChatResponse(**result)
@@ -114,7 +125,12 @@ async def stream_chat_with_openai(request: ChatRequest):
                     session_objective=request.session_objective,
                     initial_prompt=request.initial_prompt,
                     previous_session_context=request.previous_session_context,
+                    rag_policy=request.rag_policy,
+                    prompt_key=request.prompt_key,
+                    prompt_version=request.prompt_version,
+                    chat_id=request.chat_id,
                     trace_id=request.trace_id,
+                    rag_language=request.rag_language,
                     is_voice_mode=bool(request.is_voice_mode),
                 ):
                     yield _sse(item["event"], item["data"])

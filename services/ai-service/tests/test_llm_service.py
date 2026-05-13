@@ -4,6 +4,9 @@ from src.services.llm_service import LLMService
 
 
 class FakePromptClient:
+    async def get_system_prompt(self, variables=None):
+        return "system"
+
     async def get_session_analysis_prompt(self, variables=None):
         return "prompt"
 
@@ -118,3 +121,95 @@ def test_active_mode_label_openai_cloud(monkeypatch):
     service = LLMService(prompt_client=FakePromptClient())
 
     assert service._active_mode_label() == "OPENAI_CLOUD"
+
+
+def test_build_rag_context_uses_retrieve_contract(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "none")
+    monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "none")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    service = LLMService(prompt_client=FakePromptClient())
+    captured_payload = {}
+
+    async def fake_retrieve(payload):
+        captured_payload.update(payload)
+        return {
+            "success": True,
+            "results": [
+                {
+                    "chunk_id": "chunk-1",
+                    "content": "Unconditional positive regard means acceptance.",
+                    "citation": {
+                        "document_id": "doc_1",
+                        "document_version": 3,
+                        "title": "On Becoming a Person",
+                        "section": "Chapter 2",
+                    },
+                    "scores": {"final": 0.91},
+                },
+                {
+                    "chunk_id": "chunk-2",
+                    "content": "Low score chunk should be filtered.",
+                    "citation": {"document_id": "doc_2", "title": "Discarded Source"},
+                    "scores": {"final": 0.1},
+                },
+            ],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(service.rag_client, "retrieve", fake_retrieve)
+
+    rag_block = asyncio.run(
+        service._build_rag_context(
+            user_message="What is unconditional positive regard?",
+            session_id="alice_session-2",
+            rag_policy={
+                "enabled": True,
+                "allowed_scopes": ["rogerian_theory"],
+                "top_k": 4,
+                "min_confidence": 0.5,
+                "require_citations": True,
+            },
+            prompt_key="therapeutic_chat",
+            prompt_version=12,
+            chat_id="chat_123",
+            trace_id="trace_123",
+            rag_language="en",
+        )
+    )
+
+    assert captured_payload["query"] == "What is unconditional positive regard?"
+    assert captured_payload["chat_id"] == "chat_123"
+    assert captured_payload["prompt_key"] == "therapeutic_chat"
+    assert captured_payload["prompt_version"] == 12
+    assert captured_payload["allowed_scopes"] == ["rogerian_theory"]
+    assert captured_payload["top_k"] == 4
+    assert captured_payload["trace_id"] == "trace_123"
+    assert "CONTEXTO RAG APROVADO" in rag_block
+    assert "Unconditional positive regard means acceptance." in rag_block
+    assert "Low score chunk should be filtered." not in rag_block
+
+
+def test_build_rag_context_requires_scopes(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "none")
+    monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "none")
+    service = LLMService(prompt_client=FakePromptClient())
+
+    called = {"value": False}
+
+    async def fake_retrieve(payload):
+        called["value"] = True
+        return {"success": True, "results": [], "warnings": []}
+
+    monkeypatch.setattr(service.rag_client, "retrieve", fake_retrieve)
+
+    rag_block = asyncio.run(
+        service._build_rag_context(
+            user_message="test",
+            session_id="alice_session-2",
+            rag_policy={"enabled": True, "allowed_scopes": []},
+        )
+    )
+
+    assert rag_block == ""
+    assert called["value"] is False

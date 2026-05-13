@@ -322,7 +322,8 @@ class ChatService:
                 voice_enabled,
                 session_objective,
                 initial_prompt,
-                is_voice_mode  # ✅ NOVO: Passar indicador de VoiceMode
+                is_voice_mode,  # ✅ NOVO: Passar indicador de VoiceMode
+                chat_id=chat_id,
             )
             
             # Salvar mensagem do usuário
@@ -499,6 +500,7 @@ class ChatService:
             ai_request = {
                 "message": user_message,
                 "session_id": legacy_session_id,
+                "chat_id": chat_id,
                 "username": username,
                 "user_profile": user_profile,
                 "conversation_history": conversation_history,
@@ -765,7 +767,17 @@ class ChatService:
         """Salvar mensagem no MongoDB"""
         return await self.conversation_repo.save_message(session_id, message_type, content, audio_url)
     
-    async def _get_ai_response(self, user_message: str, session_id: str, selected_voice: str, voice_enabled: bool = True, session_objective: Optional[Dict[str, Any]] = None, initial_prompt: Optional[str] = None, is_voice_mode: bool = False) -> Dict[str, Any]:
+    async def _get_ai_response(
+        self,
+        user_message: str,
+        session_id: str,
+        selected_voice: str,
+        voice_enabled: bool = True,
+        session_objective: Optional[Dict[str, Any]] = None,
+        initial_prompt: Optional[str] = None,
+        is_voice_mode: bool = False,
+        chat_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Obter resposta da IA usando AI Service com contexto completo"""
         try:
             logger.info(f"🤖 Chamando AI Service para sessão: {session_id}")
@@ -795,6 +807,7 @@ class ChatService:
             ai_request = {
                 "message": user_message,
                 "session_id": session_id,
+                "chat_id": chat_id,
                 "username": username,  # ✅ NOVO: Incluir username
                 "preferred_name": preferred_name,
                 "user_profile": user_profile,  # ✅ NOVO: Perfil completo do usuário
