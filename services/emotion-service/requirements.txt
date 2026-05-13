@@ -7,15 +7,15 @@ typing-extensions==4.5.0
 # Image processing essentials
 opencv-python==4.8.1.78
 pillow>=10.0.0,<11.0.0
-python-multipart==0.0.6
-python-dotenv==1.0.0
+python-multipart==0.0.27
+python-dotenv==1.2.2
 
 # DeepFace com dependências.
 # A imagem base usa TensorFlow 2.13.0/Python 3.8; manter Keras 2.x evita o erro
 # keras.saving.legacy.serialization visto quando Keras/tf-keras mais novos entram na imagem.
 deepface==0.0.83
 tensorflow==2.13.0
-keras==2.13.1
+keras==3.13.2
 # TensorFlow já está incluído na imagem tensorflow/tensorflow:2.13.0-gpu;
 # a linha acima funciona como constraint para impedir backtracking/downgrade.
 protobuf>=3.20.3,<4.0.0
@@ -27,14 +27,14 @@ retina-face==0.0.13
 numpy>=1.21.0,<1.25.0
 
 # Testing essentials
-pytest>=7.0.0
+pytest>=9.0.3
 pytest-asyncio>=0.21.0
 httpx>=0.24.0
-requests>=2.31.0
+requests>=2.34.0
 
 # Evaluation dependencies
 matplotlib==3.7.5
 seaborn==0.13.2
-scikit-learn==1.3.2
+scikit-learn==1.5.0
 scipy==1.10.1
 pandas==2.0.3
