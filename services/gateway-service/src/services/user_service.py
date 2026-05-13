@@ -145,13 +145,19 @@ class UserService:
             logger.error(f"❌ Erro ao incrementar contador de sessões: {e}")
             raise
     
-    async def list_users(self, limit: int = 50, offset: int = 0, 
-                        active_only: bool = True) -> List[Dict[str, Any]]:
+    async def list_users(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        active_only: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
         """Listar usuários"""
         try:
             filter_query = {}
-            if active_only:
+            if active_only is True:
                 filter_query["is_active"] = True
+            elif active_only is False:
+                filter_query["is_active"] = False
             
             cursor = self.users_collection.find(
                 filter_query,

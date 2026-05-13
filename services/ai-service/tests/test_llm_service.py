@@ -92,3 +92,29 @@ def test_openai_cloud_without_api_key_disables_provider(monkeypatch):
 
     assert service.effective_api_key is None
     assert service.get_service_status()["openai_available"] is False
+
+
+def test_active_mode_label_local_openai_compat(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "none")
+    monkeypatch.setenv("LLM_BASE_URL", "http://127.0.0.1:1234/v1")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_ENDPOINT", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    service = LLMService(prompt_client=FakePromptClient())
+
+    assert service._active_mode_label() == "LOCAL_OPENAI_COMPAT"
+
+
+def test_active_mode_label_openai_cloud(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "none")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_ENDPOINT", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    service = LLMService(prompt_client=FakePromptClient())
+
+    assert service._active_mode_label() == "OPENAI_CLOUD"

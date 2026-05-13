@@ -3,11 +3,12 @@ Admin user management endpoints.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from ..models.database import get_collection
 from ..services.user_service import UserService
 from .auth import require_admin_permission
 
@@ -20,6 +21,68 @@ router = APIRouter(
 )
 
 user_service = UserService()
+
+
+async def _list_inferred_users_from_conversations(
+    limit: int,
+    offset: int,
+    search: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Fallback: infer users from conversation history when `users` collection is empty."""
+    conversations = get_collection("conversations")
+
+    match_stage: Dict[str, Any] = {
+        "username": {"$exists": True, "$nin": [None, ""]}
+    }
+    if search:
+        match_stage["username"] = {"$regex": search, "$options": "i"}
+
+    pipeline = [
+        {"$match": match_stage},
+        {
+            "$group": {
+                "_id": "$username",
+                "last_login": {"$max": "$updated_at"},
+                "created_at": {"$min": "$created_at"},
+                "session_count": {"$sum": 1},
+            }
+        },
+        {"$sort": {"last_login": -1}},
+        {"$skip": offset},
+        {"$limit": limit},
+    ]
+
+    inferred_users: List[Dict[str, Any]] = []
+    async for row in conversations.aggregate(pipeline):
+        username = row.get("_id")
+        if not username:
+            continue
+        inferred_users.append(
+            {
+                "username": username,
+                "email": username if "@" in username else None,
+                "preferences": {},
+                "created_at": row.get("created_at"),
+                "last_login": row.get("last_login"),
+                "is_active": True,
+                "session_count": row.get("session_count", 0),
+                "inferred_from_conversations": True,
+            }
+        )
+
+    return inferred_users
+
+
+async def _count_inferred_users_from_conversations(search: Optional[str] = None) -> int:
+    conversations = get_collection("conversations")
+
+    match_stage: Dict[str, Any] = {
+        "username": {"$exists": True, "$nin": [None, ""]}
+    }
+    if search:
+        match_stage["username"] = {"$regex": search, "$options": "i"}
+
+    return len(await conversations.distinct("username", match_stage))
 
 
 class UserCreate(BaseModel):
@@ -59,7 +122,7 @@ async def create_user(user: UserCreate):
 async def list_users(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    active_only: bool = Query(True),
+    active_only: Optional[bool] = Query(None),
     search: Optional[str] = None
 ):
     """
@@ -76,20 +139,28 @@ async def list_users(
         if search:
             users = [u for u in users if search.lower() in u["username"].lower()]
 
+        # Fallback para ambientes onde a coleção users ainda não está populada.
+        if not users and active_only is not False:
+            users = await _list_inferred_users_from_conversations(limit=limit, offset=offset, search=search)
+
         # Contar total para paginação
         total_users = await user_service.list_users(limit=1000, active_only=active_only)
         if search:
             total_users = [u for u in total_users if search.lower() in u["username"].lower()]
+        if not total_users and active_only is not False:
+            total_count = await _count_inferred_users_from_conversations(search=search)
+        else:
+            total_count = len(total_users)
 
         return {
             "success": True,
             "data": {
                 "users": users,
                 "pagination": {
-                    "total": len(total_users),
+                    "total": total_count,
                     "limit": limit,
                     "offset": offset,
-                    "has_next": offset + limit < len(total_users)
+                    "has_next": offset + limit < total_count
                 }
             }
         }
