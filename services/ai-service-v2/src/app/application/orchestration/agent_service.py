@@ -87,6 +87,7 @@ class AgentService:
             prompt_key=payload.get("prompt_key"),
             rag_policy=payload.get("rag_policy") or {},
             is_voice_mode=bool(payload.get("is_voice_mode", False)),
+            user_message_id=payload.get("user_message_id"),
         )
 
     def plan(self, state: GraphState) -> dict[str, Any]:
@@ -299,7 +300,8 @@ class AgentService:
     async def run(self, state: GraphState) -> GraphState:
         """Execute the graph if LangGraph is available, otherwise run sequentially."""
         if self._compiled_graph is not None:
-            return await self._compiled_graph.ainvoke(state)
+            result = await self._compiled_graph.ainvoke(state)
+            return self._coerce_graph_state(result)
 
         state = self.input_node(state)
         state = await self.context_node(state)
@@ -310,6 +312,20 @@ class AgentService:
         state = await self.persistence_node(state)
         state = self.response_node(state)
         return state
+
+    def _coerce_graph_state(self, result: Any) -> GraphState:
+        """Normalize LangGraph outputs back into the canonical dataclass state."""
+        if isinstance(result, GraphState):
+            return result
+
+        if isinstance(result, dict):
+            state = GraphState(trace_id="trace_graph", session_id="default", username="anonymous")
+            for field_name in state.__dataclass_fields__:
+                if field_name in result:
+                    setattr(state, field_name, result[field_name])
+            return state
+
+        raise TypeError(f"Resultado inesperado do grafo: {type(result)!r}")
 
     def _build_graph(self):
         """Compile the LangGraph state machine when available."""

@@ -275,12 +275,14 @@ O documento de migração passa a considerar a fase de scaffold como concluída 
 
 Depois da validação do estado atual do código, as pendências reais da migração ficaram assim:
 
-- `chat` principal já saiu do `ai-service` legado, mas o fluxo compatível `/api/chat/send-stream` ainda carrega bastante lógica de chunking, TTS, métricas e compatibilidade dentro da `ChatFacade`; ele ainda não é apenas um adapter fino sobre o caminho novo;
-- o fluxo especial de registro `session-1` já foi internalizado, mas ainda vale endurecer essa trilha com testes e talvez extrair mais claramente os adapters de voz/compatibilidade da `ChatFacade`;
+- `chat` principal já saiu do `ai-service` legado, e o fluxo compatível `/api/chat/send-stream` já foi movido para a `StreamFacade`, mas ele ainda precisa de validação real contra consumidores para confirmar que a adaptação SSE ficou 100% compatível;
+- o fluxo especial de registro `session-1` já foi internalizado, mas ainda vale endurecer essa trilha com testes dedicados;
 - `LegacyAdapterProvider` continua disponível como fallback de runtime, o que é útil para rollout, mas significa que o runtime novo ainda não está operando como caminho único endurecido;
 - várias rotas fora do chat principal ainda estão em scaffold, especialmente em `app/api/admin/*` e parte das rotas públicas auxiliares, então a compatibilidade com `admin-panel` e alguns fluxos secundários ainda não foi realmente concluída;
-- os endpoints internos de health/compatibility ainda se apresentam como scaffold e ainda não expressam o estado operacional final da migração;
-- a validação ponta a ponta com `web-ui`, `admin-panel`, providers reais e latência/telemetria comparada com o sistema atual ainda não foi feita.
+- os endpoints internos de health/compatibility já foram atualizados para refletir a fase atual da migração, mas ainda não substituem validação operacional ponta a ponta;
+- o serviço já importa, sobe com lifespan real quando Mongo está disponível e responde bem em smoke tests com container fake;
+- já houve validação HTTP end-to-end de `health`, `internal/health`, `api/chat/send`, `api/chat/send-stream`, `api/chat/stream`, `openai/chat` e `openai/chat/stream`;
+- ainda falta validação ponta a ponta com `web-ui`, `admin-panel`, providers reais não-legados e latência/telemetria comparada com o sistema atual.
 
 ### Resume Snapshot
 
@@ -291,7 +293,10 @@ Ultimo corte concluido:
 - o fluxo especial de registro `session-1` foi internalizado no `ai-service-v2`;
 - `LegacyGatewayClient` foi removido do boundary novo;
 - o cadastro agora salva perfil padronizado em `users`, contexto em `session_contexts` e cria/desbloqueia a proxima sessao em `user_therapeutic_sessions`;
-- o stream compativel de cadastro continua existindo, mas agora e adaptado localmente pela `ChatFacade`, sem round-trip HTTP para o `gateway-service`.
+- o fluxo compatível `/api/chat/send-stream` foi movido para a `StreamFacade`, deixando a `ChatFacade` focada no caminho síncrono;
+- o stream compatível deixou de duplicar persistência fora do grafo: a mensagem do usuário pode ser pré-salva para meta compatível, e o `PersistenceNode` agora respeita `user_message_id` já existente.
+- foi criada uma suíte inicial de smoke tests para rotas centrais em `services/ai-service-v2/tests/test_smoke.py`.
+- a criação de índices Mongo foi ajustada para não quebrar startup em bancos já existentes, removendo conflito com o índice legado de `session_contexts.session_id`.
 
 Arquivos-chave deste corte:
 
@@ -299,6 +304,9 @@ Arquivos-chave deste corte:
 - `services/ai-service-v2/src/app/application/chat/next_session_service.py`
 - `services/ai-service-v2/src/app/application/chat/user_profile_service.py`
 - `services/ai-service-v2/src/app/application/chat/chat_facade.py`
+- `services/ai-service-v2/src/app/application/chat/stream_facade.py`
+- `services/ai-service-v2/src/app/application/orchestration/agent_service.py`
+- `services/ai-service-v2/src/app/application/orchestration/nodes/persistence_node.py`
 - `services/ai-service-v2/src/app/bootstrap/dependencies.py`
 - `services/ai-service-v2/src/app/repositories/sessions.py`
 - `services/ai-service-v2/src/app/repositories/users.py`
@@ -308,19 +316,26 @@ Validacao feita nesta etapa:
 
 - `python3 -m compileall src` passou em `services/ai-service-v2`;
 - busca por `LegacyGatewayClient` e `legacy_gateway_url` dentro de `services/ai-service-v2/src` voltou vazia.
+- criação de venv local + instalação de `requirements.txt` concluídas com sucesso;
+- import de `src.main` concluído com sucesso;
+- smoke tests de rotas com container fake passaram via `python -m unittest discover -s services/ai-service-v2/tests -v`;
+- o container `empatia-ai-service-v2:e2e` subiu com sucesso usando Mongo real no host;
+- requests HTTP reais passaram para `/health`, `/internal/health`, `/api/chat/send`, `/api/chat/send-stream`, `/api/chat/stream`, `/openai/chat` e `/openai/chat/stream`;
+- a trilha não-registration ainda está validada sobre o fallback legado (`LegacyAdapterProvider`), não sobre provider LangChain real.
 
 O que ainda nao esta fechado:
 
-- `/api/chat/send-stream` ainda concentra muita logica de compatibilidade, TTS e metricas dentro da `ChatFacade`;
 - o fallback `LegacyAdapterProvider` ainda existe na cadeia de runtime;
 - a trilha nova de `session-1` ainda precisa de testes dedicados;
-- falta validacao ponta a ponta com frontend/Admin e provider real.
+- o fluxo compatível `/api/chat/send-stream` ainda precisa de validação real com frontend para confirmar payloads SSE, ordem dos eventos e métricas no consumidor final;
+- falta validacao ponta a ponta com frontend/Admin e com provider real não-legado.
 
 Proximo passo recomendado ao retomar:
 
-1. simplificar o fluxo compatível `/api/chat/send-stream`, empurrando mais responsabilidade para o caminho arquitetural novo;
+1. validar o fluxo compatível `/api/chat/send-stream` contra consumidores reais, especialmente SSE, áudio e métricas;
 2. adicionar testes focados em `session-1`, persistencia e criacao da proxima sessao;
-3. validar runtime real e decidir o endurecimento do fallback legado.
+3. validar runtime real sem depender do fallback legado e decidir o endurecimento/remocao desse adapter;
+4. substituir os endpoints admin/public ainda em scaffold conforme a necessidade real do frontend/Admin.
 
 ## Responsibility Boundaries
 
@@ -450,6 +465,7 @@ Status atual:
 - parte da persistência de chat já foi movida da fachada para o grafo;
 - o fluxo síncrono compatível `/api/chat/send` já passa pela orquestração nova sem delegar geração ao `ai-service` antigo;
 - o fluxo compatível interno `/openai/chat/stream` também já usa o `AgentService` como fonte de resposta;
+- o fluxo compatível `/api/chat/send-stream` foi simplificado e movido para a `StreamFacade`, deixando de concentrar a maior parte da adaptação dentro da `ChatFacade`;
 - o fluxo especial de registro `session-1` agora também já roda totalmente dentro do `ai-service-v2`, incluindo persistência de perfil, contexto em `session_contexts` e criação determinística da próxima sessão;
 - `next_session_service` e `registration_service` deixaram de ser scaffold, mas ainda precisam de testes dedicados e refinamento de contratos para rollout.
 
@@ -480,8 +496,10 @@ Status atual:
 Status atual:
 
 - ainda não concluído;
-- falta validar as rotas de chat contra consumidores reais;
+- as rotas principais de chat já foram validadas por HTTP real no `ai-service-v2`;
 - falta validar as rotas admin/públicas que ainda estão em scaffold;
+- smoke tests de rotas principais já existem e passam localmente com container fake;
+- o boot real já foi validado com Mongo operacional;
 - falta validar rollout com provider real e fallback desabilitado ou restrito para medir maturidade do runtime novo.
 
 ### Phase 6: switch traffic
@@ -562,12 +580,12 @@ Primeiro preservar compatibilidade. Depois limpar naming.
 ## Recommended Execution Sequence
 
 1. decidir a estratégia final de streaming público sob safety, incluindo se haverá guardrails incrementais para liberar deltas ao vivo;
-2. convergir ou simplificar o fluxo compatível `/api/chat/send-stream`, reduzindo lógica de compatibilidade espalhada na `ChatFacade`;
+2. validar o fluxo compatível `/api/chat/send-stream` com consumidores reais agora que ele foi migrado para a `StreamFacade`;
 3. consolidar prompt ownership além do catálogo file-backed inicial;
 4. expandir compatibilidade pública só onde o frontend/Admin realmente exigirem e substituir rotas ainda em scaffold;
 5. validar `web-ui` e `admin-panel` contra o `ai-service-v2`, com atenção a SSE, payloads e telemetria;
 6. testar o runtime novo com provider real como caminho preferencial e endurecer o uso do fallback legado;
-7. endurecer a trilha de `session-1` com testes e limpeza extra de adapters na borda compatível;
+7. endurecer a trilha de `session-1` com testes dedicados;
 8. cortar tráfego;
 9. renomear `ai-service-v2` para `ai-service`;
 10. remover legado.

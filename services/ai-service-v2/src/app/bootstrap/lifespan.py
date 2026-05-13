@@ -23,7 +23,7 @@ def build_lifespan():
         await app.state.container.mongo.connect()
         await app.state.container.mongo.create_indexes()
         logger.info(
-            "ai-service-v2 inicializado em modo scaffold (env=%s)",
+            "ai-service-v2 inicializado em modo migration-active (env=%s)",
             settings.environment,
         )
         yield

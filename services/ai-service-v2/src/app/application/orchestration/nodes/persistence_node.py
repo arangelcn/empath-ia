@@ -17,11 +17,12 @@ class PersistenceNode:
         state.node_trace.append("persistence")
         response_text = resolve_response_text(state).strip()
 
-        state.user_message_id = await self.conversation_repository.save_message(
-            state.session_id,
-            "user",
-            state.user_message,
-        )
+        if not state.user_message_id:
+            state.user_message_id = await self.conversation_repository.save_message(
+                state.session_id,
+                "user",
+                state.user_message,
+            )
 
         if state.voice_enabled and state.is_voice_mode and response_text and not state.audio_url:
             state.audio_url = await self.voice_synthesis_service.generate_audio(

@@ -12,15 +12,20 @@ router = APIRouter(prefix="/internal/health", tags=["internal-health"])
 async def internal_health(
     container: AppContainer = Depends(get_container),
 ) -> dict[str, object]:
-    """Return detailed scaffold health information."""
+    """Return operational migration health information."""
+    runtime = container.runtime_service.describe()
     return {
         "status": "healthy",
         "service": container.settings.app_slug,
-        "migration_phase": "scaffold",
+        "migration_phase": "compatibility-hardening",
         "components": {
             "chat_facade": "ready",
             "agent_service": "ready",
-            "runtime_service": "scaffold",
-            "retrieval_gateway": "scaffold",
+            "stream_facade": "ready",
+            "runtime_service": runtime.get("status", "unknown"),
+            "retrieval_gateway": "ready",
+            "registration_flow": "internalized",
+            "legacy_gateway_dependency": "removed",
         },
+        "runtime": runtime,
     }

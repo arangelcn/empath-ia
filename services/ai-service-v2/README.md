@@ -13,5 +13,7 @@ Estado atual:
 
 - bootstrap FastAPI pronto;
 - rotas públicas, admin e internas registradas;
-- fachada de chat compatível em modo scaffold;
-- estrutura base de application, domain, infrastructure e repositories criada.
+- chat sync, stream compatível e compatibilidade OpenAI já apontando para a orquestração nova;
+- `session-1` internalizada no próprio `ai-service-v2`, sem dependência do `gateway-service`;
+- estrutura base de application, domain, infrastructure e repositories criada;
+- ainda faltam validação operacional com provider real, testes adicionais e substituição de rotas admin ainda em scaffold.

@@ -57,7 +57,7 @@ class AppContainer:
 
 
 def build_container(settings: Settings) -> AppContainer:
-    """Instantiate the dependency graph for the scaffold."""
+    """Instantiate the dependency graph for the unified service."""
     mongo = MongoManager(settings.mongodb_url, settings.mongodb_database)
     conversation_repository = MongoConversationRepository(mongo)
     user_repository = MongoUserRepository(mongo)
@@ -117,15 +117,15 @@ def build_container(settings: Settings) -> AppContainer:
         voice_synthesis_service=voice_synthesis_service,
     )
     chat_facade = ChatFacade(
-        settings=settings,
         conversation_repository=conversation_repository,
-        user_profile_service=user_profile_service,
-        voice_synthesis_service=voice_synthesis_service,
         agent_service=agent_service,
-        session_context_service=session_context_service,
         registration_service=registration_service,
     )
-    stream_facade = StreamFacade(chat_facade=chat_facade)
+    stream_facade = StreamFacade(
+        conversation_repository=conversation_repository,
+        agent_service=agent_service,
+        registration_service=registration_service,
+    )
 
     return AppContainer(
         settings=settings,

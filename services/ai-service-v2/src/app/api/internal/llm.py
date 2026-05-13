@@ -12,5 +12,5 @@ router = APIRouter(prefix="/internal/llm", tags=["internal-llm"])
 async def llm_status(
     container: AppContainer = Depends(get_container),
 ) -> dict[str, object]:
-    """Expose the current runtime scaffold status."""
+    """Expose the current runtime status."""
     return container.runtime_service.describe()

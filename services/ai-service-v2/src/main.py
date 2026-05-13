@@ -31,7 +31,7 @@ async def root() -> dict[str, object]:
         "name": settings.app_name,
         "version": settings.app_version,
         "status": "bootstrapped",
-        "migration_phase": "scaffold",
+        "migration_phase": "compatibility-hardening",
         "docs": "/docs",
     }
 
@@ -43,5 +43,5 @@ async def health() -> dict[str, object]:
         "status": "healthy",
         "service": settings.app_slug,
         "version": settings.app_version,
-        "migration_phase": "scaffold",
+        "migration_phase": "compatibility-hardening",
     }

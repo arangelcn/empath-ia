@@ -8,17 +8,16 @@ router = APIRouter(prefix="/internal/compatibility", tags=["internal-compatibili
 
 @router.get("/routes")
 async def compatibility_routes() -> dict[str, object]:
-    """List the initial compatibility targets for the migration."""
+    """List the current compatibility targets for the migration."""
     return {
         "service": "ai-service-v2",
-        "phase": "scaffold",
+        "phase": "compatibility-hardening",
         "targets": [
-            {"legacy": "/api/chat", "owner": "app.api.public.chat"},
-            {"legacy": "/api/chat/*", "owner": "app.api.public.chat_context"},
-            {"legacy": "/api/user/*", "owner": "app.api.public.users"},
-            {"legacy": "/api/voice/*", "owner": "app.api.public.voice"},
-            {"legacy": "/api/prompts/*", "owner": "app.api.public.prompts"},
-            {"legacy": "/api/admin/*", "owner": "app.api.admin.*"},
-            {"legacy": "/openai/*", "owner": "app.api.internal.llm"},
+            {"legacy": "/api/chat/send", "owner": "app.application.chat.chat_facade", "status": "migrated"},
+            {"legacy": "/api/chat/send-stream", "owner": "app.application.chat.stream_facade", "status": "migrated"},
+            {"legacy": "/openai/chat", "owner": "app.application.chat.chat_facade", "status": "migrated"},
+            {"legacy": "/openai/chat/stream", "owner": "app.application.chat.stream_facade", "status": "migrated"},
+            {"legacy": "/api/chat/*", "owner": "app.api.public.chat", "status": "active"},
+            {"legacy": "/api/admin/*", "owner": "app.api.admin.*", "status": "partial-scaffold"},
         ],
     }

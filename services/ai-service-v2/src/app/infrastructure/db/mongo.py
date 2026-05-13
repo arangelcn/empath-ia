@@ -69,5 +69,5 @@ class MongoManager:
 
         await users.create_index("username", unique=True)
         await user_sessions.create_index([("username", 1), ("session_id", 1)], unique=True)
-        await session_contexts.create_index("session_id", unique=True, sparse=True)
+        await session_contexts.create_index("session_id", unique=True)
         await session_contexts.create_index("username")
