@@ -9,7 +9,6 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class ServiceUrls:
     ai: str
-    avatar: str
     emotion: str
     voice: str
     knowledge: str
@@ -17,7 +16,6 @@ class ServiceUrls:
     def as_dict(self) -> dict[str, str]:
         return {
             "ai": self.ai,
-            "avatar": self.avatar,
             "emotion": self.emotion,
             "voice": self.voice,
             "knowledge": self.knowledge,
@@ -72,7 +70,6 @@ def load_settings() -> Settings:
     return Settings(
         service_urls=ServiceUrls(
             ai=os.getenv("AI_SERVICE_URL", "http://ai-service:8001"),
-            avatar=os.getenv("AVATAR_SERVICE_URL", "http://avatar-service:8002"),
             emotion=os.getenv("EMOTION_SERVICE_URL", "http://emotion-service:8003"),
             voice=os.getenv("VOICE_SERVICE_URL", "http://voice-service:8004"),
             knowledge=os.getenv("KNOWLEDGE_SERVICE_URL", "http://knowledge-service:8005"),

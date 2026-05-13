@@ -14,7 +14,6 @@ empath-ia/
 ├── services/
 │   ├── gateway-service/  # API Gateway principal (FastAPI)
 │   ├── ai-service/       # Integração OpenAI (FastAPI)
-│   ├── avatar-service/   # Proxy DID.ai (FastAPI)
 │   ├── emotion-service/  # Análise emocional (TensorFlow + DeepFace)
 │   ├── knowledge-service/ # RAG controlado pelo Admin: lifecycle, contratos e futura indexação
 │   └── voice-service/    # Text-to-Speech (Google Cloud TTS)
@@ -52,7 +51,7 @@ services/gateway-service/
 │   │   ├── voice.py                     # proxy para Voice Service e rewrite de audio_url
 │   │   ├── emotions.py                  # emoções persistidas e proxy realtime
 │   │   ├── prompts.py                   # CRUD/renderização de prompts
-│   │   ├── proxy.py                     # proxies legados para AI/avatar
+│   │   ├── proxy.py                     # proxy legado para AI
 │   │   ├── health.py                    # health/config
 │   │   ├── admin.py                     # compatibilidade/imports do admin
 │   │   ├── admin_dashboard.py           # métricas e status admin
@@ -212,20 +211,6 @@ services/emotion-service/
 
 ---
 
-## `services/avatar-service/`
-
-```
-services/avatar-service/
-├── src/
-│   ├── main.py
-│   └── api/
-│       └── avatar_routes.py       # Proxy para DID.ai
-├── requirements.txt
-└── Dockerfile
-```
-
----
-
 ## `apps/web-ui/`
 
 Frontend principal do usuário.
@@ -297,7 +282,6 @@ infrastructure/
 │   ├── ai-service/
 │   ├── voice-service/
 │   ├── emotion-service/
-│   ├── avatar-service/
 │   ├── web-ui/
 │   ├── admin-panel/
 │   ├── mongodb/                   # StatefulSet + PVC
@@ -335,7 +319,7 @@ scripts/
 
 **Secrets necessários nos workflows:**
 - `GCP_PROJECT_ID`, `GCP_SA_KEY` — autenticação GCP
-- `OPENAI_API_KEY`, `DID_API_USERNAME`, `DID_API_PASSWORD` — sincronizados para Secret Manager
+- `OPENAI_API_KEY` — sincronizado para Secret Manager
 - `VITE_GOOGLE_CLIENT_ID`, `VITE_API_URL` — build args para frontends
 
 ---

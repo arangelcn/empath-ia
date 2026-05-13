@@ -52,8 +52,6 @@ jobs:
             context: services/gateway-service
           - name: ai-service
             context: services/ai-service
-          - name: avatar-service
-            context: services/avatar-service
           - name: emotion-service
             context: services/emotion-service
           - name: voice-service

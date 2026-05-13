@@ -82,7 +82,7 @@ export TAG="v1.0.0"
 gcloud auth configure-docker ${REGION}-docker.pkg.dev
 
 # Build e push de todas as imagens
-for svc in gateway-service ai-service avatar-service emotion-service voice-service; do
+for svc in gateway-service ai-service emotion-service voice-service; do
   docker build -t ${REGISTRY}/${svc}:${TAG} services/${svc}/
   docker push ${REGISTRY}/${svc}:${TAG}
 done
@@ -97,8 +97,6 @@ kubectl apply -f infrastructure/k8s/namespace.yaml
 kubectl create secret generic empatia-secrets \
   --namespace empatia \
   --from-literal=OPENAI_API_KEY="$(gcloud secrets versions access latest --secret=empatia-openai-api-key)" \
-  --from-literal=DID_API_USERNAME="$(gcloud secrets versions access latest --secret=empatia-did-api-username)" \
-  --from-literal=DID_API_PASSWORD="$(gcloud secrets versions access latest --secret=empatia-did-api-password)" \
   --from-literal=MONGO_ROOT_PASSWORD="$(gcloud secrets versions access latest --secret=empatia-mongo-root-password)" \
   --from-literal=REDIS_PASSWORD="$(gcloud secrets versions access latest --secret=empatia-redis-password)" \
   --from-literal=JWT_SECRET_KEY="$(gcloud secrets versions access latest --secret=empatia-jwt-secret-key)"
@@ -116,7 +114,6 @@ kubectl apply -f infrastructure/k8s/mongodb/
 kubectl apply -f infrastructure/k8s/redis/
 kubectl apply -f infrastructure/k8s/gateway/
 kubectl apply -f infrastructure/k8s/ai-service/
-kubectl apply -f infrastructure/k8s/avatar-service/
 kubectl apply -f infrastructure/k8s/emotion-service/
 kubectl apply -f infrastructure/k8s/voice-service/
 kubectl apply -f infrastructure/k8s/web-ui/

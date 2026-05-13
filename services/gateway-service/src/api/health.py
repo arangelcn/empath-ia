@@ -78,7 +78,6 @@ async def get_config():
         },
         "timeout_settings": {
             "ai_chat": 30,
-            "avatar_generation": 60,
             "emotion_analysis": 30,
         },
         "gateway_port": settings.gateway_port,

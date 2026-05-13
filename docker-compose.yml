@@ -22,7 +22,6 @@ services:
       - .env
     environment:
       - AI_SERVICE_URL=${AI_SERVICE_URL:-http://ai-service:8001}
-      - AVATAR_SERVICE_URL=${AVATAR_SERVICE_URL:-http://avatar-service:8002}
       - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://emotion-service:8003}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
       - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://knowledge-service:8005}
@@ -45,7 +44,6 @@ services:
     depends_on:
       - mongodb
       - ai-service
-      - avatar-service
       - emotion-service
       - voice-service
       - knowledge-service
@@ -68,10 +66,12 @@ services:
       - .env
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_ENDPOINT=${OPENAI_ENDPOINT:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234/v1}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - OPENAI_COMPLETIONS_URL=${OPENAI_COMPLETIONS_URL:-}
       - OPENAI_COMPAT_API_KEY=${OPENAI_COMPAT_API_KEY:-lm-studio}
+      - OPENAI_MODEL=${OPENAI_MODEL:-}
       - MODEL_NAME=${MODEL_NAME:-gemma-4-e4b}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-none}
@@ -95,30 +95,6 @@ services:
       watch:
         - action: sync
           path: ./services/ai-service/src
-          target: /app/src
-          ignore:
-            - __pycache__/
-
-  # Avatar Service - DID-AI
-  avatar-service:
-    build: ./services/avatar-service
-    container_name: empatia-avatar-service
-    env_file:
-      - .env
-    environment:
-      - DID_API_USERNAME=${DID_API_USERNAME:-}
-      - DID_API_PASSWORD=${DID_API_PASSWORD:-}
-      - AVATAR_SERVICE_PORT=${AVATAR_SERVICE_PORT:-8002}
-      - DEBUG=${DEBUG:-false}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    volumes:
-      - ./services/avatar-service:/app
-    networks:
-      - empatia-network
-    develop:
-      watch:
-        - action: sync
-          path: ./services/avatar-service/src
           target: /app/src
           ignore:
             - __pycache__/

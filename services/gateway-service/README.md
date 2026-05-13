@@ -132,7 +132,6 @@ O Gateway Service é composto por routers, services de domínio e repositories q
 O Gateway Service orquestra os seguintes microserviços:
 
 - **AI Service** (`http://ai-service:8001`) - Processamento de linguagem natural e contexto
-- **Avatar Service** (`http://avatar-service:8002`) - Geração de avatares
 - **Emotion Service** (`http://emotion-service:8003`) - Análise de emoções faciais
 - **Voice Service** (`http://voice-service:8004`) - Síntese de voz
 - **Knowledge Service** (`http://knowledge-service:8005`) - Lifecycle e retrieval de conhecimento aprovado
@@ -609,7 +608,6 @@ DATABASE_NAME=empatia_db
 
 # Microserviços
 AI_SERVICE_URL=http://ai-service:8001
-AVATAR_SERVICE_URL=http://avatar-service:8002
 EMOTION_SERVICE_URL=http://emotion-service:8003
 VOICE_SERVICE_URL=http://voice-service:8004
 
@@ -664,8 +662,7 @@ GET /health/all
   "services": {
     "ai-service": "healthy",
     "voice-service": "healthy",
-    "emotion-service": "healthy",
-    "avatar-service": "healthy"
+    "emotion-service": "healthy"
   },
   "features": {
     "session_isolation": "enabled",

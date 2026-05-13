@@ -41,8 +41,6 @@ jobs:
             context: services/gateway-service
           - name: ai-service
             context: services/ai-service
-          - name: avatar-service
-            context: services/avatar-service
           - name: emotion-service
             context: services/emotion-service
           - name: voice-service
@@ -127,8 +125,6 @@ jobs:
           kubectl create secret generic empatia-secrets \
             --namespace ${{ env.NAMESPACE }} \
             --from-literal=OPENAI_API_KEY="$(gcloud secrets versions access latest --secret=empatia-openai-api-key --project=${{ env.PROJECT_ID }})" \
-            --from-literal=DID_API_USERNAME="$(gcloud secrets versions access latest --secret=empatia-did-api-username --project=${{ env.PROJECT_ID }})" \
-            --from-literal=DID_API_PASSWORD="$(gcloud secrets versions access latest --secret=empatia-did-api-password --project=${{ env.PROJECT_ID }})" \
             --from-literal=MONGO_ROOT_PASSWORD="$(gcloud secrets versions access latest --secret=empatia-mongo-root-password --project=${{ env.PROJECT_ID }})" \
             --from-literal=REDIS_PASSWORD="$(gcloud secrets versions access latest --secret=empatia-redis-password --project=${{ env.PROJECT_ID }})" \
             --from-literal=JWT_SECRET_KEY="$(gcloud secrets versions access latest --secret=empatia-jwt-secret-key --project=${{ env.PROJECT_ID }})" \
@@ -157,7 +153,7 @@ jobs:
           IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
           REGISTRY_URL: ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}
         run: |
-          for svc in gateway ai-service avatar-service emotion-service voice-service web-ui admin-panel; do
+          for svc in gateway ai-service emotion-service voice-service web-ui admin-panel; do
             find infrastructure/k8s/$svc -name "deployment.yaml" \
               -exec sed -i \
                 -e "s|REGISTRY_URL|${REGISTRY_URL}|g" \
@@ -169,7 +165,6 @@ jobs:
         run: |
           kubectl apply -f infrastructure/k8s/gateway/
           kubectl apply -f infrastructure/k8s/ai-service/
-          kubectl apply -f infrastructure/k8s/avatar-service/
           kubectl apply -f infrastructure/k8s/emotion-service/
           kubectl apply -f infrastructure/k8s/voice-service/
 
@@ -191,7 +186,7 @@ jobs:
 
       - name: Verificar rollout — Serviços restantes
         run: |
-          for dep in avatar-service emotion-service voice-service web-ui admin-panel; do
+          for dep in emotion-service voice-service web-ui admin-panel; do
             echo "→ Verificando $dep..."
             kubectl rollout status deployment/$dep -n ${{ env.NAMESPACE }} --timeout=300s
           done

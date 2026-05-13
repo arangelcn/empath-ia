@@ -79,9 +79,6 @@ collect_config() {
   read -rsp "$(echo -e "${BLUE}OPENAI_API_KEY${NC}: ")" OPENAI_API_KEY; echo ""
   [ -z "$OPENAI_API_KEY" ] && error "OPENAI_API_KEY obrigatório."
 
-  read -rsp "$(echo -e "${BLUE}DID_API_USERNAME${NC}: ")" DID_API_USERNAME; echo ""
-  read -rsp "$(echo -e "${BLUE}DID_API_PASSWORD${NC}: ")" DID_API_PASSWORD; echo ""
-
   # Derivados
   STATE_BUCKET="${PROJECT_ID}-terraform-state"
 
@@ -138,8 +135,6 @@ run_terraform() {
     -var="region=${REGION}" \
     -var="state_bucket=${STATE_BUCKET}" \
     -var="openai_api_key=${OPENAI_API_KEY}" \
-    -var="did_api_username=${DID_API_USERNAME:-}" \
-    -var="did_api_password=${DID_API_PASSWORD:-}" \
     -var="github_repo=${GITHUB_REPO}" \
     -out=tfplan
 

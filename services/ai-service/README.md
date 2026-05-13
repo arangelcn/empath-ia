@@ -18,6 +18,16 @@ MODEL_NAME=gemma-4-e4b
 # MODEL_NAME=deepseek-r1
 ```
 
+Para usar OpenAI Cloud (exemplo com GPT-3.5 Turbo), configure via `.env`:
+
+```env
+LLM_PROVIDER=openai
+LLM_FALLBACK_PROVIDER=none
+OPENAI_ENDPOINT=https://api.openai.com/v1
+OPENAI_MODEL=gpt-3.5-turbo
+OPENAI_API_KEY=sk-...
+```
+
 Em produção (Kubernetes), basta sobrescrever `LLM_BASE_URL` para o endpoint escolhido
 e, se necessário, `OPENAI_API_KEY` via Secret/Env do Deployment.
 
@@ -32,7 +42,9 @@ Notas:
 
 - A imagem do AI Service é CPU-only e usa endpoint LLM externo (OpenAI-compatible).
 - O AI Service não faz download/cópia/serving de modelo local; ele atua como cliente de endpoint LLM.
-- Se quiser trocar de provider/modelo entre ambientes, ajuste apenas `LLM_BASE_URL`, `MODEL_NAME` e, quando necessário, `OPENAI_API_KEY`.
+- Se quiser trocar de provider/modelo entre ambientes, ajuste apenas endpoint/modelo/chave no `.env`.
+- Precedência de endpoint: `OPENAI_ENDPOINT` > `OPENAI_BASE_URL` > `LLM_BASE_URL`.
+- Precedência de modelo: `OPENAI_MODEL` > `MODEL_NAME`.
 
 ## 🚀 **ATUALIZAÇÕES RECENTES (2026-05-05)**
 

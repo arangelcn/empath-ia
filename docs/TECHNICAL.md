@@ -27,7 +27,6 @@
 |---------|-------|---------|------------------|
 | `gateway-service` | 8000 | Python 3.11 + FastAPI | Ponto único de entrada: roteamento, auth, chat, sessões, proxy para microserviços |
 | `ai-service` | 8001 | Python 3.11 + FastAPI | Respostas terapêuticas via Gemma local/GGUF como padrão, fallback OpenAI, geração de contexto e próxima sessão |
-| `avatar-service` | 8002 | Python 3.11 + FastAPI | Proxy para DID.ai (avatares animados) |
 | `emotion-service` | 8003 | TensorFlow 2.13 GPU | Análise emocional facial (DeepFace, MediaPipe) e de vídeo |
 | `voice-service` | 8004 | Python 3.11 + FastAPI | Text-to-Speech via Google Cloud TTS; arquivos de áudio servidos via gateway |
 | `knowledge-service` | 8005 | Python 3.11 + FastAPI | Fundação do RAG controlado pelo Admin: lifecycle de documentos, contrato de retrieval, proveniência e futura indexação |
@@ -45,7 +44,6 @@ browser → admin-panel (nginx) → /api/* proxy → gateway:8000
 gateway → ai-service:8001
 gateway → voice-service:8004
 gateway → emotion-service:8003
-gateway → avatar-service:8002
 gateway → knowledge-service:8005
 gateway → mongodb:27017
 ai-service → mongodb:27017
@@ -181,15 +179,6 @@ Copie `.env.example` para `.env`. Variáveis marcadas com ⚠️ são obrigatór
 | `KNOWLEDGE_LEXICAL_INDEX` | Estratégia de índice lexical. Fundação inicial: `sqlite-fts5-planned`. |
 | `QDRANT_URL` | URL interna do Qdrant para o futuro vector store. Padrão: `http://qdrant:6333`. |
 | `QDRANT_PORT` | Porta local do Qdrant em desenvolvimento. Padrão: `6333`. |
-
-### DID (Avatares — opcional)
-
-| Variável | Descrição |
-|----------|-----------|
-| `DID_API_USERNAME` | Usuário DID.ai |
-| `DID_API_PASSWORD` | Senha DID.ai |
-
----
 
 ## 3. API Reference — Gateway
 
@@ -734,7 +723,6 @@ gateway/                → deployment + service + HPA
 ai-service/
 voice-service/
 emotion-service/
-avatar-service/
 web-ui/
 admin-panel/
 mongodb/                → StatefulSet + PVC
@@ -747,7 +735,7 @@ ingress.yaml            → GCE Ingress + ManagedCertificate (HTTPS)
 | Tipo | O que contém |
 |------|-------------|
 | **ConfigMap** `empatia-config` | `GOOGLE_CLIENT_ID`, URLs de serviços, `ALLOWED_ORIGINS`, `DATABASE_NAME`, `LOG_LEVEL` |
-| **K8s Secret** `empatia-secrets` | `OPENAI_API_KEY`, `MONGO_ROOT_PASSWORD`, `REDIS_PASSWORD`, `JWT_SECRET_KEY`, `DID_API_*` |
+| **K8s Secret** `empatia-secrets` | `OPENAI_API_KEY`, `MONGO_ROOT_PASSWORD`, `REDIS_PASSWORD`, `JWT_SECRET_KEY` |
 
 Os secrets são sincronizados do **GCP Secret Manager** no pipeline de deploy.
 

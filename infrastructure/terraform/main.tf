@@ -59,8 +59,6 @@ module "secrets" {
   project_id          = var.project_id
   environment         = var.environment
   openai_api_key      = var.openai_api_key
-  did_api_username    = var.did_api_username
-  did_api_password    = var.did_api_password
   mongo_root_password = coalesce(var.mongo_root_password, random_password.mongo.result)
   redis_password      = coalesce(var.redis_password, random_password.redis.result)
   jwt_secret_key      = coalesce(var.jwt_secret_key, random_password.jwt.result)

@@ -45,18 +45,6 @@ variable "openai_api_key" {
   sensitive   = true
 }
 
-variable "did_api_username" {
-  description = "Username da API D-ID (avatar)"
-  type        = string
-  sensitive   = true
-}
-
-variable "did_api_password" {
-  description = "Password da API D-ID (avatar)"
-  type        = string
-  sensitive   = true
-}
-
 variable "mongo_root_password" {
   description = "Password do utilizador root do MongoDB"
   type        = string

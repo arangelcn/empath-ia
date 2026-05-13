@@ -52,7 +52,7 @@ def test_openai_compat_base_url_from_completions_url(monkeypatch):
     assert service.effective_api_key == "lm-studio"
 
 
-def test_llm_base_url_takes_precedence(monkeypatch):
+def test_openai_base_url_takes_precedence_over_llm_base_url(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "none")
     monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "openai")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -61,7 +61,22 @@ def test_llm_base_url_takes_precedence(monkeypatch):
 
     service = LLMService(prompt_client=FakePromptClient())
 
-    assert service.openai_base_url == "http://host.docker.internal:11434/v1"
+    assert service.openai_base_url == "https://api.openai.com/v1"
+    assert service.effective_api_key is None
+
+
+def test_openai_model_alias_takes_precedence(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "none")
+    monkeypatch.setenv("LLM_FALLBACK_PROVIDER", "none")
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-3.5-turbo")
+    monkeypatch.setenv("MODEL_NAME", "gemma-4-e4b")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+
+    service = LLMService(prompt_client=FakePromptClient())
+
+    assert service.openai_model == "gpt-3.5-turbo"
     assert service.effective_api_key == "lm-studio"
 
 

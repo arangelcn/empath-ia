@@ -24,8 +24,6 @@ state_bucket = "empathia-491822-terraform-state"
 
 # ---- Secrets da aplicação ----
 openai_api_key   = "sk-..."
-did_api_username = "seu_did_username"
-did_api_password = "sua_did_password"
 
 # Opcionais: se não fornecidos, passwords aleatórias são geradas
 # mongo_root_password = "sua_password_mongo"
