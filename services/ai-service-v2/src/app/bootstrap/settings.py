@@ -55,6 +55,29 @@ class Settings(BaseSettings):
         default="empatia",
         validation_alias=AliasChoices("AI_SERVICE_V2_MONGODB_DATABASE", "MONGODB_DATABASE", "DATABASE_NAME"),
     )
+    llm_primary_provider: str = Field(
+        default="langchain_openai",
+        validation_alias=AliasChoices("AI_SERVICE_V2_LLM_PRIMARY_PROVIDER", "LLM_PROVIDER"),
+    )
+    llm_fallback_provider: str = Field(
+        default="legacy_ai",
+        validation_alias=AliasChoices("AI_SERVICE_V2_LLM_FALLBACK_PROVIDER", "LLM_FALLBACK_PROVIDER"),
+    )
+    enable_legacy_runtime_fallback: bool = True
+    openai_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("AI_SERVICE_V2_OPENAI_API_KEY", "OPENAI_API_KEY"),
+    )
+    openai_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        validation_alias=AliasChoices("AI_SERVICE_V2_OPENAI_BASE_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE"),
+    )
+    openai_model: str = Field(
+        default="gpt-4o-mini",
+        validation_alias=AliasChoices("AI_SERVICE_V2_OPENAI_MODEL", "OPENAI_MODEL"),
+    )
+    llm_temperature: float = 0.3
+    llm_max_tokens: int = 700
     voice_chunk_max_chars: int = 220
     voice_chunk_max_wait_ms: int = 1400
     voice_chunk_min_timed_chars: int = 48

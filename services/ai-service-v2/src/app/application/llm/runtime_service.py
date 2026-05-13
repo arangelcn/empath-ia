@@ -6,43 +6,37 @@ from typing import Any
 
 from .structured_outputs import GenerationOutput
 from ...infrastructure.http.legacy_ai_client import LegacyAIClient
+from ...infrastructure.llm.base import RuntimeProvider
 
 
 class RuntimeService:
     """Runtime owner for LangGraph generation, with legacy adapter as fallback."""
 
-    def __init__(self, legacy_ai_client: LegacyAIClient | None) -> None:
+    def __init__(
+        self,
+        legacy_ai_client: LegacyAIClient | None,
+        providers: list[RuntimeProvider] | None = None,
+    ) -> None:
         self.legacy_ai_client = legacy_ai_client
+        self.providers = providers or []
 
     async def generate(self, state, prompt_payload: Any) -> GenerationOutput:
         """Generate the assistant response for the graph generation node."""
-        if self.legacy_ai_client is None:
-            return GenerationOutput(
-                text=(
-                    "Runtime LLM ainda nao configurado no ai-service-v2. "
-                    "O grafo e a pipeline estao prontos para receber LangChain providers."
-                ),
-                provider="langgraph-scaffold",
-                model="unconfigured",
-                finish_reason="runtime_not_configured",
-            )
+        for provider in self.providers:
+            if not provider.is_available():
+                continue
+            result = await provider.generate(state, prompt_payload)
+            if result.text.strip():
+                return result
 
-        legacy_payload = {
-            "message": state.user_message,
-            "session_id": state.session_id,
-            "chat_id": state.chat_id,
-            "username": state.username,
-            "user_profile": state.user_profile,
-            "conversation_history": state.conversation_history,
-            "session_objective": state.session_objective,
-            "previous_session_context": state.previous_session_context,
-        }
-        raw_response = await self.legacy_ai_client.chat(legacy_payload)
         return GenerationOutput(
-            text=raw_response.get("response", ""),
-            provider=raw_response.get("provider", "ai-service"),
-            model=raw_response.get("model", "unknown"),
-            finish_reason="legacy_adapter",
+            text=(
+                "Runtime LLM ainda nao configurado no ai-service-v2. "
+                "A cadeia de providers existe, mas nenhum backend esta disponivel."
+            ),
+            provider="runtime_unavailable",
+            model="unconfigured",
+            finish_reason="runtime_not_configured",
         )
 
     async def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -64,7 +58,10 @@ class RuntimeService:
             "service": "ai-service-v2",
             "owner": "application.llm.runtime_service",
             "status": "langchain-runtime-shell",
-            "provider_chain": ["langchain-provider", "legacy-ai-adapter"],
+            "provider_chain": [provider.name for provider in self.providers],
+            "available_providers": [
+                provider.name for provider in self.providers if provider.is_available()
+            ],
             "message": "Runtime pronto para LangChain; adapter legado mantido apenas como fallback temporario.",
             "legacy_ai_base_url": self.legacy_ai_client.base_url if self.legacy_ai_client else None,
         }

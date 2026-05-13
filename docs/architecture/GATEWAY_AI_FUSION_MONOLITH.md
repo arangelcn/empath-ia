@@ -1,6 +1,6 @@
 # Refactor Plan: Gateway + AI Service Fusion
 
-Status: proposed execution plan.
+Status: in progress.
 
 ## Objective
 
@@ -220,6 +220,48 @@ src/
 └── prompts/
 ```
 
+## Current Status Of `ai-service-v2`
+
+O novo boundary já existe em `services/ai-service-v2` e não está mais só em modo “hello world”.
+
+### What is already built
+
+- bootstrap FastAPI separado do legado;
+- container de dependências próprio;
+- rotas públicas, admin e internas registradas;
+- caminhos de compatibilidade para `/api/chat/send`, `/api/chat/send-stream` e `/openai/*`;
+- `GraphState` canônico para a nova orquestração;
+- `AgentService` orientado a grafo com nós explícitos;
+- `PromptPipeline` preparado para `LangChain`;
+- `RuntimeService` reposicionado como shell de runtime para `LangChain`, com cadeia explícita de providers;
+- provider `LangChain/OpenAI-compatible` já modelado como backend primário;
+- adapter legado já modelado como provider de fallback, não mais como caminho central;
+- repositório Mongo próprio do `ai-service-v2`;
+- `ChatFacade` com dois caminhos distintos:
+  - caminho novo: `/api/chat` e `/api/chat/stream` usam a orquestração nova;
+  - caminho compatível: `/api/chat/send*` preserva a borda atual.
+
+### Important architectural decision already taken
+
+O `ai-service-v2` não está mais sendo tratado como “gateway copiado com novos nomes”.
+
+A direção agora é:
+
+- o fluxo principal novo vive em `ChatFacade -> AgentService -> LangGraph nodes -> RuntimeService`;
+- adapters legados existem apenas para compatibilidade e rollout;
+- compatibilidade não define mais a arquitetura interna.
+
+### What is still provisional
+
+- o runtime novo já possui cadeia de providers, mas ainda precisa de validação operacional com dependências instaladas e credenciais reais;
+- o `PersistenceNode` ainda descreve side effects, mas não executa o fluxo final do monólito;
+- retrieval e safety já têm nós dedicados, porém ainda com implementação inicial;
+- `LangGraph` e `LangChain` já governam o desenho principal, mas ainda não representam o caminho produtivo completo ponta a ponta.
+
+### Practical consequence
+
+O documento de migração passa a considerar a fase de scaffold como concluída em termos de estrutura, e a fase atual como “foundation for orchestration/runtime”, não mais “copiar serviços legados”.
+
 ## Responsibility Boundaries
 
 ### API layer
@@ -311,11 +353,24 @@ Regra:
 - expor rotas mínimas de compatibilidade;
 - configurar observabilidade e feature flags.
 
+Status atual:
+
+- concluído para a estrutura base;
+- concluído para rotas mínimas;
+- parcialmente concluído para compatibilidade controlada.
+
 ### Phase 2: migrate AI runtime into v2
 
 - mover `llm_service`, fallback, streaming LLM e políticas RAG;
 - eliminar `prompt_client_service` como dependência HTTP;
 - integrar prompt source local/repositório interno.
+
+Status atual:
+
+- iniciado, mas com mudança de abordagem;
+- o foco deixou de ser “mover o `llm_service` como está”;
+- o foco passou a ser construir `RuntimeService` e providers com abstrações `LangChain`, mantendo adapter legado apenas como fallback temporário;
+- a cadeia inicial de providers já está modelada em código.
 
 ### Phase 3: migrate Gateway application logic into v2
 
@@ -323,11 +378,24 @@ Regra:
 - separar em fachada + casos de uso;
 - manter os contratos externos do Gateway.
 
+Status atual:
+
+- iniciado para `chat` e `session context`;
+- `ChatFacade` já existe como entrypoint novo;
+- contratos públicos de chat já têm divisão entre caminho novo e caminho compatível.
+
 ### Phase 4: activate LangChain and LangGraph
 
 - substituir montagem manual por pipelines estruturados;
 - introduzir `GraphState` e nós principais;
 - ligar feature flag para coexistência entre fluxo legado e fluxo novo.
+
+Status atual:
+
+- iniciado;
+- `GraphState`, `AgentService`, `nodes/` e `PromptPipeline` já existem;
+- a cadeia de providers já existe;
+- falta transformar esse runtime em caminho produtivo completo com persistência final, retrieval real e validação operacional.
 
 ### Phase 5: compatibility and shadow validation
 
@@ -412,21 +480,20 @@ Primeiro preservar compatibilidade. Depois limpar naming.
 
 ## Recommended Execution Sequence
 
-1. criar `ai-service-v2`;
-2. mover runtime LLM e prompt ownership;
-3. mover orquestração de chat/contexto/sessão;
-4. preservar contratos públicos do Gateway;
-5. introduzir LangChain;
-6. introduzir LangGraph;
-7. validar frontend/Admin;
-8. cortar tráfego;
-9. renomear `ai-service-v2` para `ai-service`;
-10. remover legado.
+1. implementar persistência real por nós, em vez de side effects espalhados;
+2. consolidar prompt ownership dentro do próprio `ai-service-v2`;
+3. plugar retrieval real e safety real ao fluxo principal;
+4. expandir compatibilidade pública só onde o frontend/Admin realmente exigirem;
+5. validar frontend/Admin;
+6. cortar tráfego;
+7. renomear `ai-service-v2` para `ai-service`;
+8. remover legado.
 
 ## Deliverables
 
 - documento de arquitetura alvo;
 - estrutura inicial de `ai-service-v2`;
+- estado atual documentado da fundação arquitetural do `ai-service-v2`;
 - mapa de migração por módulo;
 - matriz de compatibilidade de rotas e payloads;
 - plano de rollout/rollback;

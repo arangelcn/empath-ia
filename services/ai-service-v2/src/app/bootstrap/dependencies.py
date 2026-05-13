@@ -20,6 +20,8 @@ from ..application.retrieval.retrieval_policy import RetrievalPolicy
 from ..infrastructure.db.mongo import MongoManager
 from ..infrastructure.http.legacy_ai_client import LegacyAIClient, LegacyGatewayClient
 from ..infrastructure.http.voice_synthesis_service import VoiceSynthesisService
+from ..infrastructure.llm.langchain_openai_provider import LangChainOpenAIProvider
+from ..infrastructure.llm.legacy_adapter_provider import LegacyAdapterProvider
 from ..repositories.conversations import MongoConversationRepository
 from .settings import Settings
 
@@ -56,9 +58,25 @@ def build_container(settings: Settings) -> AppContainer:
     legacy_gateway_client = LegacyGatewayClient(settings.legacy_gateway_url)
     legacy_ai_client = LegacyAIClient(settings.legacy_ai_service_url)
     voice_synthesis_service = VoiceSynthesisService(settings.voice_service_url)
+    providers = []
+    if settings.llm_primary_provider == "langchain_openai":
+        providers.append(
+            LangChainOpenAIProvider(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url,
+                model=settings.openai_model,
+                temperature=settings.llm_temperature,
+                max_tokens=settings.llm_max_tokens,
+            )
+        )
+    if settings.enable_legacy_runtime_fallback:
+        providers.append(LegacyAdapterProvider(legacy_ai_client))
     prompt_pipeline = PromptPipeline(default_language=settings.default_language)
     fallback_service = FallbackService()
-    runtime_service = RuntimeService(legacy_ai_client=legacy_ai_client)
+    runtime_service = RuntimeService(
+        legacy_ai_client=legacy_ai_client,
+        providers=providers,
+    )
     retrieval_policy = RetrievalPolicy()
     rag_gateway = RAGGateway(settings.knowledge_service_url)
     citation_service = CitationService()
