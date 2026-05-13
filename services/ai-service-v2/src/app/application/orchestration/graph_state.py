@@ -17,6 +17,9 @@ class GraphState:
     user_profile: dict[str, Any] = field(default_factory=dict)
     previous_session_context: dict[str, Any] | None = None
     session_objective: dict[str, Any] | None = None
+    initial_prompt: str | None = None
+    selected_voice: str = "pt-BR-Neural2-B"
+    voice_enabled: bool = True
     prompt_key: str | None = None
     compiled_prompt: Any = None
     rag_policy: dict[str, Any] = field(default_factory=dict)
@@ -25,6 +28,10 @@ class GraphState:
     generation_result: dict[str, Any] | None = None
     safety_result: dict[str, Any] | None = None
     persistence_plan: dict[str, Any] | None = None
+    user_message_id: str | None = None
+    ai_message_id: str | None = None
+    audio_url: str | None = None
+    conversation_ended: bool = False
     final_response: dict[str, Any] | None = None
     node_trace: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)

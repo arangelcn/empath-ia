@@ -9,3 +9,5 @@ class PromptDescriptor:
 
     prompt_key: str
     version: int | None = None
+    content: str = ""
+    source: str = "unknown"

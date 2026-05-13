@@ -12,7 +12,7 @@ class GenerationNode:
 
     async def __call__(self, state):
         state.node_trace.append("generation")
-        state.compiled_prompt = self.prompt_pipeline.build_chat_prompt(state)
+        state.compiled_prompt = await self.prompt_pipeline.build_chat_prompt(state)
         state.generation_result = (
             await self.runtime_service.generate(state, state.compiled_prompt)
         ).model_dump()

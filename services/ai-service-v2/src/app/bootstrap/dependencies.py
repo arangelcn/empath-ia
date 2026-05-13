@@ -1,5 +1,7 @@
 """Dependency container for ai-service-v2."""
 
+from pathlib import Path
+
 from dataclasses import dataclass
 
 from fastapi import Request
@@ -23,6 +25,7 @@ from ..infrastructure.http.voice_synthesis_service import VoiceSynthesisService
 from ..infrastructure.llm.langchain_openai_provider import LangChainOpenAIProvider
 from ..infrastructure.llm.legacy_adapter_provider import LegacyAdapterProvider
 from ..repositories.conversations import MongoConversationRepository
+from ..repositories.prompts import FilePromptRepository
 from .settings import Settings
 
 
@@ -58,6 +61,8 @@ def build_container(settings: Settings) -> AppContainer:
     legacy_gateway_client = LegacyGatewayClient(settings.legacy_gateway_url)
     legacy_ai_client = LegacyAIClient(settings.legacy_ai_service_url)
     voice_synthesis_service = VoiceSynthesisService(settings.voice_service_url)
+    prompts_dir = Path(__file__).resolve().parents[2] / "prompts"
+    prompt_repository = FilePromptRepository(prompts_dir)
     providers = []
     if settings.llm_primary_provider == "langchain_openai":
         providers.append(
@@ -71,7 +76,10 @@ def build_container(settings: Settings) -> AppContainer:
         )
     if settings.enable_legacy_runtime_fallback:
         providers.append(LegacyAdapterProvider(legacy_ai_client))
-    prompt_pipeline = PromptPipeline(default_language=settings.default_language)
+    prompt_pipeline = PromptPipeline(
+        default_language=settings.default_language,
+        prompt_repository=prompt_repository,
+    )
     fallback_service = FallbackService()
     runtime_service = RuntimeService(
         legacy_ai_client=legacy_ai_client,
@@ -89,6 +97,10 @@ def build_container(settings: Settings) -> AppContainer:
         rag_gateway=rag_gateway,
         runtime_service=runtime_service,
         fallback_service=fallback_service,
+        conversation_repository=conversation_repository,
+        user_profile_service=user_profile_service,
+        session_context_service=session_context_service,
+        voice_synthesis_service=voice_synthesis_service,
     )
     chat_facade = ChatFacade(
         settings=settings,
@@ -96,6 +108,7 @@ def build_container(settings: Settings) -> AppContainer:
         user_profile_service=user_profile_service,
         legacy_gateway_client=legacy_gateway_client,
         voice_synthesis_service=voice_synthesis_service,
+        runtime_service=runtime_service,
         agent_service=agent_service,
         session_context_service=session_context_service,
         next_session_service=next_session_service,

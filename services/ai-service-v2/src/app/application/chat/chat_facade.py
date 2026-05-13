@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any, AsyncGenerator
 
 from ...bootstrap.settings import Settings
+from ..llm.runtime_service import RuntimeService
 from ...repositories.conversations import MongoConversationRepository
 from ...services.streaming_utils import SentenceChunker, now_ms
 from ..orchestration.agent_service import AgentService
@@ -31,6 +32,7 @@ class ChatFacade:
         user_profile_service: UserProfileService,
         legacy_gateway_client,
         voice_synthesis_service,
+        runtime_service: RuntimeService,
         agent_service: AgentService,
         session_context_service: SessionContextService,
         next_session_service: NextSessionService,
@@ -41,6 +43,7 @@ class ChatFacade:
         self.user_profile_service = user_profile_service
         self.legacy_gateway_client = legacy_gateway_client
         self.voice_synthesis_service = voice_synthesis_service
+        self.runtime_service = runtime_service
         self.agent_service = agent_service
         self.session_context_service = session_context_service
         self.next_session_service = next_session_service
@@ -387,17 +390,21 @@ class ChatFacade:
         return {
             "response": result["response"],
             "model": result["model"],
-            "session_id": payload.get("session_id", "default"),
-            "username": payload.get("username", "anonymous"),
+            "session_id": result.get("session_id") or payload.get("session_id", "default"),
+            "username": result.get("username") or payload.get("username", "anonymous"),
             "timestamp": datetime.now(UTC).isoformat(),
             "provider": result["provider"],
             "success": True,
             "trace_id": result.get("trace_id") or payload.get("trace_id") or f"trace_{uuid.uuid4().hex}",
-            "chat_id": payload.get("chat_id"),
+            "chat_id": result.get("chat_id") or payload.get("chat_id"),
             "migration": {
                 "phase": "langgraph-orchestration",
                 "node_trace": result.get("node_trace", []),
                 "warnings": result.get("warnings", []),
+                "user_message_id": result.get("user_message_id"),
+                "ai_message_id": result.get("ai_message_id"),
+                "audio_url": result.get("audio_url"),
+                "conversation_ended": result.get("conversation_ended", False),
             },
         }
 
@@ -431,7 +438,7 @@ class ChatFacade:
             "initial_prompt": initial_prompt,
             "previous_session_context": previous_session_context,
         }
-        ai_service_response = await self.agent_service.chat(ai_request)
+        ai_service_response = await self.runtime_service.chat(ai_request)
         ai_response = ai_service_response.get("response", "").strip()
         if not ai_response:
             raise RuntimeError("AI Service retornou resposta vazia")

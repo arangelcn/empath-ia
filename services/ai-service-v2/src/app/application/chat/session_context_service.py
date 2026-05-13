@@ -67,6 +67,10 @@ class SessionContextService:
         ]
         return any(pattern in message_lower for pattern in farewell_patterns + finalization_patterns)
 
+    def build_initial_prompt_key(self, session_id: str) -> str:
+        """Return a stable prompt key placeholder for the current session."""
+        return f"session:{session_id}:initial_prompt"
+
     def preview(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Keep the preview used by scaffold introspection."""
         return {
