@@ -27,10 +27,6 @@ class Settings(BaseSettings):
     internal_api_prefix: str = "/internal"
     default_language: str = "pt-BR"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
-    legacy_gateway_url: str = Field(
-        default="http://gateway-service:8000",
-        validation_alias=AliasChoices("AI_SERVICE_V2_LEGACY_GATEWAY_URL", "BACKEND_URL"),
-    )
     legacy_ai_service_url: str = Field(
         default="http://ai-service:8001",
         validation_alias=AliasChoices("AI_SERVICE_V2_LEGACY_AI_SERVICE_URL", "AI_SERVICE_URL"),

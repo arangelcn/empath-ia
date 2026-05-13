@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .response_node import resolve_response_text
+
 
 class PersistenceNode:
     """Execute persistence side effects for the orchestration flow."""
@@ -13,8 +15,7 @@ class PersistenceNode:
 
     async def __call__(self, state):
         state.node_trace.append("persistence")
-        generation = state.generation_result or {}
-        response_text = (generation.get("text") or "").strip()
+        response_text = resolve_response_text(state).strip()
 
         state.user_message_id = await self.conversation_repository.save_message(
             state.session_id,
@@ -22,7 +23,7 @@ class PersistenceNode:
             state.user_message,
         )
 
-        if state.voice_enabled and state.is_voice_mode and response_text:
+        if state.voice_enabled and state.is_voice_mode and response_text and not state.audio_url:
             state.audio_url = await self.voice_synthesis_service.generate_audio(
                 response_text,
                 state.selected_voice,

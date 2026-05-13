@@ -257,6 +257,25 @@ class MongoConversationRepository:
             conversation["_id"] = str(conversation["_id"])
         return conversation
 
+    async def update_conversation_fields(self, session_id: str, fields: dict[str, Any]) -> None:
+        """Update top-level conversation fields for the canonical conversation document."""
+        conversations = self.mongo.get_collection("conversations")
+        identity = await self.resolve_conversation_ref(session_id, create=True)
+        conversation = identity.get("conversation")
+        if conversation and conversation.get("_id"):
+            await conversations.update_one(
+                {"_id": conversation["_id"]},
+                {"$set": {**fields, "updated_at": datetime.now(UTC)}},
+            )
+            return
+
+        legacy_session_id = identity.get("legacy_session_id") or session_id
+        await conversations.update_one(
+            {"session_id": legacy_session_id},
+            {"$set": {**fields, "updated_at": datetime.now(UTC)}},
+            upsert=True,
+        )
+
     async def get_voice_preferences(self, username: str) -> tuple[str, bool]:
         """Load voice preferences from the user record."""
         users = self.mongo.get_collection("users")

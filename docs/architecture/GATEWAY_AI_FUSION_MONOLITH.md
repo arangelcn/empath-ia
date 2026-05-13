@@ -257,15 +257,70 @@ A direção agora é:
 ### What is still provisional
 
 - o runtime novo já possui cadeia de providers, mas ainda precisa de validação operacional com dependências instaladas e credenciais reais;
-- o `PersistenceNode` já executa persistência real no caminho não-streaming, mas o streaming arquitetural ainda precisa convergir para o mesmo modelo final;
+- o caminho arquitetural de streaming já emite `meta`, `status`, `text_delta`, áudio e `done` a partir do `AgentService`, e já persiste pelo mesmo `PersistenceNode` do fluxo não-streaming;
 - retrieval agora já chama o `knowledge-service` de forma real, aplica política normalizada, filtra resultados por confiança e produz citações no próprio grafo;
 - o prompt novo já sabe incorporar contexto recuperado e instruções explícitas de grounding/citação;
 - safety já tem heurística inicial própria e já consegue bloquear a resposta final quando detectar conteúdo gerado de alto risco;
-- `LangGraph` e `LangChain` já governam o desenho principal, mas o streaming arquitetural e a validação operacional completa ainda não estão fechados.
+- o runtime novo já expõe streaming nativo por provider quando o backend suporta isso, mas o fluxo público ainda segura a emissão final até depois da checagem de safety;
+- o fluxo especial de registro `session-1` agora já roda dentro do `ai-service-v2`, persiste perfil/contexto em Mongo e cria a próxima sessão sem depender do `gateway-service`;
+- o provider legado do `ai-service` antigo ainda permanece configurável como fallback temporário na cadeia de runtime;
+- várias rotas públicas/admin fora do fluxo principal de chat ainda estão em modo scaffold ou proxy inicial;
+- `LangGraph` e `LangChain` já governam o desenho principal, mas ainda falta validação operacional completa e decidir se haverá streaming token-a-token público com guardrails incrementais.
 
 ### Practical consequence
 
 O documento de migração passa a considerar a fase de scaffold como concluída em termos de estrutura, e a fase atual como “foundation for orchestration/runtime”, não mais “copiar serviços legados”.
+
+### Validated Remaining Gaps
+
+Depois da validação do estado atual do código, as pendências reais da migração ficaram assim:
+
+- `chat` principal já saiu do `ai-service` legado, mas o fluxo compatível `/api/chat/send-stream` ainda carrega bastante lógica de chunking, TTS, métricas e compatibilidade dentro da `ChatFacade`; ele ainda não é apenas um adapter fino sobre o caminho novo;
+- o fluxo especial de registro `session-1` já foi internalizado, mas ainda vale endurecer essa trilha com testes e talvez extrair mais claramente os adapters de voz/compatibilidade da `ChatFacade`;
+- `LegacyAdapterProvider` continua disponível como fallback de runtime, o que é útil para rollout, mas significa que o runtime novo ainda não está operando como caminho único endurecido;
+- várias rotas fora do chat principal ainda estão em scaffold, especialmente em `app/api/admin/*` e parte das rotas públicas auxiliares, então a compatibilidade com `admin-panel` e alguns fluxos secundários ainda não foi realmente concluída;
+- os endpoints internos de health/compatibility ainda se apresentam como scaffold e ainda não expressam o estado operacional final da migração;
+- a validação ponta a ponta com `web-ui`, `admin-panel`, providers reais e latência/telemetria comparada com o sistema atual ainda não foi feita.
+
+### Resume Snapshot
+
+Se a migração for retomada depois, este e o ponto mais rapido para reorientacao.
+
+Ultimo corte concluido:
+
+- o fluxo especial de registro `session-1` foi internalizado no `ai-service-v2`;
+- `LegacyGatewayClient` foi removido do boundary novo;
+- o cadastro agora salva perfil padronizado em `users`, contexto em `session_contexts` e cria/desbloqueia a proxima sessao em `user_therapeutic_sessions`;
+- o stream compativel de cadastro continua existindo, mas agora e adaptado localmente pela `ChatFacade`, sem round-trip HTTP para o `gateway-service`.
+
+Arquivos-chave deste corte:
+
+- `services/ai-service-v2/src/app/application/chat/registration_service.py`
+- `services/ai-service-v2/src/app/application/chat/next_session_service.py`
+- `services/ai-service-v2/src/app/application/chat/user_profile_service.py`
+- `services/ai-service-v2/src/app/application/chat/chat_facade.py`
+- `services/ai-service-v2/src/app/bootstrap/dependencies.py`
+- `services/ai-service-v2/src/app/repositories/sessions.py`
+- `services/ai-service-v2/src/app/repositories/users.py`
+- `services/ai-service-v2/src/app/repositories/conversations.py`
+
+Validacao feita nesta etapa:
+
+- `python3 -m compileall src` passou em `services/ai-service-v2`;
+- busca por `LegacyGatewayClient` e `legacy_gateway_url` dentro de `services/ai-service-v2/src` voltou vazia.
+
+O que ainda nao esta fechado:
+
+- `/api/chat/send-stream` ainda concentra muita logica de compatibilidade, TTS e metricas dentro da `ChatFacade`;
+- o fallback `LegacyAdapterProvider` ainda existe na cadeia de runtime;
+- a trilha nova de `session-1` ainda precisa de testes dedicados;
+- falta validacao ponta a ponta com frontend/Admin e provider real.
+
+Proximo passo recomendado ao retomar:
+
+1. simplificar o fluxo compatível `/api/chat/send-stream`, empurrando mais responsabilidade para o caminho arquitetural novo;
+2. adicionar testes focados em `session-1`, persistencia e criacao da proxima sessao;
+3. validar runtime real e decidir o endurecimento do fallback legado.
 
 ## Responsibility Boundaries
 
@@ -375,7 +430,11 @@ Status atual:
 - iniciado, mas com mudança de abordagem;
 - o foco deixou de ser “mover o `llm_service` como está”;
 - o foco passou a ser construir `RuntimeService` e providers com abstrações `LangChain`, mantendo adapter legado apenas como fallback temporário;
-- a cadeia inicial de providers já está modelada em código.
+- a cadeia inicial de providers já está modelada em código;
+- o caminho compatível síncrono já não depende mais do `ai-service` legado para gerar resposta;
+- o stream compatível interno `/openai/chat/stream` também já foi redirecionado para a orquestração nova;
+- o `ai-service` legado saiu do caminho crítico de chat e permanece apenas como fallback temporário de provider;
+- o runtime ainda não foi validado operacionalmente com providers reais como caminho único.
 
 ### Phase 3: migrate Gateway application logic into v2
 
@@ -388,7 +447,11 @@ Status atual:
 - iniciado para `chat` e `session context`;
 - `ChatFacade` já existe como entrypoint novo;
 - contratos públicos de chat já têm divisão entre caminho novo e caminho compatível;
-- parte da persistência de chat já foi movida da fachada para o grafo.
+- parte da persistência de chat já foi movida da fachada para o grafo;
+- o fluxo síncrono compatível `/api/chat/send` já passa pela orquestração nova sem delegar geração ao `ai-service` antigo;
+- o fluxo compatível interno `/openai/chat/stream` também já usa o `AgentService` como fonte de resposta;
+- o fluxo especial de registro `session-1` agora também já roda totalmente dentro do `ai-service-v2`, incluindo persistência de perfil, contexto em `session_contexts` e criação determinística da próxima sessão;
+- `next_session_service` e `registration_service` deixaram de ser scaffold, mas ainda precisam de testes dedicados e refinamento de contratos para rollout.
 
 ### Phase 4: activate LangChain and LangGraph
 
@@ -404,13 +467,22 @@ Status atual:
 - prompt ownership inicial já existe localmente no `ai-service-v2`;
 - retrieval real, grounding e citações já existem no caminho novo;
 - safety inicial independente do legado já existe no caminho novo;
-- falta convergir o streaming arquitetural para persistência/saída final e fazer validação operacional com providers reais.
+- o streaming arquitetural já converge para a mesma persistência e saída final do caminho novo;
+- o runtime já suporta streaming nativo por provider no caminho novo;
+- falta validar operacionalmente com providers reais e decidir a estratégia final de streaming público sob safety.
 
 ### Phase 5: compatibility and shadow validation
 
 - rodar `web-ui` e `admin-panel` contra `ai-service-v2`;
 - validar contratos de payload e SSE;
 - comparar respostas, latência, logs e fallbacks com o sistema atual.
+
+Status atual:
+
+- ainda não concluído;
+- falta validar as rotas de chat contra consumidores reais;
+- falta validar as rotas admin/públicas que ainda estão em scaffold;
+- falta validar rollout com provider real e fallback desabilitado ou restrito para medir maturidade do runtime novo.
 
 ### Phase 6: switch traffic
 
@@ -489,20 +561,23 @@ Primeiro preservar compatibilidade. Depois limpar naming.
 
 ## Recommended Execution Sequence
 
-1. concluir a convergência do streaming arquitetural para o mesmo modelo de persistência do caminho novo;
-2. consolidar prompt ownership além do catálogo file-backed inicial;
-3. plugar retrieval real e safety real ao fluxo principal;
-4. expandir compatibilidade pública só onde o frontend/Admin realmente exigirem;
-5. validar frontend/Admin;
-6. cortar tráfego;
-7. renomear `ai-service-v2` para `ai-service`;
-8. remover legado.
+1. decidir a estratégia final de streaming público sob safety, incluindo se haverá guardrails incrementais para liberar deltas ao vivo;
+2. convergir ou simplificar o fluxo compatível `/api/chat/send-stream`, reduzindo lógica de compatibilidade espalhada na `ChatFacade`;
+3. consolidar prompt ownership além do catálogo file-backed inicial;
+4. expandir compatibilidade pública só onde o frontend/Admin realmente exigirem e substituir rotas ainda em scaffold;
+5. validar `web-ui` e `admin-panel` contra o `ai-service-v2`, com atenção a SSE, payloads e telemetria;
+6. testar o runtime novo com provider real como caminho preferencial e endurecer o uso do fallback legado;
+7. endurecer a trilha de `session-1` com testes e limpeza extra de adapters na borda compatível;
+8. cortar tráfego;
+9. renomear `ai-service-v2` para `ai-service`;
+10. remover legado.
 
 ## Deliverables
 
 - documento de arquitetura alvo;
 - estrutura inicial de `ai-service-v2`;
 - estado atual documentado da fundação arquitetural do `ai-service-v2`;
+- checklist validado do que ainda falta para a migração completa;
 - mapa de migração por módulo;
 - matriz de compatibilidade de rotas e payloads;
 - plano de rollout/rollback;

@@ -20,12 +20,14 @@ from ..application.retrieval.citations import CitationService
 from ..application.retrieval.rag_gateway import RAGGateway
 from ..application.retrieval.retrieval_policy import RetrievalPolicy
 from ..infrastructure.db.mongo import MongoManager
-from ..infrastructure.http.legacy_ai_client import LegacyAIClient, LegacyGatewayClient
+from ..infrastructure.http.legacy_ai_client import LegacyAIClient
 from ..infrastructure.http.voice_synthesis_service import VoiceSynthesisService
 from ..infrastructure.llm.langchain_openai_provider import LangChainOpenAIProvider
 from ..infrastructure.llm.legacy_adapter_provider import LegacyAdapterProvider
 from ..repositories.conversations import MongoConversationRepository
 from ..repositories.prompts import FilePromptRepository
+from ..repositories.sessions import MongoSessionRepository
+from ..repositories.users import MongoUserRepository
 from .settings import Settings
 
 
@@ -36,8 +38,9 @@ class AppContainer:
     settings: Settings
     mongo: MongoManager
     conversation_repository: MongoConversationRepository
+    user_repository: MongoUserRepository
+    session_repository: MongoSessionRepository
     user_profile_service: UserProfileService
-    legacy_gateway_client: LegacyGatewayClient
     voice_synthesis_service: VoiceSynthesisService
     prompt_pipeline: PromptPipeline
     fallback_service: FallbackService
@@ -57,8 +60,9 @@ def build_container(settings: Settings) -> AppContainer:
     """Instantiate the dependency graph for the scaffold."""
     mongo = MongoManager(settings.mongodb_url, settings.mongodb_database)
     conversation_repository = MongoConversationRepository(mongo)
-    user_profile_service = UserProfileService(conversation_repository)
-    legacy_gateway_client = LegacyGatewayClient(settings.legacy_gateway_url)
+    user_repository = MongoUserRepository(mongo)
+    session_repository = MongoSessionRepository(mongo)
+    user_profile_service = UserProfileService(conversation_repository, user_repository)
     legacy_ai_client = LegacyAIClient(settings.legacy_ai_service_url)
     voice_synthesis_service = VoiceSynthesisService(settings.voice_service_url)
     prompts_dir = Path(__file__).resolve().parents[2] / "prompts"
@@ -89,12 +93,22 @@ def build_container(settings: Settings) -> AppContainer:
     rag_gateway = RAGGateway(settings.knowledge_service_url)
     citation_service = CitationService()
     session_context_service = SessionContextService(conversation_repository=conversation_repository)
-    next_session_service = NextSessionService()
-    registration_service = RegistrationService()
+    next_session_service = NextSessionService(
+        session_repository=session_repository,
+        user_profile_service=user_profile_service,
+    )
+    registration_service = RegistrationService(
+        conversation_repository=conversation_repository,
+        session_repository=session_repository,
+        user_profile_service=user_profile_service,
+        next_session_service=next_session_service,
+        voice_synthesis_service=voice_synthesis_service,
+    )
     agent_service = AgentService(
         prompt_pipeline=prompt_pipeline,
         retrieval_policy=retrieval_policy,
         rag_gateway=rag_gateway,
+        citation_service=citation_service,
         runtime_service=runtime_service,
         fallback_service=fallback_service,
         conversation_repository=conversation_repository,
@@ -106,12 +120,9 @@ def build_container(settings: Settings) -> AppContainer:
         settings=settings,
         conversation_repository=conversation_repository,
         user_profile_service=user_profile_service,
-        legacy_gateway_client=legacy_gateway_client,
         voice_synthesis_service=voice_synthesis_service,
-        runtime_service=runtime_service,
         agent_service=agent_service,
         session_context_service=session_context_service,
-        next_session_service=next_session_service,
         registration_service=registration_service,
     )
     stream_facade = StreamFacade(chat_facade=chat_facade)
@@ -120,8 +131,9 @@ def build_container(settings: Settings) -> AppContainer:
         settings=settings,
         mongo=mongo,
         conversation_repository=conversation_repository,
+        user_repository=user_repository,
+        session_repository=session_repository,
         user_profile_service=user_profile_service,
-        legacy_gateway_client=legacy_gateway_client,
         voice_synthesis_service=voice_synthesis_service,
         prompt_pipeline=prompt_pipeline,
         fallback_service=fallback_service,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, AsyncIterator
 
 from ...application.llm.structured_outputs import GenerationOutput
 from ..http.legacy_ai_client import LegacyAIClient
@@ -19,6 +19,10 @@ class LegacyAdapterProvider:
     def is_available(self) -> bool:
         """Return whether the legacy client is configured."""
         return self.client is not None
+
+    def supports_stream(self) -> bool:
+        """Return whether this provider has a provider-native stream implementation."""
+        return False
 
     async def generate(self, state: Any, prompt_payload: Any) -> GenerationOutput:
         """Generate through the current legacy ai-service contract."""
@@ -48,3 +52,12 @@ class LegacyAdapterProvider:
             model=raw_response.get("model", "legacy"),
             finish_reason="legacy_adapter",
         )
+
+    async def stream_generate(
+        self,
+        state: Any,
+        prompt_payload: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Expose a final-only streaming contract for compatibility in the runtime chain."""
+        result = await self.generate(state, prompt_payload)
+        yield {"type": "final", "output": result}

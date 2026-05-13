@@ -9,11 +9,9 @@ from datetime import UTC, datetime
 from typing import Any, AsyncGenerator
 
 from ...bootstrap.settings import Settings
-from ..llm.runtime_service import RuntimeService
 from ...repositories.conversations import MongoConversationRepository
 from ...services.streaming_utils import SentenceChunker, now_ms
 from ..orchestration.agent_service import AgentService
-from .next_session_service import NextSessionService
 from .registration_service import RegistrationService
 from .session_context_service import SessionContextService
 from .user_profile_service import UserProfileService
@@ -30,23 +28,17 @@ class ChatFacade:
         settings: Settings,
         conversation_repository: MongoConversationRepository,
         user_profile_service: UserProfileService,
-        legacy_gateway_client,
         voice_synthesis_service,
-        runtime_service: RuntimeService,
         agent_service: AgentService,
         session_context_service: SessionContextService,
-        next_session_service: NextSessionService,
         registration_service: RegistrationService,
     ) -> None:
         self.settings = settings
         self.conversation_repository = conversation_repository
         self.user_profile_service = user_profile_service
-        self.legacy_gateway_client = legacy_gateway_client
         self.voice_synthesis_service = voice_synthesis_service
-        self.runtime_service = runtime_service
         self.agent_service = agent_service
         self.session_context_service = session_context_service
-        self.next_session_service = next_session_service
         self.registration_service = registration_service
 
     async def start_conversation(
@@ -77,15 +69,12 @@ class ChatFacade:
         session_objective: dict[str, Any] | None = None,
         is_voice_mode: bool = False,
     ) -> dict[str, Any]:
-        """Process a chat message using Mongo ownership plus legacy AI runtime."""
+        """Process a chat message through the unified orchestration flow."""
         if self._is_registration_session(session_id):
-            return await self.legacy_gateway_client.send_message(
-                {
-                    "message": user_message,
-                    "session_id": session_id,
-                    "session_objective": session_objective,
-                    "is_voice_mode": is_voice_mode,
-                }
+            return await self.registration_service.handle_message(
+                session_id,
+                user_message,
+                is_voice_mode=is_voice_mode,
             )
 
         identity = await self.conversation_repository.resolve_conversation_ref(session_id, create=True)
@@ -104,44 +93,74 @@ class ChatFacade:
         if not session_objective:
             initial_prompt = await self.conversation_repository.get_initial_prompt(legacy_session_id)
 
-        ai_response_data = await self._get_ai_response(
-            user_message=user_message,
-            session_id=legacy_session_id,
-            username=username,
-            selected_voice=selected_voice,
-            voice_enabled=voice_enabled,
-            session_objective=session_objective,
-            initial_prompt=initial_prompt,
-            is_voice_mode=is_voice_mode,
-            chat_id=chat_id,
+        orchestration_result = await self.agent_service.chat(
+            {
+                "message": user_message,
+                "session_id": legacy_session_id,
+                "chat_id": chat_id,
+                "username": username,
+                "session_objective": session_objective,
+                "initial_prompt": initial_prompt,
+                "is_voice_mode": is_voice_mode,
+            }
         )
 
-        user_message_id = await self.conversation_repository.save_message(legacy_session_id, "user", user_message)
-        ai_message_id = await self.conversation_repository.save_message(
-            legacy_session_id,
-            "ai",
-            ai_response_data["response"],
-            ai_response_data.get("audio_url"),
-        )
-        await self.conversation_repository.update_message_count(legacy_session_id)
-
-        conversation_ended = self.session_context_service.detect_conversation_end(user_message)
         return {
             "success": True,
             "data": {
-                "chat_id": chat_id,
-                "session_id": legacy_session_id,
+                "chat_id": orchestration_result.get("chat_id") or chat_id,
+                "session_id": orchestration_result.get("session_id") or legacy_session_id,
                 "therapeutic_session_id": identity.get("therapeutic_session_id"),
-                "user_message": {"id": user_message_id, "content": user_message},
-                "ai_response": {
-                    "id": ai_message_id,
-                    "content": ai_response_data["response"],
-                    "audioUrl": ai_response_data.get("audio_url"),
-                    "provider": ai_response_data.get("provider", "unknown"),
-                    "model": ai_response_data.get("model", "unknown"),
+                "user_message": {
+                    "id": orchestration_result.get("user_message_id"),
+                    "content": user_message,
                 },
-                "conversation_ended": conversation_ended,
+                "ai_response": {
+                    "id": orchestration_result.get("ai_message_id"),
+                    "content": orchestration_result.get("response", ""),
+                    "audioUrl": orchestration_result.get("audio_url"),
+                    "provider": orchestration_result.get("provider", "unknown"),
+                    "model": orchestration_result.get("model", "unknown"),
+                },
+                "conversation_ended": orchestration_result.get("conversation_ended", False),
             },
+        }
+
+    async def generate_reply(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Use the architecture-first orchestration path for the unified endpoint."""
+        result = await self.agent_service.chat(payload)
+        return {
+            "response": result["response"],
+            "model": result["model"],
+            "session_id": result.get("session_id") or payload.get("session_id", "default"),
+            "username": result.get("username") or payload.get("username", "anonymous"),
+            "timestamp": datetime.now(UTC).isoformat(),
+            "provider": result["provider"],
+            "success": True,
+            "trace_id": result.get("trace_id") or payload.get("trace_id") or f"trace_{uuid.uuid4().hex}",
+            "chat_id": result.get("chat_id") or payload.get("chat_id"),
+            "migration": {
+                "phase": "langgraph-orchestration",
+                "node_trace": result.get("node_trace", []),
+                "warnings": result.get("warnings", []),
+                "user_message_id": result.get("user_message_id"),
+                "ai_message_id": result.get("ai_message_id"),
+                "audio_url": result.get("audio_url"),
+                "conversation_ended": result.get("conversation_ended", False),
+            },
+        }
+
+    async def generate_legacy_compat_reply(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Expose the old ai-service sync contract using the new orchestration path."""
+        result = await self.agent_service.chat(payload)
+        return {
+            "response": result.get("response", ""),
+            "model": result.get("model", "unconfigured"),
+            "session_id": result.get("session_id") or payload.get("session_id", "default"),
+            "username": result.get("username") or payload.get("username", "anonymous"),
+            "timestamp": datetime.now(UTC).isoformat(),
+            "provider": result.get("provider", "unconfigured"),
+            "success": True,
         }
 
     async def process_user_message_stream(
@@ -155,14 +174,12 @@ class ChatFacade:
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Process a voice message and emit SSE-ready events."""
         if self._is_registration_session(session_id):
-            async for event in self.legacy_gateway_client.stream_message(
-                {
-                    "message": user_message,
-                    "session_id": session_id,
-                    "session_objective": session_objective,
-                    "is_voice_mode": is_voice_mode,
-                    "client_metrics": client_metrics,
-                }
+            async for event in self._stream_registration_message(
+                session_id=session_id,
+                user_message=user_message,
+                is_voice_mode=is_voice_mode,
+                trace_id=trace_id,
+                client_metrics=client_metrics,
             ):
                 yield event
             return
@@ -384,82 +401,6 @@ class ChatFacade:
             },
         }
 
-    async def generate_reply(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Use the architecture-first orchestration path for the unified endpoint."""
-        result = await self.agent_service.chat(payload)
-        return {
-            "response": result["response"],
-            "model": result["model"],
-            "session_id": result.get("session_id") or payload.get("session_id", "default"),
-            "username": result.get("username") or payload.get("username", "anonymous"),
-            "timestamp": datetime.now(UTC).isoformat(),
-            "provider": result["provider"],
-            "success": True,
-            "trace_id": result.get("trace_id") or payload.get("trace_id") or f"trace_{uuid.uuid4().hex}",
-            "chat_id": result.get("chat_id") or payload.get("chat_id"),
-            "migration": {
-                "phase": "langgraph-orchestration",
-                "node_trace": result.get("node_trace", []),
-                "warnings": result.get("warnings", []),
-                "user_message_id": result.get("user_message_id"),
-                "ai_message_id": result.get("ai_message_id"),
-                "audio_url": result.get("audio_url"),
-                "conversation_ended": result.get("conversation_ended", False),
-            },
-        }
-
-    async def _get_ai_response(
-        self,
-        *,
-        user_message: str,
-        session_id: str,
-        username: str,
-        selected_voice: str,
-        voice_enabled: bool,
-        session_objective: dict[str, Any] | None,
-        initial_prompt: str | None,
-        is_voice_mode: bool,
-        chat_id: str | None,
-    ) -> dict[str, Any]:
-        """Build the AI request payload and call the legacy runtime."""
-        user_profile = await self.user_profile_service.get_user_profile(username)
-        conversation_history = await self.conversation_repository.get_context(session_id)
-        previous_session_context = await self.session_context_service.get_previous_context(session_id)
-
-        ai_request = {
-            "message": user_message,
-            "session_id": session_id,
-            "chat_id": chat_id,
-            "username": username,
-            "preferred_name": (user_profile or {}).get("preferred_name"),
-            "user_profile": user_profile,
-            "conversation_history": conversation_history,
-            "session_objective": session_objective,
-            "initial_prompt": initial_prompt,
-            "previous_session_context": previous_session_context,
-        }
-        ai_service_response = await self.runtime_service.chat(ai_request)
-        ai_response = ai_service_response.get("response", "").strip()
-        if not ai_response:
-            raise RuntimeError("AI Service retornou resposta vazia")
-
-        provider = ai_service_response.get("provider", "openai")
-        model = ai_service_response.get("model", "unknown")
-        audio_url = None
-        if voice_enabled and is_voice_mode:
-            audio_url = await self.voice_synthesis_service.generate_audio(ai_response, selected_voice, is_voice_mode)
-
-        return {
-            "response": ai_response,
-            "model": model,
-            "session_id": session_id,
-            "username": username,
-            "timestamp": ai_service_response.get("timestamp", datetime.now(UTC).isoformat()),
-            "provider": provider,
-            "audio_url": audio_url,
-            "voice_enabled": voice_enabled,
-            "selected_voice": selected_voice,
-        }
 
     async def _stream_tts_or_batch_chunk(
         self,
@@ -503,6 +444,86 @@ class ChatFacade:
             }
         elif stream_failed:
             logger.warning("Streaming TTS falhou e fallback batch por trecho nao gerou audio")
+
+    async def _stream_registration_message(
+        self,
+        *,
+        session_id: str,
+        user_message: str,
+        is_voice_mode: bool,
+        trace_id: str | None,
+        client_metrics: dict[str, Any] | None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        trace_id = trace_id or f"trace_{uuid.uuid4().hex}"
+        started_at = time.perf_counter()
+        identity = await self.conversation_repository.resolve_conversation_ref(session_id, create=True)
+        username = identity.get("username") or self.conversation_repository.extract_username(session_id)
+        if not username:
+            raise ValueError(f"Session ID invalido: {session_id}")
+
+        selected_voice, _ = await self.conversation_repository.get_voice_preferences(username)
+        result = await self.registration_service.handle_message(
+            session_id,
+            user_message,
+            is_voice_mode=is_voice_mode,
+        )
+        data = result.get("data") or {}
+        user_message_data = data.get("user_message") or {"content": user_message}
+        ai_response = data.get("ai_response") or {}
+
+        yield {
+            "event": "meta",
+            "data": {
+                "trace_id": trace_id,
+                "chat_id": data.get("chat_id") or identity.get("chat_id"),
+                "session_id": data.get("session_id") or identity.get("legacy_session_id") or session_id,
+                "therapeutic_session_id": data.get("therapeutic_session_id") or identity.get("therapeutic_session_id"),
+                "user_message": user_message_data,
+                "voice": selected_voice,
+                "streaming": True,
+                "client_metrics": client_metrics or {},
+                "started_at": datetime.now(UTC).isoformat(),
+            },
+        }
+        if ai_response.get("content"):
+            yield {
+                "event": "text_delta",
+                "data": {
+                    "delta": ai_response["content"],
+                    "trace_id": trace_id,
+                    "elapsed_ms": now_ms(started_at),
+                },
+            }
+        if is_voice_mode and ai_response.get("audioUrl"):
+            yield {
+                "event": "audio_url",
+                "data": {
+                    "audio_url": ai_response["audioUrl"],
+                    "trace_id": trace_id,
+                    "sequence": 0,
+                    "segment": False,
+                    "elapsed_ms": now_ms(started_at),
+                },
+            }
+
+        metrics = {
+            "gateway_total_ms": now_ms(started_at),
+            "first_text_delta_ms": now_ms(started_at),
+            "first_audio_chunk_ms": now_ms(started_at) if ai_response.get("audioUrl") else None,
+            "audio_chunks": 1 if ai_response.get("audioUrl") else 0,
+            "tts_stream_failed": False,
+            "client_metrics": client_metrics or {},
+        }
+        yield {"event": "metrics", "data": {"trace_id": trace_id, "metrics": metrics}}
+        yield {
+            "event": "done",
+            "data": {
+                "trace_id": trace_id,
+                "success": bool(result.get("success", True)),
+                "data": data,
+                "metrics": metrics,
+            },
+        }
 
     @staticmethod
     def _is_registration_session(session_id: str) -> bool:

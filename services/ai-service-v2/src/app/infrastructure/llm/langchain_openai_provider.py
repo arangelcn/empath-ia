@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, AsyncIterator
 
 try:
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -39,6 +39,10 @@ class LangChainOpenAIProvider:
         """Return whether LangChain/OpenAI runtime is configured."""
         return ChatOpenAI is not None and bool(self.api_key)
 
+    def supports_stream(self) -> bool:
+        """Return whether this provider supports native streaming."""
+        return self.is_available()
+
     async def generate(self, state: Any, prompt_payload: Any) -> GenerationOutput:
         """Generate the assistant response through ChatOpenAI."""
         if not self.is_available():
@@ -64,6 +68,55 @@ class LangChainOpenAIProvider:
             model=self.model,
             finish_reason="langchain_openai",
         )
+
+    async def stream_generate(
+        self,
+        state: Any,
+        prompt_payload: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Generate provider-native streaming chunks through ChatOpenAI."""
+        if not self.is_available():
+            yield {
+                "type": "final",
+                "output": GenerationOutput(
+                    text="",
+                    provider=self.name,
+                    model=self.model,
+                    finish_reason="provider_unavailable",
+                ),
+            }
+            return
+
+        llm = ChatOpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            model=self.model,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
+        messages = self._build_messages(prompt_payload, state)
+        chunks: list[str] = []
+        async for chunk in llm.astream(messages):
+            delta = self._extract_content(getattr(chunk, "content", ""))
+            if not delta:
+                continue
+            chunks.append(delta)
+            yield {
+                "type": "delta",
+                "delta": delta,
+                "provider": self.name,
+                "model": self.model,
+            }
+
+        yield {
+            "type": "final",
+            "output": GenerationOutput(
+                text="".join(chunks),
+                provider=self.name,
+                model=self.model,
+                finish_reason="langchain_openai_stream",
+            ),
+        }
 
     def _build_messages(self, prompt_payload: Any, state: Any) -> list[Any]:
         """Normalize prompt payloads into LangChain messages."""
@@ -126,3 +179,18 @@ class LangChainOpenAIProvider:
             return "Sem citacoes disponiveis."
         indexes = ", ".join(f"[{citation['index']}]" for citation in citations)
         return f"Se usar o contexto recuperado, cite explicitamente {indexes}."
+
+    def _extract_content(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            return "".join(parts)
+        return str(content or "")

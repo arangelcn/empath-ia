@@ -9,7 +9,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ...bootstrap.dependencies import AppContainer, get_container
-from ...services.streaming_utils import sse_event
 
 
 router = APIRouter(prefix="/openai", tags=["openai-compat"])
@@ -42,7 +41,7 @@ async def chat(
 ) -> dict[str, Any]:
     """Expose the legacy non-streaming ai-service contract via the new boundary."""
     try:
-        return await container.runtime_service.chat(request.model_dump())
+        return await container.chat_facade.generate_legacy_compat_reply(request.model_dump())
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Erro interno do servidor") from exc
 
@@ -54,18 +53,8 @@ async def stream_chat(
 ) -> StreamingResponse:
     """Expose the legacy streaming ai-service contract via the new boundary."""
 
-    async def event_stream():
-        try:
-            async for event in container.runtime_service.stream_chat(request.model_dump()):
-                yield sse_event(event["event"], event["data"])
-        except Exception:
-            yield sse_event(
-                "error",
-                {"error": "Erro interno no stream", "trace_id": request.trace_id},
-            )
-
     return StreamingResponse(
-        event_stream(),
+        container.stream_facade.stream_legacy_openai_compat(request.model_dump()),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
