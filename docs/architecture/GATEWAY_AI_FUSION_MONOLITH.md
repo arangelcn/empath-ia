@@ -1,17 +1,29 @@
 # Refactor Plan: Gateway + AI Service Fusion
 
-Status: in progress.
+> **Status: ✅ concluído (pós-migração).**
+>
+> O `gateway-service` e o `ai-service` legado foram fundidos em um único `ai-service` unificado (monólito modular). Este documento agora serve como registro histórico da decisão arquitetural e do processo de migração. Para a arquitetura atual, consulte `CODEBASE_MAP.md` e `TECHNICAL.md`.
 
-## Objective
+## Objetivo Original
 
 Fundir `gateway-service` e `ai-service` em um monólito organizado, simples de operar e com fronteiras internas claras, sem quebrar os contratos atuais com `web-ui` e `admin-panel`.
 
-A direção preferida é:
+A direção seguida foi:
 
 1. levar as responsabilidades do `ai-service` para dentro do `gateway-service`;
 2. estabilizar o sistema unificado com compatibilidade de contratos;
 3. renomear o boundary resultante para `ai-service`;
 4. remover os serviços legados antigos com segurança.
+
+## Resultado Final
+
+- ✅ `gateway-service` removido do compose/deploy
+- ✅ `ai-service` legado removido
+- ✅ `ai-service-v2` renomeado para `ai-service` (porta 8001)
+- ✅ Contratos externos estáveis (web-ui e admin-panel sem quebras)
+- ✅ `LegacyAdapterProvider` removido da cadeia de runtime
+- ✅ Trilha de `session-1` internalizada e testada
+- ✅ Validação end-to-end completa em `8001`
 
 ## Why This Refactor
 

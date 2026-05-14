@@ -149,7 +149,7 @@ export default function MyComponent({ username, onLogout }: Props) {
 
 ---
 
-## 3. How to Add an Endpoint in Gateway
+## 3. How to Add an Endpoint in AI Service
 
 ### Step by Step
 
@@ -161,7 +161,7 @@ class MyNewRequest(BaseModel):
     payload: Optional[Dict[str, Any]] = None
 ```
 
-**2. Add the endpoint** in `main.py` (inline routes) or in a router under `src/api/`:
+**2. Add the endpoint** in `main.py` (inline routes) or in a router under `src/app/api/public/` or `src/app/api/admin/`:
 
 ```python
 @app.post("/api/my-feature/{param}")
@@ -192,15 +192,15 @@ export const myNewFunction = async (param, payload) => {
 
 ## 4. How to Add a New Domain Service
 
-A domain service is a Python class under `services/gateway-service/src/services/`.
+A domain service is a Python class under `services/ai-service/src/app/application/` (for use cases) or `services/ai-service/src/app/infrastructure/` (for infrastructure).
 
-**1. Create file** `src/services/my_service.py`:
+**1. Create file** `src/app/application/my/my_service.py`:
 
 ```python
 from datetime import datetime
 import logging
 
-from ..models.database import get_collection
+from ...infrastructure.db import get_collection
 
 logger = logging.getLogger(__name__)
 
@@ -226,10 +226,10 @@ class MyService:
         return await collection.find_one({"_id": item_id})
 ```
 
-**2. Instantiate in `main.py`:**
+**2. Register in the dependency container** (`src/app/bootstrap/dependencies.py`):
 
 ```python
-from .services.my_service import MyService
+from ..application.my.my_service import MyService
 
 my_service = MyService()
 ```
@@ -480,7 +480,7 @@ feat: add sentiment analysis endpoint
 fix: correct audio_url rewrite in voice proxy
 docs: update API reference with new emotion endpoints
 refactor: extract session_id logic into helper
-chore: update gateway service dependencies
+chore: update ai-service dependencies
 test: add tests for UserTherapeuticSessionService
 ```
 
@@ -498,7 +498,6 @@ refactor/what-you-are-refactoring
 - PRs to `main` trigger full CI/CD pipeline
 - Images are built and deployed automatically to GKE Autopilot
 - Verify `GET /health/all` in production after deploy
-
 ---
 
 *Last updated: April 2026*

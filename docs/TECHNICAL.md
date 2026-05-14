@@ -25,48 +25,68 @@
 
 | Serviço | Porta | Runtime | Responsabilidade |
 |---------|-------|---------|------------------|
-| `gateway-service` | 8000 | Python 3.11 + FastAPI | Ponto único de entrada: roteamento, auth, chat, sessões, proxy para microserviços |
-| `ai-service` | 8001 | Python 3.11 + FastAPI | Respostas terapêuticas via Gemma local/GGUF como padrão, fallback OpenAI, geração de contexto e próxima sessão |
+| `ai-service` | 8001 | Python 3.11 + FastAPI | **Backend unificado**: ponto único de entrada (auth, roteamento, chat, sessões, orquestração, geração terapêutica via Gemma local/GGUF, fallback OpenAI, RAG, proxy para microserviços) |
 | `emotion-service` | 8003 | TensorFlow 2.13 GPU | Análise emocional facial (DeepFace, MediaPipe) e de vídeo |
-| `voice-service` | 8004 | Python 3.11 + FastAPI | Text-to-Speech via Google Cloud TTS; arquivos de áudio servidos via gateway |
+| `voice-service` | 8004 | Python 3.11 + FastAPI | Text-to-Speech via Google Cloud TTS; arquivos de áudio servidos via ai-service |
 | `knowledge-service` | 8005 | Python 3.11 + FastAPI | Fundação do RAG controlado pelo Admin: lifecycle de documentos, contrato de retrieval, proveniência e futura indexação |
 | `web-ui` | 3000→7860 | Node 18 → nginx | Frontend principal do usuário (React + Vite) |
 | `admin-panel` | 3000→3001 | Node 18 → nginx | Painel administrativo do terapeuta (React + Vite) |
 | `mongodb` | 27017 | MongoDB 7 | Banco de dados principal |
-| `redis` | 6379 | Redis 7 | Cache e filas (AI service) |
+| `redis` | 6379 | Redis 7 | Cache e filas |
 | `qdrant` | 6333 | Qdrant | Vector store local planejado para embeddings do Knowledge Service |
 
 ### Dependências entre serviços
 
 ```
-browser → web-ui (nginx) → /api/* proxy → gateway:8000
-browser → admin-panel (nginx) → /api/* proxy → gateway:8000
-gateway → ai-service:8001
-gateway → voice-service:8004
-gateway → emotion-service:8003
-gateway → knowledge-service:8005
-gateway → mongodb:27017
+browser → web-ui (nginx) → /api/* proxy → ai-service:8001
+browser → admin-panel (nginx) → /api/* proxy → ai-service:8001
+ai-service → voice-service:8004
+ai-service → emotion-service:8003
+ai-service → knowledge-service:8005
 ai-service → mongodb:27017
 ai-service → redis:6379
 knowledge-service → mongodb:27017
 knowledge-service → qdrant:6333
 ```
 
-### Gateway refatorado
+### Arquitetura do AI Service (monólito modular)
 
-O `gateway-service` agora mantém `main.py` como composição do app: CORS, startup/shutdown, índices, auto-inicialização de prompts e inclusão de routers. As responsabilidades HTTP ficam em `src/api/*.py` e `src/api/admin_*.py`.
+O `ai-service` é o backend unificado resultante da fusão do antigo `gateway-service` + `ai-service`. Toda a lógica de gateway (auth, roteamento, sessões, proxy) e de IA (LLM, orquestração, RAG) roda em um único serviço, eliminando HTTP interno e dependências cíclicas.
 
-Peças principais:
-- `src/api/chat.py`: envio, streaming, histórico e abertura de conversa.
-- `src/api/chat_context.py`: mensagem inicial, finalização, contexto e título.
-- `src/api/users.py`: usuário, preferências e login.
-- `src/api/sessions.py`: templates terapêuticos e sessões por usuário.
-- `src/api/voice.py`: proxy para Voice Service.
-- `src/api/admin_*.py`: rotas administrativas separadas por domínio.
-- `src/domain/conversation_identity.py`: compatibilidade entre `chat_id`, `legacy_session_id`, `username` e `therapeutic_session_id`.
-- `src/services/registration_service.py`, `session_context_service.py`, `next_session_service.py`, `voice_synthesis_service.py`, `chat_title_service.py` e `user_profile_service.py`: responsabilidades extraídas do antigo `ChatService`.
+**Estrutura de pastas (`services/ai-service/src/app/`):**
 
-O `UserTherapeuticSessionService` garante `session-1` de forma idempotente quando a jornada do usuário é lida. Isso evita Home vazia para usuários que chegam em `/api/user/{username}/sessions` antes de passar pelo endpoint de login.
+```
+app/
+├── api/                    # Camada de transporte HTTP
+│   ├── public/             # Rotas públicas (auth, chat, user, sessions, voice, emotions, prompts)
+│   ├── admin/              # Rotas administrativas (dashboard, users, sessions, knowledge, conversations)
+│   ├── internal/           # Rotas internas (health, compatibilidade, LLM, OpenAI compat)
+│   ├── security.py         # JWT, verificação de tokens
+│   ├── shared.py           # Utilitários compartilhados
+│   └── proxying.py         # Proxy para microserviços
+├── application/            # Casos de uso / orquestração
+│   ├── chat/               # Chat facade, stream, session context, next session, user profile
+│   ├── llm/                # Runtime LLM, prompt pipeline, fallback, structured outputs
+│   ├── orchestration/      # LangGraph: agent_service, graph_state, nós (input, context, retrieval, generation, safety, persistence, response)
+│   └── retrieval/          # RAG: rag_gateway, retrieval_policy, citations
+├── domain/                 # Modelos de domínio puros
+│   ├── conversations/      # Models e identity
+│   ├── prompts/            # Model de prompts
+│   ├── safety/             # Model de segurança
+│   ├── sessions/           # Model de sessões
+│   └── users/              # Models de usuário, display
+├── infrastructure/         # Adaptadores externos
+│   ├── db/                 # MongoDB
+│   ├── http/               # HTTP clients para microserviços (emotion, voice, knowledge)
+│   ├── llm/                # Providers LLM (base, langchain_openai)
+│   ├── cache/              # Cache (Redis)
+│   └── observability/      # Telemetria, logging
+├── repositories/           # Acesso a dados (conversations, prompts, sessions, users)
+├── bootstrap/              # DI, lifespan, settings, logging
+└── services/               # Utilitários transversais (streaming_utils)
+```
+
+**Compatibilidade:** O módulo `app/api/internal/` inclui `legacy_ai_compat.py` e `compatibility.py` que mantêm contratos antigos para transição suave. O `UserTherapeuticSessionService` garante `session-1` de forma idempotente.
 
 ### Decisão RAG / Knowledge Service
 
@@ -156,18 +176,24 @@ Copie `.env.example` para `.env`. Variáveis marcadas com ⚠️ são obrigatór
 | `WEB_UI_PORT` | Porta exposta do Web UI. Padrão: `7860` |
 | `ADMIN_PANEL_PORT` | Porta exposta do Admin. Padrão: `3001` |
 
-### Gateway
+### AI Service (backend unificado)
 
-| Variável | Descrição |
-|----------|-----------|
-| `GATEWAY_PORT` | Porta do gateway. Padrão: `8000` |
-| `ALLOWED_ORIGINS` | CORS. Ex.: `https://app.empat-ia.io,https://admin.empat-ia.io` |
-| `LOG_LEVEL` | Nível de log. Padrão: `INFO` |
-| `DEBUG` | Modo debug. Padrão: `false` |
-| `AI_SERVICE_URL` | URL interna do AI service. Padrão: `http://ai-service:8001` |
-| `VOICE_SERVICE_URL` | URL interna do Voice service. Padrão: `http://voice-service:8004` |
-| `EMOTION_SERVICE_URL` | URL interna do Emotion service. Padrão: `http://emotion-service:8003` |
-| `KNOWLEDGE_SERVICE_URL` | URL interna do Knowledge service. Padrão: `http://knowledge-service:8005` |
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `AI_SERVICE_PORT` | — | Porta do AI Service. Padrão: `8001` |
+| `ALLOWED_ORIGINS` | — | CORS. Ex.: `https://app.empat-ia.io,https://admin.empat-ia.io` |
+| `LOG_LEVEL` | — | Nível de log. Padrão: `INFO` |
+| `DEBUG` | — | Modo debug. Padrão: `false` |
+| `VOICE_SERVICE_URL` | — | URL interna do Voice service. Padrão: `http://voice-service:8004` |
+| `EMOTION_SERVICE_URL` | — | URL interna do Emotion service. Padrão: `http://emotion-service:8003` |
+| `KNOWLEDGE_SERVICE_URL` | — | URL interna do Knowledge service. Padrão: `http://knowledge-service:8005` |
+| `LLM_BASE_URL` | — | URL base do LLM provider. Ex.: `http://127.0.0.1:1234/v1` (LM Studio) |
+| `OPENAI_API_KEY` | — | Chave da API OpenAI (ou compatível). Usada como fallback. |
+| `OPENAI_ENDPOINT` | — | Endpoint OpenAI-compatible. |
+| `OPENAI_MODEL` | — | Modelo OpenAI-compatible. Padrão: `gpt-3.5-turbo` |
+| `TEMPERATURE` | — | Temperatura do LLM. Padrão: `0.7` |
+| `MAX_TOKENS` | — | Máximo de tokens por resposta. Padrão: `2048` |
+| `MODEL_NAME` | — | Nome do modelo principal. Ex.: `google/gemma-4-e4b` |
 
 ### Knowledge Service
 
@@ -180,9 +206,9 @@ Copie `.env.example` para `.env`. Variáveis marcadas com ⚠️ são obrigatór
 | `QDRANT_URL` | URL interna do Qdrant para o futuro vector store. Padrão: `http://qdrant:6333`. |
 | `QDRANT_PORT` | Porta local do Qdrant em desenvolvimento. Padrão: `6333`. |
 
-## 3. API Reference — Gateway
+## 3. API Reference — AI Service
 
-Base URL: `http://localhost:8000` (dev) · `https://api.empat-ia.io` (prod)
+Base URL: `http://localhost:8001` (dev) · `https://api.empat-ia.io` (prod)
 
 Documentação interativa: `GET /docs` (Swagger) · `GET /redoc`
 
@@ -227,7 +253,7 @@ GET  /api/chat/initial-message/{session_id}
      Gera a primeira mensagem de uma sessão (sem input do usuário).
 
 POST /api/chat/finalize/{session_id}
-     Finaliza a sessão: gera contexto estruturado via AI Service e cria próxima sessão.
+     Finaliza a sessão: gera contexto estruturado via orquestrador e cria próxima sessão.
      → { "success": true, "data": { "context": {...}, "session_completed": true } }
 
 GET  /api/chat/context/{session_id}
@@ -312,7 +338,21 @@ GET /api/admin/session-contexts
 GET /api/admin/user-sessions
 ```
 
----
+### Health — `/api/health`
+
+```
+GET /api/health              → saúde do ai-service
+GET /api/health/all          → saúde agregada (ai-service + dependências)
+```
+
+### OpenAI Compat (interno)
+
+```
+POST /openai/chat          → geração de mensagem (compatível com OpenAI Chat Completions)
+POST /openai/chat/stream   → streaming de tokens (SSE)
+```
+
+Estas rotas internas são usadas pelo próprio ai-service para abstrair o provider LLM (local ou OpenAI).
 
 ## 4. Schema do Banco de Dados
 
@@ -452,9 +492,9 @@ GET /api/admin/user-sessions
 2. Usuário clica "Fazer Login com o Google" → popup Google
 3. Google retorna ID Token (JWT assinado pelo Google)
 4. Frontend envia: POST /api/auth/google { "credential": "<id_token>" }
-5. Gateway verifica assinatura com chaves públicas Google (google-auth lib)
-6. Gateway faz upsert do usuário no MongoDB (por google_id ou email)
-7. Gateway emite JWT próprio assinado com SECRET_KEY
+5. AI Service verifica assinatura com chaves públicas Google (google-auth lib)
+6. AI Service faz upsert do usuário no MongoDB (por google_id ou email)
+7. AI Service emite JWT próprio assinado com SECRET_KEY
 8. Frontend armazena JWT em localStorage ("empatia_access_token")
 9. Todas as requisições seguintes incluem: Authorization: Bearer <jwt>
 ```
@@ -478,7 +518,7 @@ Webcam frame (base64)
     ↓
 POST /api/emotion/analyze-realtime
     ↓
-Gateway → Emotion Service (porta 8003)
+AI Service → Emotion Service (porta 8003)
     ↓
 DeepFace.analyze(frame, actions=["emotion"])   ← detecção facial
     +
@@ -486,7 +526,7 @@ MediaPipe FaceMesh                              ← landmarks
     ↓
 { dominant_emotion, emotions: {alegria: 0.87, ...}, confidence, face_detected }
     ↓
-Gateway salva em user_emotions (async, não bloqueia resposta)
+AI Service salva em user_emotions (async, não bloqueia resposta)
     ↓
 Frontend exibe EmotionBadge na interface
 ```
@@ -500,9 +540,9 @@ Frontend exibe EmotionBadge na interface
 
 ### Integração com IA
 
-O contexto enviado ao AI Service inclui os dados emocionais da sessão:
+O contexto enviado ao orquestrador inclui os dados emocionais da sessão:
 ```python
-# em chat_service.py
+# em chat_facade.py / orchestration
 context["emotions_summary"] = await get_emotion_summary(username, session_id)
 ```
 
@@ -527,7 +567,7 @@ context["emotions_summary"] = await get_emotion_summary(username, session_id)
 ```
 POST /api/voice/speak { "text": "...", "voice": "pt-BR-Neural2-B" }
     ↓
-Gateway → Voice Service
+AI Service → Voice Service
     ↓
 Google Cloud TTS API
     ↓
@@ -535,27 +575,27 @@ Arquivo MP3 salvo em /data/tts_output/output_{hash}.mp3
     ↓
 Voice Service retorna: { "audio_url": "/api/v1/audio/output_{hash}.mp3" }
     ↓
-Gateway reescreve para: { "audio_url": "/api/voice/audio/output_{hash}.mp3" }
+AI Service reescreve para: { "audio_url": "/api/voice/audio/output_{hash}.mp3" }
     ↓
 Frontend faz GET /api/voice/audio/{filename} e reproduz
 ```
 
-**Por que reescrever a URL?** O browser não tem acesso direto à porta 8004 do Voice Service — o gateway atua como proxy para o arquivo de áudio.
+**Por que reescrever a URL?** O browser não tem acesso direto à porta 8004 do Voice Service — o ai-service atua como proxy para o arquivo de áudio.
 
 ### Fluxo de baixa latência para modo de voz
 
 ```
 browser → POST /api/chat/send-stream
     ↓
-Gateway emite SSE meta + text_delta
+AI Service emite SSE meta + text_delta
     ↓
-AI Service → /openai/chat/stream com stream=True no OpenAI ou llama.cpp local
+Orquestrador → /openai/chat/stream com stream=True (LLM local ou OpenAI)
     ↓
-Gateway agrega deltas em frases curtas
+AI Service agrega deltas em frases curtas
     ↓
 Voice Service → /api/v1/synthesize-stream com GCP Chirp 3 HD
     ↓
-Gateway emite audio_chunk PCM base64
+AI Service emite audio_chunk PCM base64
     ↓
 Frontend enfileira PCM em AudioContext
 ```
@@ -570,11 +610,11 @@ Eventos SSE principais:
 | `text_delta` | Trechos incrementais da resposta para atualizar a bolha de chat. |
 | `audio_chunk` | PCM base64 com `sequence`, `sample_rate_hz` e `encoding`. |
 | `audio_url` | Fallback MP3/WAV. Pode ser segmentado por frase (`segment: true`) quando streaming TTS falha, ou final quando nenhum trecho foi gerado. |
-| `metrics` | Baseline de latência por etapa: primeiro texto, primeiro áudio, total gateway/AI. |
+| `metrics` | Baseline de latência por etapa: primeiro texto, primeiro áudio, total. |
 | `done` | Resultado final persistido no histórico. |
 | `error` | Erro recuperável ou fatal do stream. |
 
-O AI Service streama tokens tanto com OpenAI quanto com o modelo local GGUF via `llama-cpp-python` (`create_chat_completion(..., stream=True)`). O caminho validado atualmente usa Gemma local como provider primário:
+O orquestrador streama tokens tanto com OpenAI quanto com o modelo local GGUF via `llama-cpp-python` (`create_chat_completion(..., stream=True)`). O caminho validado atualmente usa Gemma local como provider primário:
 
 ```json
 {
@@ -592,28 +632,28 @@ Validação local de referência:
 | Etapa | Resultado observado |
 |---|---|
 | AI Service `/openai/chat/stream` | Gemma local retornou múltiplos `text_delta`; primeiro delta em ~993ms. |
-| Gateway `/api/chat/send-stream` | `text_delta` + `audio_chunk`; primeiro texto em ~1070ms e primeiro áudio em ~1742ms. |
+| AI Service `/api/chat/send-stream` | `text_delta` + `audio_chunk`; primeiro texto em ~1070ms e primeiro áudio em ~1742ms. |
 | Voice Service `/api/v1/synthesize-stream` | Chirp 3 HD respondeu `200 OK`, PCM 24kHz, `x-voice-used: pt-BR-Chirp3-HD-Orus`. |
 
 O alvo de primeiro áudio `< 800ms` continua sendo meta de otimização. A v1 validada garante streaming funcional e fallback sem aguardar a resposta completa.
 
 Chunking:
 
-- O Gateway faz flush imediato em pontuação de fim de frase.
+- O AI Service faz flush imediato em pontuação de fim de frase.
 - Flush por tamanho usa `VOICE_CHUNK_MAX_CHARS`.
 - Flush por tempo usa `VOICE_CHUNK_MAX_WAIT_MS`, mas exige trecho mínimo falável por `VOICE_CHUNK_MIN_TIMED_CHARS` e `VOICE_CHUNK_MIN_TIMED_WORDS`.
 - Essa trava evita o fallback batch falando uma palavra por vez quando o TTS streaming está indisponível ou lento.
 
 Personalização de nome em voz:
 
-- O AI Service pode receber `display_name`/`full_name`, mas o prompt instrui que o tratamento use somente o primeiro nome.
+- O orquestrador pode receber `display_name`/`full_name`, mas o prompt instrui que o tratamento use somente o primeiro nome.
 - Exemplo: `Toni Neto` deve ser tratado como `Toni`.
 - E-mails, usernames e ids técnicos não devem ser usados como forma de tratamento.
 
 Fallbacks:
 
-- Se o stream de áudio falhar, o gateway mantém o texto e tenta gerar áudio batch.
-- Quando o stream de áudio falha em um trecho, o gateway sintetiza aquele trecho imediatamente e envia `audio_url` segmentado; o frontend enfileira esses arquivos para não esperar a resposta inteira.
+- Se o stream de áudio falhar, o ai-service mantém o texto e tenta gerar áudio batch.
+- Quando o stream de áudio falha em um trecho, o ai-service sintetiza aquele trecho imediatamente e envia `audio_url` segmentado; o frontend enfileira esses arquivos para não esperar a resposta inteira.
 - Se o GCP TTS falhar e `TTS_LOCAL_PROVIDER=piper` estiver configurado com `PIPER_MODEL_PATH`, o Voice Service tenta gerar WAV local com Piper.
 - Cache Redis de TTS só é usado para frases genéricas em `TTS_CACHE_ALLOWLIST`; conteúdo pessoal de conversa não entra em cache.
 
@@ -640,9 +680,9 @@ Limitações atuais:
    → perfil estruturado salvo em users.user_profile
 
 3. POST /api/chat/finalize/{session_id}
-   → AI Service gera contexto estruturado (summary, temas, insights, estado emocional)
+   → Orquestrador gera contexto estruturado (summary, temas, insights, estado emocional)
    → salvo em session_contexts
-   → AI Service gera session-2 personalizada
+   → Orquestrador gera session-2 personalizada
    → session-2 desbloqueada
 
 4. Sessões 2+ repetem o ciclo com contexto acumulado
@@ -650,7 +690,7 @@ Limitações atuais:
 
 ### Geração automática de sessões
 
-O AI Service recebe:
+O orquestrador recebe:
 - Contexto da sessão anterior (`session_contexts`)
 - Perfil do usuário (`users.user_profile`)
 - Dados emocionais (`user_emotions`)
@@ -674,7 +714,7 @@ E gera:
 Ex: toni.rc.neto@gmail.com_session-2
 ```
 
-O gateway extrai `username` e `session_id` a partir do separador `_session-`.
+O ai-service extrai `username` e `session_id` a partir do separador `_session-`.
 
 ---
 
@@ -689,7 +729,7 @@ O sistema de prompts permite que o terapeuta configure o comportamento da IA via
 | `system` | `system_rogers` | Prompt principal do terapeuta (abordagem Rogers, tom, limites) |
 | `session_generation` | `next_session_generation` | Instrução para gerar próximas sessões |
 | `session_generation` | `session_context_analysis` | Instrução para gerar contexto estruturado |
-| `fallback` | `fallback_default` | Resposta quando OpenAI não está disponível |
+| `fallback` | `fallback_default` | Resposta quando LLM não está disponível |
 | `fallback` | `fallback_goodbye` | Resposta automática para despedidas |
 | `fallback` | `fallback_anger` | Resposta automática para raiva |
 | `fallback` | `fallback_gratitude` | Resposta automática para gratidão |
@@ -705,7 +745,7 @@ Renderização: `POST /api/prompts/render/{key}` com `{ "username": "Toni", "the
 
 ### Sistema de fallback
 
-Se o prompt ativo não for encontrado no banco, o sistema usa o prompt hardcoded em `prompt_service.py`. Isso garante que a plataforma nunca fique sem resposta.
+Se o prompt ativo não for encontrado no banco, o sistema usa o prompt hardcoded no módulo de prompt pipeline. Isso garante que a plataforma nunca fique sem resposta.
 
 ---
 
@@ -719,8 +759,7 @@ Todos os manifests em `infrastructure/k8s/`:
 namespace.yaml          → namespace "empatia"
 configmap.yaml          → variáveis de configuração (inclui GOOGLE_CLIENT_ID)
 serviceaccount.yaml     → Workload Identity para acesso ao GCP
-gateway/                → deployment + service + HPA
-ai-service/
+ai-service/             → deployment + service + HPA
 voice-service/
 emotion-service/
 web-ui/
@@ -776,7 +815,7 @@ terraform apply
 # ingress.yaml
 app.empat-ia.io    → web-ui:3000
 admin.empat-ia.io  → admin-panel:3000
-api.empat-ia.io    → gateway:8000
+api.empat-ia.io    → ai-service:8001
 api.empat-ia.io/voice-service/* → voice-service:8004
 ```
 
@@ -811,8 +850,8 @@ docker compose --profile database up -d
 ### Recompilar imagem específica
 
 ```bash
-docker compose build gateway-service --no-cache
-docker compose up -d gateway-service
+docker compose build ai-service --no-cache
+docker compose up -d ai-service
 ```
 
 ### Acessar MongoDB diretamente (dev)
@@ -828,7 +867,7 @@ docker exec -it empatia-mongodb mongosh -u admin -p admin123 --authenticationDat
 ### Verificar saúde dos serviços
 
 ```bash
-curl http://localhost:8000/health/all
+curl http://localhost:8001/health/all
 ```
 
 ### Variáveis de build do frontend
@@ -843,4 +882,4 @@ No Docker Compose, `VITE_GOOGLE_CLIENT_ID` é passado como build arg a partir de
 
 ---
 
-*Última atualização: Maio 2026*
+*Última atualização: Maio 2026 — Pós-migração gateway → ai-service unificado*

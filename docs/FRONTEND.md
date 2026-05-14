@@ -78,7 +78,7 @@ O `username`/email continua sendo o identificador técnico. O nome salvo é usad
 - Carrega sessões e progresso via `GET /api/user/{username}/sessions` e `GET /api/user/{username}/progress`
 - Abre sessões usando `POST /api/user/{username}/sessions/{session_id}/start` quando necessário
 - Abre `/chat/{chat_id}` usando o identificador opaco retornado por `POST /api/chat/start`
-- A lista de sessões já vem com `session-1` garantida pelo gateway quando ainda não existe no banco
+- A lista de sessões já vem com `session-1` garantida pelo ai-service quando ainda não existe no banco
 - Exibe `displayName` quando disponível, sem alterar o identificador técnico
 
 #### `HomeScreen.jsx` (`components/Home/`)
@@ -119,7 +119,7 @@ O `username`/email continua sendo o identificador técnico. O nome salvo é usad
 6. POST /api/user/{username}/login → garante session-1
 7. Seleção de voz + nome completo → POST /api/user/preferences
 8. Redireciona para /home
-9. AuthenticatedShell carrega progresso e sessões; o gateway garante session-1 se ela ainda não existir
+9. AuthenticatedShell carrega progresso e sessões; o ai-service garante session-1 se ela ainda não existir
 10. POST /api/user/{username}/sessions/{session_id}/start
 11. POST /api/chat/start retorna `chat_id`; navega para `/chat/{chat_id}`
 12. ChatScreen carrega → GET /api/chat/initial-message/{full_session_id}
@@ -259,7 +259,7 @@ isPlaying()           // boolean
 
 | Chave | Onde é definida | Conteúdo |
 |-------|----------------|----------|
-| `empatia_access_token` | LoginScreen / AuthContext | JWT de sessão emitido pelo gateway |
+| `empatia_access_token` | LoginScreen / AuthContext | JWT de sessão emitido pelo ai-service |
 | `empatia_session_id` | App.jsx | ID de sessão legado (gerado localmente) |
 | `empatia_selected_voice` | App.jsx (handleLoginComplete) | ID da voz TTS selecionada |
 | `empatia_user_data` | App.jsx (handleLoginComplete) | JSON com dados do usuário Google |
@@ -275,7 +275,7 @@ isPlaying()           // boolean
 
 | Variável | Obrigatória | Descrição |
 |----------|-------------|-----------|
-| `VITE_API_URL` | ⚠️ | URL base da API. Dev: `http://localhost:8000`. Prod: `https://api.empat-ia.io` |
+| `VITE_API_URL` | ⚠️ | URL base da API. Dev: `http://localhost:8001`. Prod: `https://api.empat-ia.io` |
 | `VITE_GOOGLE_CLIENT_ID` | ⚠️ | OAuth Client ID para GIS. Em Docker, derivado de `GOOGLE_CLIENT_ID` via build arg |
 | `VITE_GOOGLE_REDIRECT_URI` | — | URI de redirect OAuth. Dev: `http://localhost:7860` |
 
@@ -283,7 +283,7 @@ isPlaying()           // boolean
 
 | Variável | Obrigatória | Descrição |
 |----------|-------------|-----------|
-| `VITE_API_URL` | ⚠️ | URL base da API. Dev: `http://localhost:8000`. Prod: `https://api.empat-ia.io` |
+| `VITE_API_URL` | ⚠️ | URL base da API. Dev: `http://localhost:8001`. Prod: `https://api.empat-ia.io` |
 | `VITE_GOOGLE_CLIENT_ID` | ⚠️ | OAuth Client ID para GIS |
 
 > **Atenção:** variáveis `VITE_*` são embutidas no bundle em tempo de build. Mudar o `.env` exige recompilar com `docker compose build`.
@@ -308,7 +308,7 @@ npm run dev        # http://localhost:5174 (ou porta configurada)
 
 Criar arquivo `.env.local` com:
 ```
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8001
 VITE_GOOGLE_CLIENT_ID=seu-client-id.apps.googleusercontent.com
 ```
 
@@ -330,14 +330,14 @@ docker compose build admin-panel
 
 As imagens usam multi-stage build:
 1. Stage `build` — Node 18, `npm run build`, gera `dist/`
-2. Stage final — nginx, serve `dist/` estático, proxy `/api/*` para o gateway
+2. Stage final — nginx, serve `dist/` estático, proxy `/api/*` para o ai-service
 
 ### nginx no container
 
-O nginx de cada frontend faz proxy de `/api/*` para o gateway. Configuração típica:
+O nginx de cada frontend faz proxy de `/api/*` para o ai-service. Configuração típica:
 ```nginx
 location /api/ {
-    proxy_pass http://gateway:8000;
+    proxy_pass http://ai-service:8001;
 }
 ```
 

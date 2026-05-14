@@ -109,24 +109,25 @@ Therapists can monitor all user sessions in real time: **completed**, **in progr
 └──────────────────────┬──────────────────────────────────┘
                        │ HTTPS
 ┌──────────────────────▼──────────────────────────────────┐
-│              API Gateway (FastAPI · Port 8000)         │
-│  api.empat-ia.io - chat, Google+JWT auth, sessions     │
+│           AI Service — Unified Backend (Port 8001)      │
+│  api.empat-ia.io - chat, auth, sessions, prompts, RAG   │
 └──┬──────────┬──────────┬──────────┬────────────┬────────┘
    │          │          │          │            │
 ┌──▼──┐  ┌───▼───┐  ┌───▼───┐  ┌──▼────┐  ┌───▼────┐
-│ AI  │  │ Voice │  │Emotion│  │Avatar │  │MongoDB │
-│8001 │  │ 8004  │  │ 8003  │  │ 8002  │  │  +Redis│
+│ LLM │  │ Voice │  │Emotion│  │Avatar │  │MongoDB │
+│local│  │ 8004  │  │ 8003  │  │ 8002  │  │  +Redis│
 └─────┘  └───────┘  └───────┘  └───────┘  └────────┘
 OpenAI    GCloud     DeepFace     DID.ai
  GPT       TTS       MediaPipe
 ```
 
+> O `gateway-service` e o `ai-service` legado foram fundidos em um único `ai-service` unificado (monólito modular). Contratos externos permanecem estáveis.
+
 | Layer | Technology |
 |------|------------|
 | **Frontend (Web UI)** | React 18, Vite, Tailwind CSS, Framer Motion, MUI |
 | **Frontend (Admin)** | React 18, Vite, Tailwind CSS, Recharts, Headless UI |
-| **API Gateway** | Python 3.11, FastAPI, Motor (async MongoDB), google-auth, python-jose |
-| **AI Service** | Python 3.11, FastAPI, OpenAI SDK |
+| **AI Service (unified)** | Python 3.11, FastAPI, Motor (async MongoDB), LangChain, LangGraph, google-auth, python-jose |
 | **Voice Service** | Python 3.11, FastAPI, Google Cloud TTS, librosa |
 | **Emotion Service** | TensorFlow 2.13 GPU, DeepFace, MediaPipe, OpenCV |
 | **Database** | MongoDB 7, Redis 7 |
@@ -228,7 +229,7 @@ The project runs on **GKE Autopilot** with automatic GitHub Actions deployment o
 ```
 app.empat-ia.io    -> Web UI
 admin.empat-ia.io  -> Admin panel
-api.empat-ia.io    -> Gateway API
+api.empat-ia.io    -> AI Service (unified backend)
 ```
 
 See infra, Terraform, and CI/CD pipeline details in [Technical Docs](docs/TECHNICAL.md).
@@ -243,7 +244,8 @@ See infra, Terraform, and CI/CD pipeline details in [Technical Docs](docs/TECHNI
 - **Chat session isolation hardened** - navigation and history preserve opaque user/session identifiers.
 - **Onboarding and profile completed** - full name, display name, and preferred voice integrated into authenticated experience.
 - **Google login restored in production** - `GOOGLE_CLIENT_ID` added to K8s ConfigMap; `/api/auth/google/status` deployed correctly.
-- **Audio proxy fix** - gateway rewrites `audio_url` to serve MP3 through `/api/voice/audio/`.
+- **Audio proxy fix** — ai-service now serves MP3 directly through `/api/voice/audio/`.
+- **Gateway + AI fusion completed** — `gateway-service` and legacy `ai-service` merged into unified `ai-service` monolith on port 8001.
 - **CI/CD stabilized** - managed HTTPS and certificates on GKE Autopilot.
 - **Terraform infra completed** - VPC, GKE, Secret Manager, DNS, and Artifact Registry.
 

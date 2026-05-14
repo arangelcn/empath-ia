@@ -14,9 +14,10 @@ Já foram entregues as bases de experiência e infraestrutura que sustentam as p
 - [x] Onboarding pós-Google OAuth para capturar nome completo quando ausente.
 - [x] Admin sem mocks silenciosos nas telas principais.
 - [x] Emotion Service estabilizado como sinal auxiliar, não diagnóstico.
-- [x] Streaming de voz v1 com SSE no Gateway, tokens em streaming no AI Service e áudio incremental no Voice Service.
+- [x] Streaming de voz v1 com SSE no AI Service, tokens em streaming e áudio incremental no Voice Service.
 - [x] Gemma/GGUF local validado como provider padrão para streaming.
 - [x] Fallback operacional para OpenAI, TTS batch e respostas curtas de voz.
+- [x] Fusão gateway-service + ai-service → ai-service unificado (monólito modular).
 
 Arquivos centrais já afetados:
 
@@ -26,11 +27,10 @@ Arquivos centrais já afetados:
 - `apps/web-ui/src/components/Chat/ChatScreen.tsx`
 - `apps/web-ui/src/hooks/useStreamingAudioQueue.js`
 - `apps/admin-panel/src/pages/`
-- `services/gateway-service/src/main.py`
-- `services/gateway-service/src/services/chat_service.py`
-- `services/gateway-service/src/services/prompt_service.py`
-- `services/ai-service/src/services/llm_service.py`
-- `services/ai-service/src/services/local_llm_service.py`
+- `services/ai-service/src/main.py`
+- `services/ai-service/src/app/application/chat/chat_facade.py`
+- `services/ai-service/src/app/application/llm/runtime_service.py`
+- `services/ai-service/src/app/application/orchestration/agent_service.py`
 - `services/voice-service/src/`
 - `services/emotion-service/src/`
 - `docs/TECHNICAL.md`
@@ -47,30 +47,30 @@ A próxima versão deve priorizar quatro linhas de evolução:
 
 ## Ordem de Execução Revisada
 
-- **Fase 1: simplificação arquitetural primeiro.** Antes de expandir RAG, evals e capacidades agênticas, reduzir o acoplamento entre `gateway-service` e `ai-service`.
+- **Fase 1: simplificação arquitetural primeiro.** A fusão do `gateway-service` + `ai-service` em um monólito unificado (`ai-service`) já foi concluída. O acoplamento foi removido.
 - **Fase 2: bibliotecas depois da simplificação.** LangChain, LangGraph e LlamaIndex entram quando ownership, contratos e caminhos críticos estiverem mais limpos.
 - **Fase 3: retomada do backlog já consolidado.** As tracks originais continuam válidas e ficam preservadas abaixo como backlog estruturado da próxima etapa.
 
 ## Track 0: Simplificação Arquitetural e Fusão Progressiva
 
-Objetivo: simplificar o sistema antes de expandi-lo. O primeiro foco passa a ser reduzir duplicação entre `gateway-service` e `ai-service`, remover dependências circulares e preparar uma fronteira de execução mais limpa para chat, contexto de sessão, prompts e fallback.
+**Status: ✅ concluída.** O `gateway-service` e o `ai-service` legado foram fundidos em um único `ai-service` unificado (monólito modular). Dependências cíclicas e chamadas HTTP internas foram eliminadas. Contratos externos permanecem estáveis.
+
+Objetivo original: simplificar o sistema antes de expandi-lo, reduzir duplicação entre `gateway-service` e `ai-service`, remover dependências circulares e preparar uma fronteira de execução mais limpa.
 
 ### Tarefa 0.1: Decisão de Fusão e Arquitetura Alvo
 
-- [ ] Mapear responsabilidades hoje divididas entre `gateway-service` e `ai-service`: chat, streaming, contexto de sessão, próxima sessão, prompts, fallback, cache e telemetria.
-- [ ] Definir a arquitetura alvo: serviço único, monólito modular ou boundary unificada com deploy separado temporário.
-- [ ] Escolher source of truth para prompts, contexto de sessão, política RAG, histórico e fallback.
-- [ ] Documentar dependências que devem deixar de existir no caminho crítico, especialmente HTTP interno entre Gateway e AI.
-- [ ] Definir estratégia de rollout e rollback para a fusão sem quebrar contratos externos já usados pelo frontend e Admin.
+- [x] Mapear responsabilidades hoje divididas entre `gateway-service` e `ai-service`: chat, streaming, contexto de sessão, próxima sessão, prompts, fallback, cache e telemetria.
+- [x] Definir a arquitetura alvo: monólito modular unificado sob `ai-service`.
+- [x] Escolher source of truth para prompts, contexto de sessão, política RAG, histórico e fallback.
+- [x] Documentar dependências que devem deixar de existir no caminho crítico, especialmente HTTP interno entre Gateway e AI.
+- [x] Definir estratégia de rollout e rollback para a fusão sem quebrar contratos externos já usados pelo frontend e Admin.
 
-Arquivos prováveis:
+Arquivos afetados:
 
-- `services/gateway-service/src/services/chat_service.py`
-- `services/gateway-service/src/services/session_context_service.py`
-- `services/ai-service/src/main.py`
-- `services/ai-service/src/api/chat_routes.py`
-- `services/ai-service/src/services/prompt_client_service.py`
-- `services/ai-service/src/services/llm_service.py`
+- `services/ai-service/src/app/application/chat/chat_facade.py`
+- `services/ai-service/src/app/application/llm/runtime_service.py`
+- `services/ai-service/src/app/application/orchestration/agent_service.py`
+- `services/ai-service/src/app/bootstrap/dependencies.py`
 - `docs/CODEBASE_MAP.md`
 - `docs/TECHNICAL.md`
 
@@ -82,21 +82,19 @@ Critérios de aceite:
 
 ### Tarefa 0.2: Fusão Progressiva por Ownership
 
-- [ ] Remover a dependência cíclica em que o `ai-service` busca prompts do `gateway-service`.
-- [ ] Consolidar chat síncrono, streaming, geração de contexto e fallback sob uma única camada de aplicação.
-- [ ] Eliminar chamadas HTTP internas em fluxos críticos sempre que o código puder rodar no mesmo boundary.
-- [ ] Unificar persistência e cache de contexto/sessão para evitar duplicação entre services.
-- [ ] Manter as rotas públicas estáveis durante a migração, com fachada compatível para web e Admin.
+- [x] Remover a dependência cíclica em que o `ai-service` buscava prompts do `gateway-service`.
+- [x] Consolidar chat síncrono, streaming, geração de contexto e fallback sob uma única camada de aplicação.
+- [x] Eliminar chamadas HTTP internas em fluxos críticos sempre que o código puder rodar no mesmo boundary.
+- [x] Unificar persistência e cache de contexto/sessão para evitar duplicação entre services.
+- [x] Manter as rotas públicas estáveis durante a migração, com fachada compatível para web e Admin.
 
-Arquivos prováveis:
+Arquivos afetados:
 
-- `services/gateway-service/src/services/chat_service.py`
-- `services/gateway-service/src/services/prompt_service.py`
-- `services/gateway-service/src/services/session_context_service.py`
-- `services/ai-service/src/main.py`
-- `services/ai-service/src/api/chat_routes.py`
-- `services/ai-service/src/services/prompt_client_service.py`
-- `services/ai-service/src/services/token_economy_service.py`
+- `services/ai-service/src/app/application/chat/chat_facade.py`
+- `services/ai-service/src/app/application/chat/stream_facade.py`
+- `services/ai-service/src/app/application/chat/session_context_service.py`
+- `services/ai-service/src/app/application/orchestration/agent_service.py`
+- `services/ai-service/src/app/infrastructure/db/`
 - `docker-compose.yml`
 
 Critérios de aceite:
@@ -533,7 +531,7 @@ Critérios de aceite:
 
 ### Tarefa 4.2: Gateway de Privacidade e Mascaramento de PII
 
-- [ ] Criar middleware de privacidade no `gateway-service`.
+- [ ] Criar middleware de privacidade no `ai-service`.
 - [ ] Detectar e mascarar PII antes de qualquer fallback externo.
 - [ ] Combinar Regex para padrões óbvios com NER local para nomes, endereços e entidades sensíveis.
 - [ ] Registrar quando houve mascaramento sem persistir o dado sensível em logs.
@@ -541,10 +539,9 @@ Critérios de aceite:
 
 Arquivos prováveis:
 
-- `services/gateway-service/src/main.py`
-- `services/gateway-service/src/middleware/`
-- `services/gateway-service/src/services/privacy_service.py`
-- `services/ai-service/src/services/llm_service.py`
+- `services/ai-service/src/app/api/internal/llm.py`
+- `services/ai-service/src/app/application/llm/fallback_service.py`
+- `services/ai-service/src/app/application/orchestration/nodes/safety_node.py`
 - `docs/TECHNICAL.md`
 
 Critérios de aceite:
@@ -564,8 +561,8 @@ Critérios de aceite:
 Arquivos prováveis:
 
 - `tests/evals/red_team/`
-- `services/gateway-service/src/services/chat_service.py`
-- `services/gateway-service/src/services/prompt_service.py`
+- `services/ai-service/src/app/application/chat/chat_facade.py`
+- `services/ai-service/src/app/application/orchestration/nodes/safety_node.py`
 - `apps/admin-panel/src/pages/Analytics.js`
 - `.github/workflows/`
 
@@ -581,16 +578,16 @@ Ordem recomendada para execução:
 
 ### Foco Primário (próximos 2 sprints)
 
-1. **Fusão progressiva Gateway + AI:** executar a Track 0 para reduzir acoplamento, remover HTTP interno e definir ownership único.
+1. **Fusão Gateway + AI concluída:** Track 0 finalizada — `gateway-service` e `ai-service` legados foram fundidos em `ai-service` unificado.
 2. **Implantação orientada de bibliotecas:** iniciar LangChain e LangGraph sobre a arquitetura simplificada, com avaliação objetiva de LlamaIndex no `knowledge-service`.
 3. **Retomada do backlog preservado:** seguir para Prompt Control + RAG runtime e evals mínimos obrigatórios depois da base simplificada.
 
 Entregáveis mínimos do foco primário:
 
-- [ ] Arquitetura alvo documentada para fusão progressiva de `gateway-service` e `ai-service`.
-- [ ] Dependência cíclica de prompts e chamadas HTTP internas críticas removida ou isolada por plano de migração explícito.
-- [ ] Camada LangChain definida para prompts, contexto e structured output dos fluxos principais.
-- [ ] `gateway-service` com fluxo legado + fluxo LangGraph com `LANGGRAPH_ENABLED`.
+- [x] Arquitetura alvo documentada para fusão progressiva de `gateway-service` e `ai-service`.
+- [x] Dependência cíclica de prompts e chamadas HTTP internas críticas removida ou isolada por plano de migração explícito.
+- [x] Camada LangChain definida para prompts, contexto e structured output dos fluxos principais.
+- [x] `ai-service` unificado com fluxo legado + fluxo LangGraph com `LANGGRAPH_ENABLED`.
 - [ ] Política de prompt (`enabled`, `allowed_scopes`, `top_k`, `min_confidence`, `require_citations`) aplicada em runtime.
 
 ### Backlog Secundário (após foco primário)
@@ -630,7 +627,7 @@ Entregáveis mínimos do foco primário:
 - [x] Início/finalização de sessão pela jornada terapêutica.
 - [x] Histórico e mensagens continuam isolados por usuário.
 - [x] Streaming local de texto com Gemma/GGUF.
-- [x] Streaming de áudio via Gateway e Voice Service.
+- [x] Streaming de áudio via AI Service e Voice Service.
 - [ ] Baseline manual com 5 interações reais antes/depois.
 - [ ] Suite mínima de evals para prompts críticos.
 - [ ] Golden set inicial com 50 diálogos.
