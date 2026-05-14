@@ -250,9 +250,8 @@ services:
       - VITE_KNOWLEDGE_SERVICE_URL=http://localhost:8005
       - BACKEND_URL=${BACKEND_URL:-http://127.0.0.1:8001}
     depends_on:
-      - gateway
-      - emotion-service
       - ai-service
+      - emotion-service
       - voice-service
       - knowledge-service
     networks: !reset []

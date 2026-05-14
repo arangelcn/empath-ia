@@ -23,6 +23,8 @@ BRIDGE_RUNTIME_ENV := MONGODB_URL=mongodb://admin:admin123@mongodb:27017/empatia
 BACKEND_SERVICES := ai-service emotion-service voice-service knowledge-service
 FRONTEND_SERVICES := web-ui admin-panel
 CORE_SERVICES := mongodb redis qdrant $(BACKEND_SERVICES)
+SHELL_CMD ?= sh
+MONGO_DATABASE ?= empatia
 
 .PHONY: help setup env-check env-create env-validate dev up dev-d down restart ps build build-ai-local logs shell test lint format health urls clean reset mongo-shell mongo-reset bridge bridge-d host host-d services
 
@@ -92,7 +94,7 @@ logs: ## Logs da stack, ou SERVICE=nome para um serviço
 
 shell: ## Abre shell em um serviço: make shell SERVICE=ai-service
 	@test -n "$(SERVICE)" || (echo "$(RED)Informe SERVICE. Ex.: make shell SERVICE=ai-service$(NC)" && exit 1)
-	@$(COMPOSE) exec $(SERVICE) bash
+	@$(COMPOSE) exec $(SERVICE) $(SHELL_CMD)
 
 test: ## Roda pytest nos backends, ou SERVICE=nome
 	@if [ -n "$(SERVICE)" ]; then \
@@ -133,7 +135,7 @@ urls: ## Mostra URLs locais úteis
 	@echo "Mongo Express:  http://localhost:8081"
 
 mongo-shell: ## Abre o shell do MongoDB
-	@$(COMPOSE) exec mongodb mongosh -u admin -p admin123 --authenticationDatabase admin empatia_db
+	@$(COMPOSE) exec mongodb mongosh -u admin -p admin123 --authenticationDatabase admin $(MONGO_DATABASE)
 
 mongo-reset: ## Apaga volumes locais do MongoDB e recria o serviço
 	@read -p "Isto apaga o MongoDB local. Digite 'yes' para continuar: " confirm; \
