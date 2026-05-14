@@ -25,7 +25,7 @@ async def internal_health(
             "runtime_service": runtime.get("status", "unknown"),
             "retrieval_gateway": "ready",
             "registration_flow": "internalized",
-            "legacy_gateway_dependency": "removed",
+            "legacy_gateway_dependency": "removed-from-runtime-path",
         },
         "runtime": runtime,
     }

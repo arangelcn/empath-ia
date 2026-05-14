@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, AsyncIterator
 
 from .structured_outputs import GenerationOutput
@@ -38,6 +39,28 @@ class RuntimeService:
             model="unconfigured",
             finish_reason="runtime_not_configured",
         )
+
+    async def complete_text(
+        self,
+        *,
+        prompt: str,
+        system: str = "Voce e um assistente que responde de forma concisa e objetiva.",
+    ) -> GenerationOutput:
+        """Run a lightweight completion without the therapeutic orchestration pipeline."""
+        state = SimpleNamespace(
+            conversation_history=[],
+            user_message=prompt,
+            previous_session_context={},
+            user_profile={},
+            retrieval_result={},
+            citations=[],
+        )
+        prompt_payload = {
+            "system": system,
+            "retrieval_context": "",
+            "citations_summary": "",
+        }
+        return await self.generate(state, prompt_payload)
 
     async def stream_generate(
         self,

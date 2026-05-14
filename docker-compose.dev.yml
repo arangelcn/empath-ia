@@ -98,17 +98,21 @@ services:
 
   ai-service:
     build:
-      context: ./services/ai-service
+      context: ./services/ai-service-v2
       dockerfile: Dockerfile
       network: host
     network_mode: host
     ports: !reset []
     volumes: !override
-      - ./services/ai-service:/app
-      - ./services/ai-service/src:/app/src
+      - ./services/ai-service-v2:/app
+      - ./services/ai-service-v2/src:/app/src
     environment:
+      - AI_SERVICE_PORT=8001
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - GATEWAY_SERVICE_URL=${GATEWAY_SERVICE_URL:-http://127.0.0.1:8000}
+      - MONGODB_URL=${AI_MONGODB_URI:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
+      - DATABASE_NAME=${DATABASE_NAME:-empatia}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_ENDPOINT=${OPENAI_ENDPOINT:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-http://127.0.0.1:1234/v1}
@@ -123,16 +127,13 @@ services:
       - MAX_TOKENS=${MAX_TOKENS:-700}
       - LLM_REQUEST_TIMEOUT_SECONDS=${LLM_REQUEST_TIMEOUT_SECONDS:-240}
       - HOT_RELOAD=${HOT_RELOAD:-true}
-      - MONGODB_URI=${AI_MONGODB_URI:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
-      - DATABASE_NAME=${DATABASE_NAME:-empatia}
-      - REDIS_URL=${AI_REDIS_URL:-redis://127.0.0.1:6379/0}
-      - GATEWAY_SERVICE_URL=${GATEWAY_SERVICE_URL:-http://127.0.0.1:8000}
+      - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://127.0.0.1:8003}
+      - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://127.0.0.1:8004}
       - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://127.0.0.1:8005}
-      - KNOWLEDGE_RETRIEVE_TIMEOUT_SECONDS=${KNOWLEDGE_RETRIEVE_TIMEOUT_SECONDS:-8}
+      - AI_SERVICE_V2_ENABLE_LEGACY_RUNTIME_FALLBACK=false
     command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--log-level", "debug" ]
     depends_on:
       - mongodb
-      - redis
     networks: !reset []
 
   emotion-service:
@@ -251,8 +252,8 @@ services:
       network: host
     environment:
       - NODE_ENV=${NODE_ENV:-development}
-      - VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:8000}
-      - BACKEND_URL=${BACKEND_URL:-http://127.0.0.1:8000}
+      - VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:8001}
+      - BACKEND_URL=${BACKEND_URL:-http://127.0.0.1:8001}
       - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
       - VITE_GOOGLE_REDIRECT_URI=${VITE_GOOGLE_REDIRECT_URI:-http://localhost:7860}
     volumes:
@@ -273,12 +274,12 @@ services:
     ports: !reset []
     environment:
       - NODE_ENV=development
-      - VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:8000}
+      - VITE_API_URL=${VITE_API_URL:-http://127.0.0.1:8001}
       - VITE_EMOTION_SERVICE_URL=http://localhost:8003
       - VITE_VOICE_SERVICE_URL=http://localhost:8004
       - VITE_AI_SERVICE_URL=http://localhost:8001
       - VITE_KNOWLEDGE_SERVICE_URL=http://localhost:8005
-      - BACKEND_URL=${BACKEND_URL:-http://127.0.0.1:8000}
+      - BACKEND_URL=${BACKEND_URL:-http://127.0.0.1:8001}
     depends_on:
       - gateway
       - emotion-service

@@ -5,6 +5,9 @@ pydantic-settings==2.7.0
 httpx==0.28.1
 motor==3.6.0
 pymongo==4.9.2
+python-jose[cryptography]==3.3.0
+google-auth==2.37.0
+python-multipart==0.0.20
 langchain-core>=0.3,<0.4
 langchain-openai>=0.2,<0.3
 langgraph>=0.2,<0.3

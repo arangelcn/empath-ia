@@ -125,7 +125,6 @@ class MongoSessionRepository:
             "is_active": session_data.get("is_active", True),
             "status": session_data.get("status", "unlocked"),
             "progress": session_data.get("progress", 0),
-            "created_at": now,
             "updated_at": now,
         }
         await user_sessions.update_one(

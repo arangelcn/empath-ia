@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
     ''
 
   const apiUrl =
-    merged.VITE_API_URL || cwdEnv.VITE_API_URL || 'http://localhost:8000'
+    merged.VITE_API_URL || cwdEnv.VITE_API_URL || 'http://localhost:8001'
   const voiceUrl =
     merged.VITE_VOICE_URL || cwdEnv.VITE_VOICE_URL || 'http://localhost:8004'
 

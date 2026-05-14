@@ -264,7 +264,7 @@ A direção agora é:
 - o runtime novo já expõe streaming nativo por provider quando o backend suporta isso, mas o fluxo público ainda segura a emissão final até depois da checagem de safety;
 - o fluxo especial de registro `session-1` agora já roda dentro do `ai-service-v2`, persiste perfil/contexto em Mongo e cria a próxima sessão sem depender do `gateway-service`;
 - o provider legado do `ai-service` antigo ainda permanece configurável como fallback temporário na cadeia de runtime;
-- várias rotas públicas/admin fora do fluxo principal de chat ainda estão em modo scaffold ou proxy inicial;
+- várias rotas públicas/admin fora do fluxo principal de chat já saíram de scaffold, mas ainda existe trabalho de endurecimento e limpeza final do legado;
 - `LangGraph` e `LangChain` já governam o desenho principal, mas ainda falta validação operacional completa e decidir se haverá streaming token-a-token público com guardrails incrementais.
 
 ### Practical consequence
@@ -275,14 +275,17 @@ O documento de migração passa a considerar a fase de scaffold como concluída 
 
 Depois da validação do estado atual do código, as pendências reais da migração ficaram assim:
 
-- `chat` principal já saiu do `ai-service` legado, e o fluxo compatível `/api/chat/send-stream` já foi movido para a `StreamFacade`, mas ele ainda precisa de validação real contra consumidores para confirmar que a adaptação SSE ficou 100% compatível;
+- o `ai-service-v2` já assumiu o papel de edge para `web-ui` e `admin-panel`, e o proxy temporário para o `gateway-service` foi removido do caminho HTTP do serviço;
+- `chat` principal já saiu do `ai-service` legado, e o fluxo compatível `/api/chat/send-stream` já foi movido para a `StreamFacade`, com validação HTTP real de SSE no `ai-service-v2`;
 - o fluxo especial de registro `session-1` já foi internalizado, mas ainda vale endurecer essa trilha com testes dedicados;
-- `LegacyAdapterProvider` continua disponível como fallback de runtime, o que é útil para rollout, mas significa que o runtime novo ainda não está operando como caminho único endurecido;
-- várias rotas fora do chat principal ainda estão em scaffold, especialmente em `app/api/admin/*` e parte das rotas públicas auxiliares, então a compatibilidade com `admin-panel` e alguns fluxos secundários ainda não foi realmente concluída;
-- os endpoints internos de health/compatibility já foram atualizados para refletir a fase atual da migração, mas ainda não substituem validação operacional ponta a ponta;
+- o runtime principal agora já está respondendo com `langchain_openai` usando a key do `.env`, mas o adapter legado ainda existe no código e ainda precisa ser removido quando não houver mais necessidade de rollback;
+- auth, usuários, sessões, prompts, chat-context, dashboard/admin, contextos, conversas e knowledge admin já estão servidos pelo `ai-service-v2` sem passar pelo `gateway-service`;
+- voice e emotion agora saem diretamente para seus próprios downstreams, sem edge proxy para o `gateway-service`;
+- os endpoints internos de health/compatibility já refletem a remoção dessa dependência temporária;
 - o serviço já importa, sobe com lifespan real quando Mongo está disponível e responde bem em smoke tests com container fake;
-- já houve validação HTTP end-to-end de `health`, `internal/health`, `api/chat/send`, `api/chat/send-stream`, `api/chat/stream`, `openai/chat` e `openai/chat/stream`;
-- ainda falta validação ponta a ponta com `web-ui`, `admin-panel`, providers reais não-legados e latência/telemetria comparada com o sistema atual.
+- já houve validação HTTP end-to-end de `health`, `internal/health`, `api/chat/send`, `api/chat/send-stream`, `api/chat/stream`, `openai/chat`, `openai/chat/stream`, `/chat`, `/util/complete`, `/openai/generate-session-context`, `/api/voice/health`, `/api/user/status/*`, `/api/chat/initial-message/*`, `/api/chat/finalize/*`, `/api/auth/admin/login`, `/api/admin/stats`, `/api/admin/users`, `/api/admin/system-status`, `/api/prompts/initialize` e `/api/prompts/stats`;
+- houve uma validação específica com o container `gateway-service` desligado, e as rotas críticas testadas continuaram respondendo pelo `ai-service-v2`;
+- ainda falta a remoção operacional/física do `gateway-service` e do `ai-service` antigos, a limpeza do fallback legado no runtime e a comparação final de latência/telemetria com o sistema anterior.
 
 ### Resume Snapshot
 
@@ -290,52 +293,59 @@ Se a migração for retomada depois, este e o ponto mais rapido para reorientaca
 
 Ultimo corte concluido:
 
-- o fluxo especial de registro `session-1` foi internalizado no `ai-service-v2`;
-- `LegacyGatewayClient` foi removido do boundary novo;
-- o cadastro agora salva perfil padronizado em `users`, contexto em `session_contexts` e cria/desbloqueia a proxima sessao em `user_therapeutic_sessions`;
-- o fluxo compatível `/api/chat/send-stream` foi movido para a `StreamFacade`, deixando a `ChatFacade` focada no caminho síncrono;
-- o stream compatível deixou de duplicar persistência fora do grafo: a mensagem do usuário pode ser pré-salva para meta compatível, e o `PersistenceNode` agora respeita `user_message_id` já existente.
-- foi criada uma suíte inicial de smoke tests para rotas centrais em `services/ai-service-v2/tests/test_smoke.py`.
-- a criação de índices Mongo foi ajustada para não quebrar startup em bancos já existentes, removendo conflito com o índice legado de `session_contexts.session_id`.
+- o `ai-service-v2` passou a ocupar a porta e o papel do `ai-service` em `8001`;
+- o runtime OpenAI do boundary novo foi endurecido para aceitar `LLM_PROVIDER=openai` e ignorar `OPENAI_BASE_URL` vazio, permitindo boot real com `.env` atual;
+- o `web-ui` e o `admin-panel` foram repontados para `8001` nos defaults de Vite e nos arquivos de compose;
+- o proxy temporário para o `gateway-service` foi removido do `ai-service-v2`;
+- auth, usuários, sessões, prompts, chat-context, dashboard/admin, contextos, conversas e knowledge admin agora respondem localmente no boundary novo;
+- `voice-service` e `emotion-service` passaram a ser consumidos diretamente pelo `ai-service-v2`, sem passagem pelo `gateway-service`;
+- o fluxo síncrono `/chat`, o helper `/util/complete` e `/openai/generate-session-context` já estavam internalizados e agora convivem com um edge totalmente sem proxy para o gateway legado.
 
 Arquivos-chave deste corte:
 
-- `services/ai-service-v2/src/app/application/chat/registration_service.py`
-- `services/ai-service-v2/src/app/application/chat/next_session_service.py`
-- `services/ai-service-v2/src/app/application/chat/user_profile_service.py`
-- `services/ai-service-v2/src/app/application/chat/chat_facade.py`
-- `services/ai-service-v2/src/app/application/chat/stream_facade.py`
-- `services/ai-service-v2/src/app/application/orchestration/agent_service.py`
-- `services/ai-service-v2/src/app/application/orchestration/nodes/persistence_node.py`
-- `services/ai-service-v2/src/app/bootstrap/dependencies.py`
-- `services/ai-service-v2/src/app/repositories/sessions.py`
-- `services/ai-service-v2/src/app/repositories/users.py`
-- `services/ai-service-v2/src/app/repositories/conversations.py`
+- `services/ai-service-v2/src/app/api/public/auth.py`
+- `services/ai-service-v2/src/app/api/public/users.py`
+- `services/ai-service-v2/src/app/api/public/sessions.py`
+- `services/ai-service-v2/src/app/api/public/prompts.py`
+- `services/ai-service-v2/src/app/api/public/chat.py`
+- `services/ai-service-v2/src/app/api/public/voice.py`
+- `services/ai-service-v2/src/app/api/public/emotions.py`
+- `services/ai-service-v2/src/app/api/admin/dashboard.py`
+- `services/ai-service-v2/src/app/api/admin/users.py`
+- `services/ai-service-v2/src/app/api/admin/sessions.py`
+- `services/ai-service-v2/src/app/api/admin/contexts.py`
+- `services/ai-service-v2/src/app/api/admin/conversations.py`
+- `services/ai-service-v2/src/app/api/admin/knowledge.py`
+- `services/ai-service-v2/src/app/api/security.py`
+- `services/ai-service-v2/src/app/api/internal/health.py`
+- `services/ai-service-v2/src/app/api/internal/compatibility.py`
+- `services/ai-service-v2/src/app/bootstrap/settings.py`
+- `docker-compose.yml`
+- `docker-compose.dev.yml`
+- `docker-compose.host.yml`
 
 Validacao feita nesta etapa:
 
 - `python3 -m compileall src` passou em `services/ai-service-v2`;
-- busca por `LegacyGatewayClient` e `legacy_gateway_url` dentro de `services/ai-service-v2/src` voltou vazia.
-- criação de venv local + instalação de `requirements.txt` concluídas com sucesso;
-- import de `src.main` concluído com sucesso;
-- smoke tests de rotas com container fake passaram via `python -m unittest discover -s services/ai-service-v2/tests -v`;
-- o container `empatia-ai-service-v2:e2e` subiu com sucesso usando Mongo real no host;
-- requests HTTP reais passaram para `/health`, `/internal/health`, `/api/chat/send`, `/api/chat/send-stream`, `/api/chat/stream`, `/openai/chat` e `/openai/chat/stream`;
-- a trilha não-registration ainda está validada sobre o fallback legado (`LegacyAdapterProvider`), não sobre provider LangChain real.
+- o container `empatia-ai-service` subiu a partir do código do `ai-service-v2` em `8001`;
+- requests HTTP reais passaram para `/chat`, `/api/chat/send`, `/api/chat/send-stream`, `/api/voice/health`, `/api/user/status/*`, `/api/chat/initial-message/*`, `/api/chat/finalize/*`, `/api/auth/admin/login`, `/api/admin/stats`, `/api/admin/users`, `/api/admin/system-status`, `/api/prompts/initialize` e `/api/prompts/stats` via novo edge;
+- o runtime respondeu com `provider=langchain_openai` e `model=gpt-4` em chamadas reais;
+- os downstreams `voice`, `emotion` e `knowledge` responderam corretamente via integração direta;
+- as mesmas rotas críticas seguiram funcionando com o container `empatia-gateway` desligado durante a validação.
 
 O que ainda nao esta fechado:
 
-- o fallback `LegacyAdapterProvider` ainda existe na cadeia de runtime;
+- o fallback `LegacyAdapterProvider` ainda existe na cadeia de runtime, mesmo nao sendo mais necessario para o caminho principal validado;
 - a trilha nova de `session-1` ainda precisa de testes dedicados;
-- o fluxo compatível `/api/chat/send-stream` ainda precisa de validação real com frontend para confirmar payloads SSE, ordem dos eventos e métricas no consumidor final;
-- falta validacao ponta a ponta com frontend/Admin e com provider real não-legado.
+- ainda falta uma rodada final de validacao navegando `web-ui` e `admin-panel` completos contra `8001`;
+- ainda falta remover operacionalmente do compose e do deploy os serviços legados `gateway-service` e `ai-service`.
 
 Proximo passo recomendado ao retomar:
 
-1. validar o fluxo compatível `/api/chat/send-stream` contra consumidores reais, especialmente SSE, áudio e métricas;
-2. adicionar testes focados em `session-1`, persistencia e criacao da proxima sessao;
-3. validar runtime real sem depender do fallback legado e decidir o endurecimento/remocao desse adapter;
-4. substituir os endpoints admin/public ainda em scaffold conforme a necessidade real do frontend/Admin.
+1. navegar `web-ui` e `admin-panel` completos apontando para `8001` para capturar qualquer quebra fina de payload/UI;
+2. eliminar o `LegacyAdapterProvider` se não houver mais necessidade de rollback;
+3. remover `gateway-service` e `ai-service` antigos do compose/deploy;
+4. renomear `ai-service-v2` para `ai-service` quando o cutover operacional estiver encerrado.
 
 ## Responsibility Boundaries
 
@@ -582,13 +592,12 @@ Primeiro preservar compatibilidade. Depois limpar naming.
 1. decidir a estratégia final de streaming público sob safety, incluindo se haverá guardrails incrementais para liberar deltas ao vivo;
 2. validar o fluxo compatível `/api/chat/send-stream` com consumidores reais agora que ele foi migrado para a `StreamFacade`;
 3. consolidar prompt ownership além do catálogo file-backed inicial;
-4. expandir compatibilidade pública só onde o frontend/Admin realmente exigirem e substituir rotas ainda em scaffold;
-5. validar `web-ui` e `admin-panel` contra o `ai-service-v2`, com atenção a SSE, payloads e telemetria;
-6. testar o runtime novo com provider real como caminho preferencial e endurecer o uso do fallback legado;
-7. endurecer a trilha de `session-1` com testes dedicados;
-8. cortar tráfego;
-9. renomear `ai-service-v2` para `ai-service`;
-10. remover legado.
+4. validar `web-ui` e `admin-panel` contra o `ai-service-v2`, com atenção a SSE, payloads e telemetria;
+5. testar o runtime novo com provider real como caminho preferencial e endurecer o uso do fallback legado;
+6. endurecer a trilha de `session-1` com testes dedicados;
+7. remover `gateway-service` e `ai-service` antigos do compose/deploy;
+8. renomear `ai-service-v2` para `ai-service`;
+9. remover legado restante.
 
 ## Deliverables
 

@@ -45,9 +45,14 @@ services:
     networks: !reset []
     ports: !reset []
     environment:
-      - MONGODB_URI=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin
-      - REDIS_URL=redis://127.0.0.1:6379
+      - AI_SERVICE_PORT=8001
       - GATEWAY_SERVICE_URL=http://127.0.0.1:8000
+      - MONGODB_URL=mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin
+      - DATABASE_NAME=empatia
+      - AI_SERVICE_V2_ENABLE_LEGACY_RUNTIME_FALLBACK=false
+      - EMOTION_SERVICE_URL=http://127.0.0.1:8003
+      - VOICE_SERVICE_URL=http://127.0.0.1:8004
+      - KNOWLEDGE_SERVICE_URL=http://127.0.0.1:8005
 
   emotion-service:
     network_mode: host
@@ -75,8 +80,8 @@ services:
     networks: !reset []
     ports: !reset []
     environment:
-      - VITE_API_URL=http://127.0.0.1:8000
-      - BACKEND_URL=http://127.0.0.1:8000
+      - VITE_API_URL=http://127.0.0.1:8001
+      - BACKEND_URL=http://127.0.0.1:8001
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "7860"]
 
   admin-panel:
@@ -84,7 +89,7 @@ services:
     networks: !reset []
     ports: !reset []
     environment:
-      - VITE_API_URL=http://127.0.0.1:8000
+      - VITE_API_URL=http://127.0.0.1:8001
       - VITE_EMOTION_SERVICE_URL=http://localhost:8003
       - VITE_VOICE_SERVICE_URL=http://localhost:8004
       - VITE_AI_SERVICE_URL=http://localhost:8001

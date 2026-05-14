@@ -2,7 +2,7 @@
  * Serviço de API para comunicação com o backend
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
 const ADMIN_TOKEN_KEY = 'admin_access_token';
 
 class ApiService {

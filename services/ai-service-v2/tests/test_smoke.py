@@ -138,6 +138,62 @@ class FakeStreamFacade:
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+class FakeRuntimeService:
+    async def complete_text(
+        self,
+        *,
+        prompt: str,
+        system: str = "Voce e um assistente que responde de forma concisa e objetiva.",
+    ):
+        if "title" in prompt.lower() and "subtitle" in prompt.lower():
+            return SimpleNamespace(
+                text='{"title": "Titulo de teste", "subtitle": "Subtitulo de teste"}',
+                provider="fake",
+                model="fake-model",
+            )
+        return SimpleNamespace(
+            text=(
+                '{"summary":"Resumo da sessao","main_themes":["ansiedade","trabalho"],'
+                '"emotional_state":{"initial":"ansioso","final":"mais calmo","progression":"houve alivio"},'
+                '"key_insights":["insight 1","insight 2"],'
+                '"important_moments":[{"moment":"abertura","significance":"contextualizou a queixa"}],'
+                '"user_progress":{"strengths_shown":["reflexao"],"challenges_identified":["ansiedade"],"growth_areas":["autocuidado"]},'
+                '"therapeutic_notes":{"techniques_used":["escuta"],"user_response":"boa","engagement_level":"Alto"},'
+                '"future_sessions":{"suggested_topics":["rotina"],"areas_to_explore":["trabalho"],"therapeutic_goals":["regular ansiedade"]}}'
+            ),
+            provider="fake",
+            model="fake-model",
+        )
+
+    def describe(self) -> dict[str, object]:
+        return {
+            "service": "ai-service-v2",
+            "status": "langchain-runtime-shell",
+            "provider_chain": ["fake"],
+            "available_providers": ["fake"],
+            "native_streaming_providers": ["fake"],
+        }
+
+
+class FakeSessionRepository:
+    async def save_session_context(
+        self,
+        session_id: str,
+        username: str,
+        context: dict[str, object],
+    ) -> None:
+        self.saved_context = {
+            "session_id": session_id,
+            "username": username,
+            "context": context,
+        }
+
+
+class FakeConversationRepository:
+    async def update_conversation_fields(self, session_id: str, fields: dict[str, object]) -> None:
+        self.last_update = {"session_id": session_id, "fields": fields}
+
+
 class SmokeRoutesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -174,15 +230,9 @@ class SmokeRoutesTest(unittest.TestCase):
             settings=settings,
             chat_facade=FakeChatFacade(),
             stream_facade=FakeStreamFacade(),
-            runtime_service=SimpleNamespace(
-                describe=lambda: {
-                    "service": "ai-service-v2",
-                    "status": "langchain-runtime-shell",
-                    "provider_chain": ["fake"],
-                    "available_providers": ["fake"],
-                    "native_streaming_providers": ["fake"],
-                }
-            ),
+            runtime_service=FakeRuntimeService(),
+            session_repository=FakeSessionRepository(),
+            conversation_repository=FakeConversationRepository(),
         )
         cls.client = TestClient(app)
 
@@ -209,6 +259,13 @@ class SmokeRoutesTest(unittest.TestCase):
         self.assertEqual(compat_response.json()["phase"], "compatibility-hardening")
 
     def test_chat_sync_routes(self) -> None:
+        legacy_root_response = self.client.post(
+            "/chat",
+            json={"message": "oi", "session_id": "tester_session-2", "username": "tester"},
+        )
+        self.assertEqual(legacy_root_response.status_code, 200)
+        self.assertEqual(legacy_root_response.json()["response"], "legacy reply")
+
         send_response = self.client.post(
             "/api/chat/send",
             json={"message": "oi", "session_id": "tester_session-2", "is_voice_mode": False},
@@ -230,7 +287,33 @@ class SmokeRoutesTest(unittest.TestCase):
         self.assertEqual(openai_response.status_code, 200)
         self.assertEqual(openai_response.json()["response"], "legacy reply")
 
+        util_response = self.client.post(
+            "/util/complete",
+            json={"prompt": "gere um titulo e subtitle", "system": "responda em json"},
+        )
+        self.assertEqual(util_response.status_code, 200)
+        self.assertTrue(util_response.json()["success"])
+
+        context_response = self.client.post(
+            "/openai/generate-session-context",
+            json={
+                "conversation_text": "Usuario: estou ansioso com trabalho\nTerapeuta: vamos explorar isso",
+                "session_id": "tester_session-2",
+                "username": "tester",
+            },
+        )
+        self.assertEqual(context_response.status_code, 200)
+        self.assertTrue(context_response.json()["success"])
+        self.assertIn("summary", context_response.json()["context"])
+
     def test_chat_stream_routes(self) -> None:
+        legacy_stream_response = self.client.post(
+            "/chat/stream",
+            json={"message": "oi", "session_id": "tester_session-2", "username": "tester"},
+        )
+        self.assertEqual(legacy_stream_response.status_code, 200)
+        self.assertIn("event: text_delta", legacy_stream_response.text)
+
         send_stream_response = self.client.post(
             "/api/chat/send-stream",
             json={"message": "oi", "session_id": "tester_session-2", "is_voice_mode": False},

@@ -60,11 +60,15 @@ services:
   # AI Service - OpenAI e Psicólogo Rogers
   ai-service:
     build:
-      context: ./services/ai-service
+      context: ./services/ai-service-v2
     container_name: empatia-ai-service
     env_file:
       - .env
     environment:
+      - AI_SERVICE_PORT=${AI_SERVICE_PORT:-8001}
+      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
+      - DATABASE_NAME=${DATABASE_NAME:-empatia}
+      - GATEWAY_SERVICE_URL=${GATEWAY_SERVICE_URL:-http://gateway:8000}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_ENDPOINT=${OPENAI_ENDPOINT:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234/v1}
@@ -77,14 +81,14 @@ services:
       - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-none}
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - MAX_TOKENS=${MAX_TOKENS:-700}
-      - AI_SERVICE_PORT=${AI_SERVICE_PORT:-8001}
+      - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://emotion-service:8003}
+      - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
+      - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://knowledge-service:8005}
+      - AI_SERVICE_V2_ENABLE_LEGACY_RUNTIME_FALLBACK=false
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - MONGODB_URI=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
-      - DATABASE_NAME=${DATABASE_NAME:-empatia}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     volumes:
-      - ./services/ai-service:/app
+      - ./services/ai-service-v2:/app
     ports:
       - "${AI_SERVICE_PORT:-8001}:8001"
     depends_on:
@@ -94,7 +98,7 @@ services:
     develop:
       watch:
         - action: sync
-          path: ./services/ai-service/src
+          path: ./services/ai-service-v2/src
           target: /app/src
           ignore:
             - __pycache__/
@@ -219,12 +223,12 @@ services:
       context: ./apps/web-ui
       args:
         VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8001}
         VITE_VOICE_URL: ${VITE_VOICE_URL:-}
     container_name: empatia-web-ui
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - BACKEND_URL=${BACKEND_URL:-http://gateway-service:8000}
+      - BACKEND_URL=${BACKEND_URL:-http://ai-service:8001}
     ports:
       - "${WEB_UI_PORT:-7860}:3000"
     depends_on:
@@ -238,8 +242,8 @@ services:
     container_name: empatia-admin-panel
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:8000}
-      - BACKEND_URL=${BACKEND_URL:-http://gateway-service:8000}
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:8001}
+      - BACKEND_URL=${BACKEND_URL:-http://ai-service:8001}
     ports:
       - "${ADMIN_PANEL_PORT:-3001}:3000"
     depends_on:
