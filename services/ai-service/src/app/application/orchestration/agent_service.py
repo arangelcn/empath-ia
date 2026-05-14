@@ -474,11 +474,9 @@ class AgentService:
         response_text: str,
         native_generation_chunks: list[str],
     ) -> list[str]:
-        generation_text = ((state.generation_result or {}).get("text") or "").strip()
-        if (
-            native_generation_chunks
-            and response_text
-            and response_text == generation_text
-        ):
-            return [chunk for chunk in native_generation_chunks if chunk]
-        return self._chunk_text_for_stream(response_text)
+        stream_source = response_text or ((state.generation_result or {}).get("text") or "").strip()
+        if stream_source:
+            return self._chunk_text_for_stream(stream_source)
+        if native_generation_chunks:
+            return self._chunk_text_for_stream("".join(native_generation_chunks))
+        return []

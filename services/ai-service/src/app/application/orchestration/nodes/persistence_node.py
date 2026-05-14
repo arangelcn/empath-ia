@@ -38,7 +38,7 @@ class PersistenceNode:
             state.audio_url,
         )
         await self.conversation_repository.update_message_count(state.session_id)
-        state.conversation_ended = self.session_context_service.detect_conversation_end(state.user_message)
+        state.conversation_ended = False
         state.persistence_plan = {
             "save_user_message": {"done": True, "message_id": state.user_message_id},
             "save_ai_message": {"done": True, "message_id": state.ai_message_id},

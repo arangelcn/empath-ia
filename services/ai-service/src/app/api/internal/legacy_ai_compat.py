@@ -263,6 +263,45 @@ def _normalize_session_context(parsed: dict[str, Any], conversation_text: str) -
             }
         ]
 
+    emotional_state = context["emotional_state"]
+    therapeutic_notes = context["therapeutic_notes"]
+    future_sessions = context["future_sessions"]
+
+    recommendations: list[str] = []
+    for group in (
+        future_sessions.get("suggested_topics") or [],
+        future_sessions.get("areas_to_explore") or [],
+        future_sessions.get("therapeutic_goals") or [],
+    ):
+        for item in group:
+            normalized = _coerce_text(item)
+            if normalized and normalized not in recommendations:
+                recommendations.append(normalized)
+
+    engagement_level = _coerce_text(therapeutic_notes.get("engagement_level")).lower()
+    session_quality_map = {
+        "alto": "excelente",
+        "alta": "excelente",
+        "medio": "boa",
+        "médio": "boa",
+        "media": "boa",
+        "média": "boa",
+        "baixo": "regular",
+        "baixa": "regular",
+    }
+    dominant_emotion = emotional_state.get("final") or emotional_state.get("initial") or "Nao identificado com confianca."
+    emotional_journey = emotional_state.get("progression") or "Oscilacao emocional nao inferida com seguranca."
+    stability = "Estavel" if emotional_state.get("initial") == emotional_state.get("final") else "Em transicao"
+
+    context["emotional_state"] = {
+        **emotional_state,
+        "dominant_emotion": dominant_emotion,
+        "emotional_journey": emotional_journey,
+        "stability": stability,
+    }
+    context["next_session_recommendations"] = recommendations
+    context["session_quality"] = session_quality_map.get(engagement_level, "boa")
+
     return context
 
 

@@ -466,22 +466,6 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
           }).catch(() => { });
         }
 
-        if (responseData.conversation_ended) {
-          console.log('🔚 Conversa finalizada automaticamente');
-          setIsConversationEnded(true);
-          setShowFinalizeButton(false);
-
-          setTimeout(() => {
-            finalizeSession();
-          }, 2000);
-        }
-
-        if (checkConversationEnd(currentInput)) {
-          console.log('🔚 Fim de conversa detectado pela mensagem do usuário');
-          setTimeout(() => {
-            finalizeSession();
-          }, 3000);
-        }
       } else {
         const response = await sendMessage(currentInput, currentChatId, objectiveToSend);
         if (response.success) {
@@ -530,25 +514,6 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
             }, redirectDelay);
           }
 
-          // ✅ NOVO: Verificar se a conversa foi finalizada automaticamente
-          if (response.data.conversation_ended) {
-            console.log('🔚 Conversa finalizada automaticamente');
-            setIsConversationEnded(true);
-            setShowFinalizeButton(false);
-
-            // Aguardar um pouco antes de mostrar o resumo
-            setTimeout(() => {
-              finalizeSession();
-            }, 2000);
-          }
-
-          // Detectar fim de conversa baseado na mensagem do usuário
-          if (checkConversationEnd(currentInput)) {
-            console.log('🔚 Fim de conversa detectado pela mensagem do usuário');
-            setTimeout(() => {
-              finalizeSession();
-            }, 3000);
-          }
         } else {
           const message = response.error || 'A IA não conseguiu gerar uma resposta agora.';
           setSessionError(message);
@@ -674,13 +639,6 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
     }
   };
 
-  // Verificar se mensagem indica fim de conversa
-  const checkConversationEnd = (message) => {
-    const endings = ['tchau', 'bye', 'adeus', 'até logo', 'até mais', 'obrigado', 'obrigada', 'valeu'];
-    const messageLower = message.toLowerCase();
-    return endings.some(ending => messageLower.includes(ending));
-  };
-
   // Funções do modo de voz
   const handleVoiceModeToggle = () => {
     setIsVoiceModeOpen(true);
@@ -734,6 +692,22 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
       return null;
     }
 
+    const emotionalState = sessionContext.emotional_state || {};
+    const dominantEmotion = emotionalState.dominant_emotion || emotionalState.final || emotionalState.initial || 'Não identificado';
+    const emotionalJourney = emotionalState.emotional_journey || emotionalState.progression || 'Não identificado';
+    const emotionalStability = emotionalState.stability || ((emotionalState.initial && emotionalState.final)
+      ? (emotionalState.initial === emotionalState.final ? 'Estável' : 'Em transição')
+      : 'Não identificado');
+    const recommendations = sessionContext.next_session_recommendations
+      || sessionContext.future_sessions?.suggested_topics
+      || sessionContext.future_sessions?.areas_to_explore
+      || [];
+    const sessionQuality = sessionContext.session_quality
+      || (sessionContext.therapeutic_notes?.engagement_level === 'Alto' ? 'excelente'
+        : sessionContext.therapeutic_notes?.engagement_level === 'Medio' ? 'boa'
+          : sessionContext.therapeutic_notes?.engagement_level === 'Baixo' ? 'regular'
+            : 'boa');
+
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
         <div className="bg-white dark:bg-dark-surface rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
@@ -763,13 +737,13 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Estado Emocional</h3>
                 <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    <strong>Emoção Dominante:</strong> {sessionContext.emotional_state?.dominant_emotion}
+                    <strong>Emoção Dominante:</strong> {dominantEmotion}
                   </p>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    <strong>Jornada:</strong> {sessionContext.emotional_state?.emotional_journey}
+                    <strong>Jornada:</strong> {emotionalJourney}
                   </p>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    <strong>Estabilidade:</strong> {sessionContext.emotional_state?.stability}
+                    <strong>Estabilidade:</strong> {emotionalStability}
                   </p>
                 </div>
               </div>
@@ -786,7 +760,7 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Recomendações</h3>
                 <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1">
-                  {sessionContext.next_session_recommendations?.map((rec, index) => (
+                  {recommendations?.map((rec, index) => (
                     <li key={index} className="text-sm">{rec}</li>
                   ))}
                 </ul>
@@ -794,12 +768,12 @@ const ChatScreen = ({ username, displayName, sessionId: fallbackSessionId }) => 
 
               <div>
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">Qualidade da Sessão</h3>
-                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${sessionContext.session_quality === 'excelente' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                    sessionContext.session_quality === 'boa' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                      sessionContext.session_quality === 'regular' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${sessionQuality === 'excelente' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                    sessionQuality === 'boa' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                      sessionQuality === 'regular' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
                         'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                   }`}>
-                  {sessionContext.session_quality}
+                  {sessionQuality}
                 </span>
               </div>
             </div>

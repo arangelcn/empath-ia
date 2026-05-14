@@ -176,6 +176,11 @@ class FakeRuntimeService:
 
 
 class FakeSessionRepository:
+    def __init__(self) -> None:
+        self.saved_context = None
+        self.completed_session = None
+        self.updated_session_fields = None
+
     async def save_session_context(
         self,
         session_id: str,
@@ -188,10 +193,92 @@ class FakeSessionRepository:
             "context": context,
         }
 
+    async def complete_user_session(
+        self,
+        username: str,
+        session_id: str,
+        *,
+        progress: int = 100,
+        status: str = "completed",
+    ) -> None:
+        self.completed_session = {
+            "username": username,
+            "session_id": session_id,
+            "progress": progress,
+            "status": status,
+        }
+
+    async def update_user_session_fields(
+        self,
+        username: str,
+        session_id: str,
+        fields: dict[str, object],
+    ) -> None:
+        self.updated_session_fields = {
+            "username": username,
+            "session_id": session_id,
+            "fields": fields,
+        }
+
 
 class FakeConversationRepository:
+    def __init__(self) -> None:
+        self.last_update = None
+
+    async def resolve_conversation_ref(self, session_id: str, create: bool = False) -> dict[str, object]:
+        return {
+            "chat_id": "chat_1",
+            "legacy_session_id": "tester_session-2",
+            "username": "tester",
+            "therapeutic_session_id": "session-2",
+        }
+
+    async def get_history(self, session_id: str) -> dict[str, object]:
+        return {
+            "chat_id": "chat_1",
+            "session_id": session_id,
+            "history": [
+                {
+                    "id": "user_1",
+                    "type": "user",
+                    "content": "Hoje eu queria falar sobre ansiedade no trabalho",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                },
+                {
+                    "id": "ai_1",
+                    "type": "ai",
+                    "content": "Vamos explorar isso com calma.",
+                    "created_at": "2026-01-01T00:01:00+00:00",
+                },
+                {
+                    "id": "user_2",
+                    "type": "user",
+                    "content": "Acho que por hoje é isso mesmo",
+                    "created_at": "2026-01-01T00:02:00+00:00",
+                },
+            ],
+            "message_count": 3,
+        }
+
+    def extract_username(self, session_id: str) -> str | None:
+        return "tester"
+
     async def update_conversation_fields(self, session_id: str, fields: dict[str, object]) -> None:
         self.last_update = {"session_id": session_id, "fields": fields}
+
+
+class FakeNextSessionService:
+    async def create_next_session_automatically(
+        self,
+        current_session_id: str,
+        session_context: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "success": True,
+            "created": True,
+            "session_id": "session-3",
+            "title": "Sessao 3: Continuando sua jornada",
+        }
 
 
 class SmokeRoutesTest(unittest.TestCase):
@@ -233,6 +320,7 @@ class SmokeRoutesTest(unittest.TestCase):
             runtime_service=FakeRuntimeService(),
             session_repository=FakeSessionRepository(),
             conversation_repository=FakeConversationRepository(),
+            next_session_service=FakeNextSessionService(),
         )
         cls.client = TestClient(app)
 
@@ -336,6 +424,31 @@ class SmokeRoutesTest(unittest.TestCase):
         self.assertEqual(openai_stream_response.status_code, 200)
         self.assertIn("event: text_delta", openai_stream_response.text)
         self.assertIn("event: done", openai_stream_response.text)
+
+    def test_finalize_session_route_updates_title_metadata(self) -> None:
+        finalize_response = self.client.post("/api/chat/finalize/chat_1")
+        self.assertEqual(finalize_response.status_code, 200)
+
+        payload = finalize_response.json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["data"]["generated_title"], "Reflexao sobre acho que por hoje é isso mesmo")
+        self.assertEqual(payload["data"]["session_status"], "completed")
+        self.assertTrue(payload["data"]["session_finished"])
+        self.assertEqual(payload["data"]["next_session"]["session_id"], "session-3")
+        self.assertEqual(payload["data"]["context"]["session_quality"], "excelente")
+        self.assertEqual(
+            payload["data"]["context"]["next_session_recommendations"],
+            ["rotina", "trabalho", "regular ansiedade"],
+        )
+        self.assertEqual(payload["data"]["context"]["emotional_state"]["dominant_emotion"], "mais calmo")
+        self.assertEqual(payload["data"]["context"]["emotional_state"]["emotional_journey"], "houve alivio")
+
+        session_repository = self.client.app.state.container.session_repository
+        self.assertEqual(session_repository.completed_session["session_id"], "session-2")
+        self.assertEqual(
+            session_repository.updated_session_fields["fields"]["title"],
+            "Reflexao sobre acho que por hoje é isso mesmo",
+        )
 
 
 if __name__ == "__main__":

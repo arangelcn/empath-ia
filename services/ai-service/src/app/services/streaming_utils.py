@@ -8,7 +8,8 @@ import time
 from typing import Any
 
 
-SENTENCE_END_RE = re.compile(r"([.!?;:。！？]+)(\s+|$)")
+SENTENCE_END_RE = re.compile(r"([.!?…！？。]+)(?=\s+|$)")
+PUNCTUATION_ONLY_RE = re.compile(r"^[^\w]+$", re.UNICODE)
 
 
 class SentenceChunker:
@@ -48,21 +49,21 @@ class SentenceChunker:
         return chunks
 
     def flush(self) -> str | None:
-        chunk = self._buffer.strip()
+        chunk = self._sanitize_chunk(self._buffer)
         self._buffer = ""
         self._last_flush = time.perf_counter()
-        return chunk or None
+        return chunk
 
     def _next_sentence(self) -> str | None:
         match = SENTENCE_END_RE.search(self._buffer)
         if not match:
             return None
 
-        end = match.end()
-        chunk = self._buffer[:end].strip()
+        end = match.end(1)
+        chunk = self._sanitize_chunk(self._buffer[:end])
         self._buffer = self._buffer[end:]
         self._last_flush = time.perf_counter()
-        return chunk or None
+        return chunk
 
     def _elapsed_ms(self) -> float:
         return (time.perf_counter() - self._last_flush) * 1000
@@ -74,6 +75,12 @@ class SentenceChunker:
         if len(speakable) < self.min_timed_flush_chars:
             return False
         return len(speakable.split()) >= self.min_timed_flush_words
+
+    def _sanitize_chunk(self, text: str) -> str | None:
+        chunk = " ".join(text.split()).strip()
+        if not chunk or PUNCTUATION_ONLY_RE.fullmatch(chunk):
+            return None
+        return chunk
 
 
 def sse_event(event: str, data: dict[str, Any]) -> str:

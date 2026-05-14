@@ -90,6 +90,19 @@ class MongoSessionRepository:
             },
         )
 
+    async def update_user_session_fields(
+        self,
+        username: str,
+        session_id: str,
+        fields: dict[str, Any],
+    ) -> None:
+        """Patch arbitrary metadata on a user therapeutic session."""
+        user_sessions = self.mongo.get_collection("user_therapeutic_sessions")
+        await user_sessions.update_one(
+            {"username": username, "session_id": session_id},
+            {"$set": fields},
+        )
+
     async def unlock_user_session(self, username: str, session_id: str) -> None:
         """Unlock an existing user session."""
         user_sessions = self.mongo.get_collection("user_therapeutic_sessions")
