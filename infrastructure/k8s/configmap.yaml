@@ -32,4 +32,4 @@ data:
   VITE_API_URL: "https://api.empat-ia.io"
   VITE_VOICE_URL: "https://api.empat-ia.io/voice-service"
   REACT_APP_API_URL: "https://api.empat-ia.io"
-  BACKEND_URL: "http://gateway:8000"
+  BACKEND_URL: "http://ai-service:8001"

@@ -14,53 +14,10 @@ services:
     networks:
       - empatia-network
 
-  # Gateway Service - Ponto de entrada principal
-  gateway:
-    build: ./services/gateway-service
-    container_name: empatia-gateway
-    env_file:
-      - .env
-    environment:
-      - AI_SERVICE_URL=${AI_SERVICE_URL:-http://ai-service:8001}
-      - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://emotion-service:8003}
-      - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
-      - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://knowledge-service:8005}
-      - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
-      - DATABASE_NAME=${DATABASE_NAME:-empatia}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - DEBUG=${DEBUG:-false}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
-      - SECRET_KEY=${SECRET_KEY:-changeme-must-be-at-least-32-characters-long!}
-      - ALGORITHM=${ALGORITHM:-HS256}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
-    volumes:
-      - ./services/gateway-service:/app
-      - ./data/shared:/shared_data
-      - ./data/uploads:/uploads
-      - ./data/tts_output:/app/tts_output
-    ports:
-      - "${GATEWAY_PORT:-8000}:8000"
-    depends_on:
-      - mongodb
-      - ai-service
-      - emotion-service
-      - voice-service
-      - knowledge-service
-    networks:
-      - empatia-network
-    develop:
-      watch:
-        - action: sync
-          path: ./services/gateway-service/src
-          target: /app/src
-          ignore:
-            - __pycache__/
-
-  # AI Service - OpenAI e Psicólogo Rogers
+  # AI Service - Backend principal unificado
   ai-service:
     build:
-      context: ./services/ai-service-v2
+      context: ./services/ai-service
     container_name: empatia-ai-service
     env_file:
       - .env
@@ -68,7 +25,6 @@ services:
       - AI_SERVICE_PORT=${AI_SERVICE_PORT:-8001}
       - MONGODB_URL=${MONGODB_URL:-mongodb://admin:admin123@mongodb:27017/empatia?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
-      - GATEWAY_SERVICE_URL=${GATEWAY_SERVICE_URL:-http://gateway:8000}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_ENDPOINT=${OPENAI_ENDPOINT:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:1234/v1}
@@ -78,27 +34,28 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL:-}
       - MODEL_NAME=${MODEL_NAME:-gemma-4-e4b}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-none}
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - MAX_TOKENS=${MAX_TOKENS:-700}
       - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://emotion-service:8003}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://voice-service:8004}
       - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://knowledge-service:8005}
-      - AI_SERVICE_V2_ENABLE_LEGACY_RUNTIME_FALLBACK=false
       - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      - ./services/ai-service-v2:/app
+      - ./services/ai-service:/app
     ports:
       - "${AI_SERVICE_PORT:-8001}:8001"
     depends_on:
       - mongodb
+      - emotion-service
+      - voice-service
+      - knowledge-service
     networks:
       - empatia-network
     develop:
       watch:
         - action: sync
-          path: ./services/ai-service-v2/src
+          path: ./services/ai-service/src
           target: /app/src
           ignore:
             - __pycache__/

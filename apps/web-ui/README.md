@@ -213,7 +213,7 @@ Integrated endpoints:
 Create a `.env` file inside `apps/web-ui`:
 
 ```bash
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8001
 VITE_NODE_ENV=development
 VITE_VOICE_SERVICE_URL=http://localhost:8004
 VITE_EMOTION_SERVICE_URL=http://localhost:8003
@@ -322,8 +322,8 @@ curl http://localhost:8004/health
 
 2. **History is not loading**
 ```bash
-curl http://localhost:8000/api/chat/history/session_test
-docker logs empatia-gateway-1 -f
+curl http://localhost:8001/api/chat/history/session_test
+docker logs empatia-ai-service -f
 ```
 
 3. **UI is not refreshing**
@@ -341,8 +341,8 @@ location.reload();
 
 ## Backend Integration
 
-### Gateway service
-- **Base URL:** `http://localhost:8000/api`
+### AI service
+- **Base URL:** `http://localhost:8001/api`
 - **Auth model:** session-based (`session_id`)
 - **Payload format:** JSON
 - **Error handling:** centralized

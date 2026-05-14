@@ -1,1 +1,1 @@
-# AI Service Package
+"""ai-service package."""

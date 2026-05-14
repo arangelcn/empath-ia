@@ -51,7 +51,7 @@ spec:
                 port:
                   number: 3000
 
-    # API Gateway + Voice Service
+    # Unified AI backend + Voice Service
     - host: api.empat-ia.io
       http:
         paths:
@@ -66,9 +66,9 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: gateway
+                name: ai-service
                 port:
-                  number: 8000
+                  number: 8001
 ---
 # GKE Managed Certificate — provisiona SSL automaticamente para os 3 subdomínios
 apiVersion: networking.gke.io/v1

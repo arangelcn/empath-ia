@@ -15,10 +15,32 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Importar diretamente do módulo correto
 try:
-    from src.models.database import init_mongodb, get_collection, close_mongodb
+    from pymongo import MongoClient
 except ImportError:
-    sys.path.append('services/gateway-service')
-    from src.models.database import init_mongodb, get_collection, close_mongodb
+    MongoClient = None
+
+
+def init_mongodb():
+    global _mongo_client, _mongo_db
+    mongo_url = os.getenv("MONGODB_URL", "mongodb://admin:admin123@localhost:27017/empatia?authSource=admin")
+    database_name = os.getenv("DATABASE_NAME", "empatia")
+    if MongoClient is None:
+        raise RuntimeError("pymongo não disponível para o script de limpeza.")
+    _mongo_client = MongoClient(mongo_url)
+    _mongo_db = _mongo_client[database_name]
+
+
+def get_collection(name: str):
+    return _mongo_db[name]
+
+
+def close_mongodb():
+    if _mongo_client is not None:
+        _mongo_client.close()
+
+
+_mongo_client = None
+_mongo_db = None
 
 def clear_session_messages_sync(session_id: str, confirm: bool = False) -> bool:
     try:

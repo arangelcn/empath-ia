@@ -24,7 +24,7 @@ server {
     }
 
     location /api {
-        proxy_pass http://gateway:8000;
+        proxy_pass http://ai-service:8001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';

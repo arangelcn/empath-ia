@@ -163,7 +163,7 @@ docker compose up -d
 |-----|---------|
 | http://localhost:7860 | Web UI (user) |
 | http://localhost:3001 | Admin panel (therapist) |
-| http://localhost:8000/docs | Interactive API |
+| http://localhost:8001/docs | Interactive API |
 
 ### Development with hot reload
 

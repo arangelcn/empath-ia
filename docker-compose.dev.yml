@@ -64,53 +64,20 @@ services:
       - qdrant_data_dev:/qdrant/storage
     networks: !reset []
 
-  gateway:
-    build:
-      context: ./services/gateway-service
-      dockerfile: Dockerfile
-      network: host
-    environment:
-      - DEBUG=${DEBUG:-true}
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-      - MONGODB_URL=${GATEWAY_MONGODB_URL:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
-      - DATABASE_NAME=${DATABASE_NAME:-empatia}
-      - SQL_DEBUG=${DEBUG:-true}
-      - AI_SERVICE_URL=${AI_SERVICE_URL:-http://127.0.0.1:8001}
-      - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://127.0.0.1:8003}
-      - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://127.0.0.1:8004}
-      - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://127.0.0.1:8005}
-      - REDIS_URL=${GATEWAY_REDIS_URL:-redis://127.0.0.1:6379}
-      - SESSION_CONTEXT_AI_TIMEOUT_SECONDS=${SESSION_CONTEXT_AI_TIMEOUT_SECONDS:-420}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:7860,http://localhost:3000,http://localhost:3001,http://127.0.0.1:3001}
-      - HOT_RELOAD=${HOT_RELOAD:-true}
-    volumes:
-      - ./data/tts_output:/app/tts_output
-      - ./services/gateway-service/src:/app/src
-    network_mode: host
-    ports: !reset []
-    command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--log-level", "debug" ]
-    depends_on:
-      - mongodb
-      - redis
-      - voice-service
-      - knowledge-service
-    networks: !reset []
-
   ai-service:
     build:
-      context: ./services/ai-service-v2
+      context: ./services/ai-service
       dockerfile: Dockerfile
       network: host
     network_mode: host
     ports: !reset []
     volumes: !override
-      - ./services/ai-service-v2:/app
-      - ./services/ai-service-v2/src:/app/src
+      - ./services/ai-service:/app
+      - ./services/ai-service/src:/app/src
     environment:
       - AI_SERVICE_PORT=8001
       - DEBUG=${DEBUG:-true}
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
-      - GATEWAY_SERVICE_URL=${GATEWAY_SERVICE_URL:-http://127.0.0.1:8000}
       - MONGODB_URL=${AI_MONGODB_URI:-mongodb://admin:admin123@127.0.0.1:27017/empatia?authSource=admin}
       - DATABASE_NAME=${DATABASE_NAME:-empatia}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -122,7 +89,6 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL:-}
       - MODEL_NAME=${MODEL_NAME:-gemma-4-e4b}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - LLM_FALLBACK_PROVIDER=${LLM_FALLBACK_PROVIDER:-none}
       - TEMPERATURE=${TEMPERATURE:-0.3}
       - MAX_TOKENS=${MAX_TOKENS:-700}
       - LLM_REQUEST_TIMEOUT_SECONDS=${LLM_REQUEST_TIMEOUT_SECONDS:-240}
@@ -130,10 +96,13 @@ services:
       - EMOTION_SERVICE_URL=${EMOTION_SERVICE_URL:-http://127.0.0.1:8003}
       - VOICE_SERVICE_URL=${VOICE_SERVICE_URL:-http://127.0.0.1:8004}
       - KNOWLEDGE_SERVICE_URL=${KNOWLEDGE_SERVICE_URL:-http://127.0.0.1:8005}
-      - AI_SERVICE_V2_ENABLE_LEGACY_RUNTIME_FALLBACK=false
     command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload", "--log-level", "debug" ]
     depends_on:
       - mongodb
+      - redis
+      - emotion-service
+      - voice-service
+      - knowledge-service
     networks: !reset []
 
   emotion-service:

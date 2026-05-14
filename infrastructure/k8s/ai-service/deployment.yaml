@@ -41,16 +41,11 @@ spec:
                 secretKeyRef:
                   name: empatia-secrets
                   key: MONGO_ROOT_PASSWORD
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: empatia-secrets
-                  key: REDIS_PASSWORD
-            - name: MONGODB_URI
+            - name: MONGODB_URL
               value: "mongodb://admin:$(MONGO_ROOT_PASSWORD)@mongodb:27017/empatia?authSource=admin"
-            - name: REDIS_URL
-              value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
-            - name: MODEL_NAME
+            - name: DATABASE_NAME
+              value: "empatia"
+            - name: OPENAI_MODEL
               value: "gpt-4o"
             - name: AI_SERVICE_PORT
               value: "8001"

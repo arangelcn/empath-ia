@@ -40,7 +40,7 @@ server {
     
     location /api {
         resolver 127.0.0.11 valid=30s;
-        set \$backend http://gateway:8000;
+        set \$backend http://ai-service:8001;
         proxy_pass \$backend;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
